@@ -50,3 +50,30 @@ def test_missing_required_column_raises():
     df = pd.DataFrame({"Foo": [1], "Bar": [2]})
     with pytest.raises(ValueError):
         load_holdings(df)
+
+
+def test_nan_quantity_row_skipped_not_poisoning_totals():
+    # WHY (regression): float('nan') parses but slips past `<= 0`, poisoning every total.
+    df = pd.DataFrame({"Symbol": ["A", "B"], "Quantity": [10, "nan"], "Avg Cost": [100, 200]})
+    holdings = load_holdings(df)
+    assert [h.symbol for h in holdings] == ["A"]
+
+
+def test_negative_cost_row_skipped():
+    df = pd.DataFrame({"Symbol": ["A", "B"], "Quantity": [10, 5], "Avg Cost": [100, -50]})
+    holdings = load_holdings(df)
+    assert [h.symbol for h in holdings] == ["A"]
+
+
+def test_avg_cost_column_wins_over_total_cost_column():
+    # WHY (regression): set-ordered matching could pick total "Cost" as per-share avg cost.
+    df = pd.DataFrame({"Symbol": ["A"], "Quantity": [10], "Avg Cost": [100], "Cost": [1000]})
+    holdings = load_holdings(df)
+    assert holdings[0].avg_cost == 100.0
+
+
+def test_symbol_column_wins_over_generic_name_column():
+    df = pd.DataFrame({"Symbol": ["RELIANCE"], "Name": ["WRONG"],
+                       "Quantity": [10], "Avg Cost": [100]})
+    holdings = load_holdings(df)
+    assert holdings[0].symbol == "RELIANCE"

@@ -6,17 +6,23 @@ missing, because guessing a column wrong would corrupt every downstream number.
 """
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 
 from .models import Holding
 
-# Candidate header names per role, matched case-insensitively after stripping.
-_SYMBOL_HEADERS = {"symbol", "instrument", "stock name", "stock", "ticker", "scrip",
-                   "scrip name", "name", "company"}
-_QTY_HEADERS = {"quantity", "qty", "qty.", "shares", "units", "holding qty", "net qty"}
-_COST_HEADERS = {"avg cost", "avg. cost", "average cost", "average buy price",
-                 "avg buy price", "buy avg", "avg price", "average price", "cost"}
-_SECTOR_HEADERS = {"sector", "industry"}
+# Candidate header names per role, matched case-insensitively. ORDER MATTERS: first match
+# wins, so the most specific names come first and generic fallbacks ("name", "cost") come
+# last. WHY: a file with both an "Avg Cost" and a total "Cost" column must resolve to the
+# per-share average, never the total, or every P&L number is silently wrong. Tuples (not
+# sets) so the priority is deterministic across Python builds.
+_SYMBOL_HEADERS = ("symbol", "instrument", "ticker", "scrip name", "scrip",
+                   "stock name", "stock", "company", "name")
+_QTY_HEADERS = ("quantity", "qty.", "qty", "net qty", "holding qty", "shares", "units")
+_COST_HEADERS = ("avg. cost", "avg cost", "average cost", "average buy price",
+                 "avg buy price", "buy avg", "avg price", "average price", "cost")
+_SECTOR_HEADERS = ("sector", "industry")
 
 
 def normalize_symbol(raw: object) -> str:
@@ -33,9 +39,17 @@ def normalize_symbol(raw: object) -> str:
 
 
 def _to_float(value: object) -> float:
-    """Parse '1,520.75' or '₹ 1,520.75' to float."""
+    """Parse '1,520.75' or '₹ 1,520.75' to float.
+
+    Rejects nan/inf. WHY: float('nan') parses fine but then slips past every `<= 0` guard
+    (nan <= 0 is False), so a single bad cell would poison total value, P&L, and weights
+    with nan and show no error.
+    """
     s = str(value).replace(",", "").replace("₹", "").strip()
-    return float(s)
+    parsed = float(s)
+    if not math.isfinite(parsed):
+        raise ValueError(f"non-finite number: {value!r}")
+    return parsed
 
 
 def _resolve_columns(columns) -> dict[str, str]:
@@ -80,7 +94,9 @@ def load_holdings(source) -> list[Holding]:
             avg_cost = _to_float(row[col["avg_cost"]])
         except (ValueError, TypeError):
             continue  # skip unparseable rows rather than poison the totals
-        if quantity <= 0:
+        # WHY: reject non-positive qty and negative cost. A sign typo in cost flips P&L;
+        # zero cost is allowed (bonus/IPO lots) and is guarded downstream.
+        if quantity <= 0 or avg_cost < 0:
             continue
         sector = "Unknown"
         if "sector" in col:

@@ -1,4 +1,5 @@
 # LESSONS (append-only)
 > Format: `date | what went wrong | root cause | corrective rule`. Read at session start.
 
-(none yet — new repo as of 2026-06-15)
+2026-06-15 | python-dotenv was in requirements.txt but the venv install command hand-listed packages and omitted it; app crashed on import, caught by streamlit AppTest | hand-listing install packages instead of installing from requirements.txt | install with `pip install -r requirements.txt`, never hand-list; run AppTest (not just `streamlit run` health) as the F7 gate since health only proves the server booted
+2026-06-15 | loader used set() for column candidates (nondeterministic priority -> could pick total "Cost" as per-share avg cost); float('nan') quantity slipped past the `<= 0` guard and poisoned all totals; negative avg_cost accepted silently | trusted happy-path CSV input; did not fuzz malformed columns/values | for money math, validate inputs hard: reject non-finite in number parsing, use ordered (not set) match candidates most-specific-first, guard sign; add one regression test per class of bad input. Found by adversarial review, not by me first.

@@ -27,7 +27,8 @@ price from your own memory or training. If a figure is marked unavailable, say s
 - Give NO buy / sell / hold advice, NO price target, NO recommendation of any kind.
 - Make NO prediction about future price or returns.
 - Be concise and neutral. Describe what the data shows and what it does not.
-- End with a "Source" line naming the data source given in the FACTS block.
+- End with a "Source" line naming the data source AND the "Data as of" date from the FACTS \
+block, so the reader knows how fresh these figures are.
 
 Structure:
 1. What the company is, using only the supplied name/sector/industry.
@@ -44,7 +45,8 @@ HARD RULES (real money):
 - Use ONLY the figures in the FACTS block. Never invent numbers.
 - Give NO advice, NO recommendation, NO rebalancing suggestion, NO prediction.
 - Describe concentration, sector tilt, and overall P&L strictly from the supplied figures.
-- Neutral and concise. End with the "Source" line from the FACTS block.
+- Neutral and concise. End with the "Source" line and the "Data as of" date from the FACTS \
+block.
 """
 
 
@@ -69,17 +71,19 @@ class ResearchAnalyst:
         return self._client
 
     def research_note(self, position: PositionAnalysis, fundamentals: dict,
-                      source_label: str = "yfinance / Yahoo Finance") -> str:
+                      source_label: str = "yfinance / Yahoo Finance",
+                      data_as_of: str | None = None) -> str:
         if not self.available:
             return _NO_KEY_MESSAGE
-        facts = _position_facts(position, fundamentals, source_label)
+        facts = _position_facts(position, fundamentals, source_label, data_as_of)
         return self._complete(_POSITION_SYSTEM, facts)
 
     def portfolio_overview(self, analysis: PortfolioAnalysis,
-                           source_label: str = "yfinance / Yahoo Finance") -> str:
+                           source_label: str = "yfinance / Yahoo Finance",
+                           data_as_of: str | None = None) -> str:
         if not self.available:
             return _NO_KEY_MESSAGE
-        facts = _portfolio_facts(analysis, source_label)
+        facts = _portfolio_facts(analysis, source_label, data_as_of)
         return self._complete(_OVERVIEW_SYSTEM, facts)
 
     def _complete(self, system: str, facts: str) -> str:
@@ -106,8 +110,10 @@ def _fmt(value, suffix: str = "") -> str:
     return f"{value}{suffix}"
 
 
-def _position_facts(position: PositionAnalysis, f: dict, source_label: str) -> str:
+def _position_facts(position: PositionAnalysis, f: dict, source_label: str,
+                    data_as_of: str | None = None) -> str:
     return f"""FACTS (use only these):
+Data as of: {data_as_of or 'unavailable'}
 Symbol: {position.symbol}
 Company name: {f.get('name') or 'unavailable'}
 Sector: {f.get('sector') or position.sector or 'unavailable'}
@@ -130,11 +136,13 @@ Source: {source_label}
 """
 
 
-def _portfolio_facts(a: PortfolioAnalysis, source_label: str) -> str:
+def _portfolio_facts(a: PortfolioAnalysis, source_label: str,
+                     data_as_of: str | None = None) -> str:
     sectors = ", ".join(f"{s} {w * 100:.1f}%" for s, w in
                         sorted(a.sector_weights.items(), key=lambda kv: -kv[1])) or "unavailable"
     missing = ", ".join(a.missing_symbols) if a.missing_symbols else "none"
     return f"""FACTS (use only these):
+Data as of: {data_as_of or 'unavailable'}
 Number of priced holdings: {len(a.positions)}
 Total invested: {_fmt(a.total_invested)}
 Total market value: {_fmt(a.total_value)}

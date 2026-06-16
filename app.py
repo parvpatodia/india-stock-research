@@ -63,8 +63,11 @@ def get_analyst() -> ResearchAnalyst:
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def fetch_prices(symbols: tuple[str, ...]) -> dict[str, float | None]:
-    return get_provider().current_prices(list(symbols))
+def fetch_prices(symbols: tuple[str, ...]) -> tuple[dict[str, float | None], str]:
+    # WHY: stamp the fetch time inside the cached fn so the displayed "as of" reflects the
+    # actual price age on a cache hit, not the current wall clock (real-money guardrail #1).
+    prices = get_provider().current_prices(list(symbols))
+    return prices, datetime.now().strftime("%Y-%m-%d %H:%M")
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -137,7 +140,6 @@ if not holdings:
     st.stop()
 
 symbols = tuple(h.symbol for h in holdings)
-as_of = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 # --- market context ---
 
@@ -157,11 +159,11 @@ for col, idx_symbol in zip(ctx_cols, (NIFTY50_SYMBOL, SENSEX_SYMBOL)):
 # --- price + analyze ---
 
 with st.spinner("Fetching live prices..."):
-    prices = fetch_prices(symbols)
+    prices, prices_as_of = fetch_prices(symbols)
 analysis = analyze_portfolio(holdings, prices)
 
 st.subheader("Portfolio summary")
-st.caption(f"Prices as of {as_of}. Source: yfinance / Yahoo Finance.")
+st.caption(f"Prices as of {prices_as_of}. Source: yfinance / Yahoo Finance.")
 
 m = st.columns(4)
 m[0].metric("Invested", money(analysis.total_invested))
@@ -265,7 +267,8 @@ else:
 
     if st.button("Generate portfolio overview"):
         with st.spinner("Writing overview..."):
-            st.session_state.notes["__overview__"] = analyst.portfolio_overview(analysis)
+            st.session_state.notes["__overview__"] = analyst.portfolio_overview(
+                analysis, data_as_of=prices_as_of)
     if "__overview__" in st.session_state.notes:
         st.markdown(st.session_state.notes["__overview__"])
 
@@ -275,7 +278,8 @@ else:
             if st.button("Generate note", key=f"note_{p.symbol}"):
                 with st.spinner(f"Researching {p.symbol}..."):
                     fundamentals = fetch_fundamentals(p.symbol)
-                    st.session_state.notes[p.symbol] = analyst.research_note(p, fundamentals)
+                    st.session_state.notes[p.symbol] = analyst.research_note(
+                        p, fundamentals, data_as_of=prices_as_of)
             if p.symbol in st.session_state.notes:
                 st.markdown(st.session_state.notes[p.symbol])
 
