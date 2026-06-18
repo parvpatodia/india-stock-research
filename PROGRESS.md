@@ -39,5 +39,15 @@
   under registered sources; show cited claims + abstentions; live smoke with a real key.
 - G9 IPO data adapter + DRHP/RHP analysis (needs a source/feed from owner).
 - MF/SIP views over AMFIProvider (NAV history, SIP return math).
-- Owner to provide: source list (fill config/sources.yaml), ANTHROPIC_API_KEY for the writer.
+- Owner to provide: source list (fill config/sources.yaml), and ONE LLM option in .env
+  (NVIDIA NIM free key, or local Ollama). No paid key required.
 - Carryover from v1: market-wide screener; Upstox/Kite live-data adapter; portfolio-level drawdown.
+
+## 2026-06-18 (session 3) — provider-agnostic LLM
+- Owner directed: no paid Anthropic key; use free/open models. Built `src/llm/client.py`
+  (LLMClient + LiteLLMClient); analysts now take an injected client. Default config via
+  LLM_MODEL env -> NVIDIA NIM free / Ollama local / any LiteLLM provider. Removed the hard
+  Anthropic dependency.
+- Verified offline: 39 tests green incl. full grounded path with a FakeClient; app AppTest
+  clean, shows the LLM-off hint, no Anthropic leftovers. NOT verified: a real live LLM call
+  (no provider key and no local model on this machine yet). Owner picks an option to go live.

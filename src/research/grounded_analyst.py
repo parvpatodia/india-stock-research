@@ -9,9 +9,8 @@ downgrades any "fact" that lacks a primary source. _assemble_result is pure and 
 from __future__ import annotations
 
 import json
-import os
 
-from ..constants import DEFAULT_RESEARCH_MODEL
+from ..llm.client import LLMClient, LiteLLMClient
 from ..sources.registry import SourceRegistry
 from .claims import (
     ESTIMATE,
@@ -46,14 +45,12 @@ If the sources cannot answer, return {"abstain": true, "reason": "..."}.
 
 
 class GroundedAnalyst:
-    def __init__(self, api_key: str | None = None, model: str | None = None):
-        self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
-        self.model = model or os.environ.get("RESEARCH_MODEL") or DEFAULT_RESEARCH_MODEL
-        self._client = None
+    def __init__(self, client: LLMClient | None = None):
+        self.client = client or LiteLLMClient()
 
     @property
     def available(self) -> bool:
-        return bool(self.api_key)
+        return self.client.available
 
     def answer(self, question: str, store: DocumentStore, registry: SourceRegistry,
                k: int = 5, as_of: str | None = None) -> ResearchResult:
@@ -67,8 +64,8 @@ class GroundedAnalyst:
         if not self.available:
             return ResearchResult.abstain(
                 question,
-                "Sources matched, but the writer is off. Set ANTHROPIC_API_KEY to generate "
-                "a grounded answer.",
+                "Sources matched, but no LLM is configured. Set LLM_MODEL (e.g. an NVIDIA "
+                "NIM open model) to generate a grounded answer.",
             )
         payload = self._ask_model(question, retrieved)
         return _assemble_result(question, payload, retrieved, registry, as_of)
@@ -80,15 +77,7 @@ class GroundedAnalyst:
         )
         user = f"QUESTION:\n{question}\n\nSOURCES:\n{sources_block}"
         try:
-            from anthropic import Anthropic
-            client = self._client or Anthropic(api_key=self.api_key)
-            self._client = client
-            message = client.messages.create(
-                model=self.model, max_tokens=1200, system=_SYSTEM,
-                messages=[{"role": "user", "content": user}],
-            )
-            raw = "".join(b.text for b in message.content
-                          if getattr(b, "type", "") == "text").strip()
+            raw = self.client.complete(_SYSTEM, user, max_tokens=1200)
             return _parse_json(raw)
         except Exception as exc:
             return {"abstain": True, "reason": f"answer generation failed: {exc}"}

@@ -1,20 +1,18 @@
 """LLM research notes, grounded in fetched data.
 
 The whole real-money risk of an LLM here is a confident wrong number. The defense is
-structural: the model is given a FACTS block and told, in the system prompt, to use only
-those figures and never to recommend anything. If no API key is set, the analysis still
-works and this layer returns a plain "set your key" message instead of crashing.
+structural: the model is given a FACTS block and told to use only those figures and never
+to recommend anything. The model is provider-agnostic (see src/llm/client.py); if none is
+configured, the analysis still works and this layer returns a plain message.
 """
 from __future__ import annotations
 
-import os
-
-from ..constants import DEFAULT_RESEARCH_MODEL
+from ..llm.client import LLMClient, LiteLLMClient
 from ..portfolio.models import PortfolioAnalysis, PositionAnalysis
 
-_NO_KEY_MESSAGE = (
-    "AI research note unavailable. Set ANTHROPIC_API_KEY in your .env to enable grounded "
-    "research notes. Portfolio analysis above does not need a key."
+_NO_LLM_MESSAGE = (
+    "AI research note unavailable. Configure an LLM (set LLM_MODEL, e.g. an NVIDIA NIM open "
+    "model) to enable grounded research notes. Portfolio analysis above does not need one."
 )
 
 _POSITION_SYSTEM = """You are an equity research assistant for Indian stocks. You write a \
@@ -51,30 +49,20 @@ block.
 
 
 class ResearchAnalyst:
-    """Wraps the Anthropic client. Lazy: no client is built until a note is requested."""
+    """Writes grounded portfolio notes through an injected, provider-agnostic LLMClient."""
 
-    def __init__(self, api_key: str | None = None, model: str | None = None):
-        self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
-        self.model = model or os.environ.get("RESEARCH_MODEL") or DEFAULT_RESEARCH_MODEL
-        self._client = None
+    def __init__(self, client: LLMClient | None = None):
+        self.client = client or LiteLLMClient()
 
     @property
     def available(self) -> bool:
-        return bool(self.api_key)
-
-    def _client_or_none(self):
-        if not self.available:
-            return None
-        if self._client is None:
-            from anthropic import Anthropic
-            self._client = Anthropic(api_key=self.api_key)
-        return self._client
+        return self.client.available
 
     def research_note(self, position: PositionAnalysis, fundamentals: dict,
                       source_label: str = "yfinance / Yahoo Finance",
                       data_as_of: str | None = None) -> str:
         if not self.available:
-            return _NO_KEY_MESSAGE
+            return _NO_LLM_MESSAGE
         facts = _position_facts(position, fundamentals, source_label, data_as_of)
         return self._complete(_POSITION_SYSTEM, facts)
 
@@ -82,24 +70,15 @@ class ResearchAnalyst:
                            source_label: str = "yfinance / Yahoo Finance",
                            data_as_of: str | None = None) -> str:
         if not self.available:
-            return _NO_KEY_MESSAGE
+            return _NO_LLM_MESSAGE
         facts = _portfolio_facts(analysis, source_label, data_as_of)
         return self._complete(_OVERVIEW_SYSTEM, facts)
 
     def _complete(self, system: str, facts: str) -> str:
-        client = self._client_or_none()
         try:
-            message = client.messages.create(
-                model=self.model,
-                max_tokens=800,
-                system=system,
-                messages=[{"role": "user", "content": facts}],
-            )
+            return self.client.complete(system, facts, max_tokens=800)
         except Exception as exc:  # surface the failure honestly, do not fake a note
             return f"Research note failed: {exc}"
-        return "".join(
-            block.text for block in message.content if getattr(block, "type", "") == "text"
-        ).strip()
 
 
 def _fmt(value, suffix: str = "") -> str:

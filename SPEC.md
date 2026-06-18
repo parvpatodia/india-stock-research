@@ -115,7 +115,16 @@ src/research/grounding.py       DocumentStore: chunk + offline TF-IDF retrieve +
 src/research/claims.py          Citation, Claim, ResearchResult + validate/enforce citations
 src/research/grounded_analyst.py grounded Q&A: retrieve -> LLM(JSON) -> assemble -> validate
 src/data/amfi_provider.py       mutual fund NAV lookup (AMFI)
+src/llm/client.py               provider-agnostic LLMClient via LiteLLM (NIM/Ollama/etc.)
 ```
+
+## LLM provider (decided 2026-06-18)
+Provider-agnostic via LiteLLM, configured by `LLM_MODEL` env (e.g. `nvidia_nim/...` free
+hosted, or `ollama/...` local). No vendor lock-in, no mandatory paid key. Rationale: the
+grounding spine validates output regardless of model, so the model is a config line and the
+choice is low-stakes; a fast instruct model fits the structured-extraction task better than
+a heavy reasoning model. Caveats: free hosted tiers are eval-grade (rate-limited), and
+hosted routing sends data off-machine (NIM = US, Ollama = local).
 
 ## Feature checklist v2 (each gated by a runnable check)
 - [ ] G1 sources: tiers + registry + from_config(yaml); citable_as_fact only for Tier 1. (test)

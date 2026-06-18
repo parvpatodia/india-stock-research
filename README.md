@@ -20,7 +20,8 @@ and never to make a recommendation. Verify every figure before you act on it.
   the worst single-name drawdown.
 - **Market context**: live NIFTY 50 and SENSEX levels.
 - **AI research notes**: a portfolio overview and per-holding notes, each grounded in the
-  fetched data and sourced. Requires an Anthropic API key; everything else works without one.
+  fetched data and sourced. Requires an LLM (provider-agnostic, see below); everything else
+  works without one.
 
 Not in v1: screening the full market universe, trade execution, recommendations.
 
@@ -39,12 +40,20 @@ python3 -m venv .venv
 ./.venv/bin/python -m pip install -r requirements.txt
 ```
 
-Optional, for AI research notes only:
+Optional, for the AI research notes only (the LLM is provider-agnostic via LiteLLM):
 
 ```bash
 cp .env.example .env
-# edit .env and set ANTHROPIC_API_KEY=...
+# then pick ONE option in .env:
+#   A) NVIDIA NIM (free hosted open models): set LLM_MODEL + NVIDIA_NIM_API_KEY
+#   B) Ollama (fully local, free):           set LLM_MODEL=ollama/<model> + LLM_API_BASE
+#   C) any other LiteLLM provider:           set LLM_MODEL (+ LLM_API_KEY / LLM_API_BASE)
 ```
+
+The portfolio and mutual-fund analysis works with no LLM at all. The grounding spine
+validates whatever model writes the notes, so the model is a config choice, not a code
+change. For the structured, grounded extraction this does, a fast instruct model is a
+better fit than a heavy reasoning one.
 
 ## Run
 

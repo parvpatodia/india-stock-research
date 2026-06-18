@@ -23,8 +23,7 @@ DEFAULT_HISTORY_PERIOD = "1y"
 CONCENTRATION_TOP_HOLDING_WARN = 0.25  # one name > 25% of the book
 CONCENTRATION_HHI_WARN = 0.20          # Herfindahl index above this reads as concentrated
 
-# LLM research layer
-DEFAULT_RESEARCH_MODEL = "claude-sonnet-4-6"
+# LLM research layer: model/provider is configured via LLM_MODEL (see src/llm/client.py).
 
 DISCLAIMER = (
     "For personal research only. Not investment advice, not a recommendation, and not a "

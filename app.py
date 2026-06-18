@@ -112,10 +112,10 @@ with st.sidebar:
     st.divider()
     analyst = get_analyst()
     if analyst.available:
-        st.success(f"AI research: on ({analyst.model})")
+        st.success(f"AI research: on ({analyst.client.model_name})")
     else:
-        st.info("AI research: off. Set ANTHROPIC_API_KEY in .env to enable research notes. "
-                "Analysis below works without it.")
+        st.info("AI research: off. Set LLM_MODEL in .env (e.g. an NVIDIA NIM open model) to "
+                "enable research notes. Analysis below works without it.")
 
 # --- resolve the data source ---
 
@@ -260,7 +260,7 @@ if st.button("Compute risk metrics"):
 st.subheader("AI research notes")
 analyst = get_analyst()
 if not analyst.available:
-    st.info("Set ANTHROPIC_API_KEY in your .env to generate research notes.")
+    st.info("Set LLM_MODEL in your .env (e.g. an NVIDIA NIM open model) to generate research notes.")
 else:
     if "notes" not in st.session_state:
         st.session_state.notes = {}
