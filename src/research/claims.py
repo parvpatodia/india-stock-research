@@ -33,8 +33,13 @@ class Claim:
 
     @property
     def is_verified_fact(self) -> bool:
-        return self.kind == FACT and any(
-            c.tier == CredibilityTier.PRIMARY for c in self.citations
+        # WHY: a fact must be backed by primary sources ONLY. `any` would let a claim ride
+        # on one annual-report chunk while co-citing a finfluencer chunk; `all` (with a
+        # non-empty guard) means a single non-primary citation breaks fact status.
+        return (
+            self.kind == FACT
+            and len(self.citations) > 0
+            and all(c.tier == CredibilityTier.PRIMARY for c in self.citations)
         )
 
     @property

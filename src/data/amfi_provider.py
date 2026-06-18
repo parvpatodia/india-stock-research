@@ -6,6 +6,7 @@ tested against a sample without the network.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Callable
 
@@ -35,6 +36,10 @@ def parse_navall(text: str) -> list[MFScheme]:
             nav = float(parts[4])
         except ValueError:
             continue  # NAV reported as 'N.A.' -> skip rather than guess
+        # WHY: float('nan')/float('inf') parse silently; a 0 NAV is a not-yet-priced scheme.
+        # Any of these would show as a Tier-1 fact, so reject rather than display a bad NAV.
+        if not math.isfinite(nav) or nav <= 0:
+            continue
         schemes.append(MFScheme(
             scheme_code=parts[0],
             name=parts[3],

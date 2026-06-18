@@ -98,7 +98,7 @@ def _parse_json(raw: str) -> dict:
     text = raw.strip()
     if text.startswith("```"):
         text = text.split("```", 2)[1] if "```" in text else text
-        if text.lstrip().startswith("json"):
+        if text.lstrip().lower().startswith("json"):  # case-insensitive language tag
             text = text.lstrip()[4:]
     try:
         return json.loads(text.strip())
@@ -119,24 +119,41 @@ def _assemble_result(question: str, payload: dict, retrieved: list[RetrievedChun
             or "no verified answer"
         return ResearchResult.abstain(question, reason)
 
+    raw_claims = payload.get("claims")
+    if not isinstance(raw_claims, list):
+        return ResearchResult.abstain(question, "model returned no usable claims")
+
     chunk_by_id = {rc.chunk.chunk_id: rc.chunk for rc in retrieved}
     claims: list[Claim] = []
-    for raw_claim in payload.get("claims", []):
+    for raw_claim in raw_claims:
+        if not isinstance(raw_claim, dict):
+            continue
         text = str(raw_claim.get("text", "")).strip()
         if not text:
             continue
+        cids = raw_claim.get("chunk_ids")
+        if not isinstance(cids, list):
+            cids = []
         citations = []
-        for cid in raw_claim.get("chunk_ids", []):
+        for cid in cids:
             chunk = chunk_by_id.get(cid)
             if chunk is None:
                 continue  # model cited a chunk it was not given -> drop
             citation = build_citation(chunk.source_id, chunk.chunk_id, registry, as_of)
             if citation is not None:
                 citations.append(citation)
+        # WHY: no chunk, no claim. A claim with no resolved citation is unsourced and must
+        # never display (not even as opinion), so it is dropped entirely.
+        if not citations:
+            continue
         kind = str(raw_claim.get("kind", OPINION)).lower()
         if kind not in _ALLOWED_KINDS:
             kind = OPINION
         claims.append(Claim(text=text, citations=tuple(citations), kind=kind))
+
+    if not claims:
+        return ResearchResult.abstain(
+            question, "Sources matched, but no claim could be tied to them. No verified answer.")
 
     result = ResearchResult(question=question, claims=tuple(claims))
     return enforce_citations(result)

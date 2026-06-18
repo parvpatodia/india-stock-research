@@ -50,13 +50,21 @@ def _chunk_text(text: str, words_per_chunk: int, overlap: int) -> list[str]:
 
 
 class DocumentStore:
-    def __init__(self, words_per_chunk: int = 120, overlap: int = 20):
+    def __init__(self, words_per_chunk: int = 120, overlap: int = 20, registry=None):
         self._chunks: list[Chunk] = []
         self._tokens: list[list[str]] = []   # parallel to _chunks
         self.words_per_chunk = words_per_chunk
         self.overlap = overlap
+        # WHY: if a registry is given, every ingested chunk's source must be tiered in it.
+        # This closes the trust boundary at ingestion so no chunk with an unknown (untiered)
+        # source can later ride into a fact via a co-cited primary chunk.
+        self._registry = registry
 
     def add_document(self, source_id: str, text: str, locator_prefix: str = "") -> int:
+        if self._registry is not None and self._registry.get(source_id) is None:
+            raise ValueError(
+                f"source '{source_id}' is not in the registry; add it to config/sources.yaml "
+                "before ingesting its documents")
         pieces = _chunk_text(text, self.words_per_chunk, self.overlap)
         for i, piece in enumerate(pieces):
             chunk_id = f"{source_id}#{len(self._chunks)}"
@@ -95,7 +103,10 @@ class DocumentStore:
             return 0.0
         return dot / (na * nb)
 
-    def retrieve(self, query: str, k: int = 5, min_score: float = 0.05) -> list[RetrievedChunk]:
+    def retrieve(self, query: str, k: int = 5, min_score: float = 0.10) -> list[RetrievedChunk]:
+        # WHY: a higher cosine floor than a token-overlap minimum reduces the chance a barely
+        # related chunk (one shared common word) gets retrieved and then cited as fact.
+        # Over-abstaining is the safe failure here; tune up if it abstains too often.
         if not self._chunks:
             return []
         idf = self._idf()

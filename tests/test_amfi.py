@@ -20,6 +20,19 @@ def test_parse_navall_skips_headers_and_na():
     assert s.isin == "INF209KB17W8"
 
 
+def test_parse_navall_rejects_nonfinite_and_nonpositive_nav():
+    sample = (
+        "Scheme Code;ISIN;ISIN2;Scheme Name;Net Asset Value;Date\n"
+        "111;A;;Good Fund;10.5;18-Jun-2026\n"
+        "222;B;;Nan Fund;nan;18-Jun-2026\n"
+        "333;C;;Inf Fund;inf;18-Jun-2026\n"
+        "444;D;;Zero Fund;0;18-Jun-2026\n"
+        "555;E;;Neg Fund;-5;18-Jun-2026\n"
+    )
+    schemes = parse_navall(sample)
+    assert {s.scheme_code for s in schemes} == {"111"}
+
+
 def test_amfi_provider_with_injected_fetcher():
     provider = AMFIProvider(fetcher=lambda: SAMPLE)
     assert provider.load() == 2

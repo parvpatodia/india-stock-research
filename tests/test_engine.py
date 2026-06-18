@@ -102,26 +102,50 @@ def _setup_assembly():
     return reg, retrieved
 
 
-def test_assemble_enforces_tiers_and_drops_hallucinated_chunks():
+def test_assemble_enforces_tiers_drops_hallucinated_and_mixed():
     reg, retrieved = _setup_assembly()
     payload = {"abstain": False, "claims": [
         {"text": "Revenue was 100 cr", "chunk_ids": ["ar#0"], "kind": "fact"},
         {"text": "Creator suggests buying", "chunk_ids": ["yt#0"], "kind": "fact"},
         {"text": "Ghost claim", "chunk_ids": ["ghost#9"], "kind": "fact"},
+        {"text": "Mixed cite", "chunk_ids": ["ar#0", "yt#0"], "kind": "fact"},
         {"text": "Creator is bullish", "chunk_ids": ["yt#0"], "kind": "opinion"},
     ]}
     res = _assemble_result("q", payload, retrieved, reg, as_of="2026-06-18")
     assert not res.abstained
-    c = list(res.claims)
-    assert c[0].kind == FACT and c[0].is_verified_fact          # primary-backed fact stays
-    assert c[0].citations[0].as_of == "2026-06-18"
-    assert c[1].kind == UNVERIFIED                              # "fact" on a creator -> downgraded
-    assert c[2].kind == UNVERIFIED and len(c[2].citations) == 0  # hallucinated chunk dropped
-    assert c[3].kind == OPINION
-    assert c[3].citations[0].tier == CredibilityTier.CREATOR
+    by = {c.text: c for c in res.claims}
+    assert "Ghost claim" not in by                               # H2: uncited claim dropped
+    rev = by["Revenue was 100 cr"]
+    assert rev.kind == FACT and rev.is_verified_fact             # primary-only fact stays
+    assert rev.citations[0].as_of == "2026-06-18"
+    assert by["Creator suggests buying"].kind == UNVERIFIED      # fact on creator -> downgraded
+    assert by["Mixed cite"].kind == UNVERIFIED                   # H1: primary + creator is NOT a fact
+    assert by["Creator is bullish"].kind == OPINION
+    assert by["Creator is bullish"].citations[0].tier == CredibilityTier.CREATOR
 
 
 def test_assemble_abstain_payload():
     reg, retrieved = _setup_assembly()
     res = _assemble_result("q", {"abstain": True, "reason": "nope"}, retrieved, reg, None)
     assert res.abstained and res.abstain_reason == "nope"
+
+
+def test_assemble_all_uncited_abstains():
+    reg, retrieved = _setup_assembly()
+    payload = {"claims": [{"text": "ghost only", "chunk_ids": ["nope#1"], "kind": "fact"}]}
+    res = _assemble_result("q", payload, retrieved, reg, None)
+    assert res.abstained
+
+
+def test_assemble_bad_claims_type_abstains():
+    reg, retrieved = _setup_assembly()
+    assert _assemble_result("q", {"claims": "not a list"}, retrieved, reg, None).abstained
+    assert _assemble_result("q", {"claims": ["junk", 5]}, retrieved, reg, None).abstained
+
+
+def test_documentstore_rejects_unregistered_source():
+    reg = SourceRegistry([Source("ar", "AR", CredibilityTier.PRIMARY)])
+    store = DocumentStore(registry=reg)
+    store.add_document("ar", "some text about revenue and earnings")
+    with pytest.raises(ValueError):
+        store.add_document("unknown_src", "text from a source nobody tiered")
