@@ -1,0 +1,38 @@
+# Source registry. Copy to config/sources.yaml and fill in YOUR sources.
+#
+# Tiers decide how the system is allowed to use a source:
+#   primary  -> Tier 1. Citable AS FACT. Annual reports, AGM transcripts, SEBI filings,
+#               exchange data (NSE/BSE), AMFI NAV, audited financials, RBI/official data.
+#   analyst  -> Tier 2. Attributed OPINION. Registered analyst/broker research, reputable
+#               financial press. Shown as "X says...", never as a bare fact.
+#   creator  -> Tier 3. CONTEXT ONLY. YouTube/Instagram creators. Tracked and attributed
+#               with a date, never the basis for a fact or a number.
+#
+# Each entry: id (unique, short), name, url (optional), notes (optional).
+# When you send me your real list, I drop the entries in here. Nothing is trusted by default.
+
+primary:
+  - id: nse
+    name: NSE India (exchange data)
+    url: https://www.nseindia.com
+    notes: Live equity prices and corporate actions.
+  - id: amfi
+    name: AMFI NAVAll
+    url: https://www.amfiindia.com/spages/NAVAll.txt
+    notes: Daily mutual fund NAVs. Free, no key.
+  # - id: reliance_ar_fy24
+  #   name: Reliance Industries Annual Report FY24
+  #   url: <pdf url or local path>
+  #   notes: Ingest the PDF text under this source id.
+
+analyst:
+  # - id: broker_x_research
+  #   name: <registered broker> research desk
+  #   url: <url>
+  #   notes: Attributed opinion only.
+
+creator:
+  # - id: yt_handle
+  #   name: <creator name> (YouTube)
+  #   url: <channel url>
+  #   notes: Context only. Always attributed with date. SEBI restricts unregistered tips.
