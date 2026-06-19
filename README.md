@@ -46,7 +46,7 @@ Optional, for the AI research notes only (the LLM is provider-agnostic via LiteL
 cp .env.example .env
 # then pick ONE option in .env:
 #   A) NVIDIA NIM (free hosted open models): set LLM_MODEL + NVIDIA_NIM_API_KEY
-#   B) Ollama (fully local, free):           set LLM_MODEL=ollama/<model> + LLM_API_BASE
+#   B) Ollama (fully local, free):           set LLM_MODEL=ollama_chat/<model> + LLM_API_BASE
 #   C) any other LiteLLM provider:           set LLM_MODEL (+ LLM_API_KEY / LLM_API_BASE)
 ```
 
@@ -54,6 +54,13 @@ The portfolio and mutual-fund analysis works with no LLM at all. The grounding s
 validates whatever model writes the notes, so the model is a config choice, not a code
 change. For the structured, grounded extraction this does, a fast instruct model is a
 better fit than a heavy reasoning one.
+
+To verify the LLM is wired correctly end to end (answers a question from a source, cites
+it, and abstains when the answer is not in the sources):
+
+```bash
+SMOKE_MODEL=ollama_chat/qwen2.5:7b ./.venv/bin/python scripts/live_smoke.py
+```
 
 ## Run
 

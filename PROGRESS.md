@@ -49,5 +49,10 @@
   LLM_MODEL env -> NVIDIA NIM free / Ollama local / any LiteLLM provider. Removed the hard
   Anthropic dependency.
 - Verified offline: 39 tests green incl. full grounded path with a FakeClient; app AppTest
-  clean, shows the LLM-off hint, no Anthropic leftovers. NOT verified: a real live LLM call
-  (no provider key and no local model on this machine yet). Owner picks an option to go live.
+  clean, shows the LLM-off hint, no Anthropic leftovers.
+- LIVE VERIFIED (2026-06-18): installed Ollama (brew), ran scripts/live_smoke.py against a
+  real local model (qwen2.5:7b via ollama_chat/, no key, data local). Answerable question ->
+  verified fact cited to its primary source; figure-not-in-source -> abstained, no fabricated
+  number; unrelated question -> abstained. The free-open-model + grounding spine works e2e.
+- Ollama models available locally now: qwen2.5:7b, llama3.1. Recommended LLM_MODEL prefix is
+  `ollama_chat/` (sends the system prompt). Server: `ollama serve` (or `brew services start ollama`).
