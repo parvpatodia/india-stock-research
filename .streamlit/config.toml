@@ -1,0 +1,10 @@
+# Non-secret Streamlit config (safe to commit).
+# Secrets (LLM keys) go in .streamlit/secrets.toml locally (gitignored) or the Streamlit
+# Cloud "Secrets" UI when deployed. Streamlit exposes those secrets as environment variables,
+# which is how this app reads LLM_MODEL etc.
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "light"

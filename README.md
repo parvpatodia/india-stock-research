@@ -103,6 +103,30 @@ python3 -m venv .venv
 Open the URL it prints (default http://localhost:8501). Tick "Use sample portfolio" to try
 it, or upload your own CSV.
 
+## Deploy
+
+This is a standard Streamlit app, so the simplest host is Streamlit Community Cloud (free,
+git-based):
+
+1. Push this repo to GitHub.
+2. At share.streamlit.io, create an app pointing at `app.py` on your branch; pick Python 3.12.
+3. For the research mentor, add your LLM config in the app's **Secrets** UI as TOML:
+   ```toml
+   LLM_MODEL = "nvidia_nim/deepseek-ai/deepseek-v3.2"
+   NVIDIA_NIM_API_KEY = "nvapi-..."
+   ```
+   Streamlit exposes secrets as environment variables, which is how the app reads them.
+
+Two honest notes for a hosted deploy:
+- A **local Ollama** model is not reachable from a hosted server. On Streamlit Cloud use a
+  hosted provider (NVIDIA NIM). For a fully local, private setup, run on your own machine.
+- A hosted deploy means portfolio uploads and questions travel to that server. For maximum
+  privacy of your family's data, run locally with a local Ollama model.
+
+Containerized deploy is straightforward (the app needs only `requirements.txt` and
+`streamlit run app.py`). A build-tested Dockerfile can be added when a Docker daemon is
+available; it is intentionally not shipped unverified.
+
 ## Portfolio CSV format
 
 Columns are matched loosely, so Zerodha and Groww holdings exports work as-is. Minimum:
