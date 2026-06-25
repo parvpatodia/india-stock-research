@@ -43,6 +43,21 @@
   (NVIDIA NIM free key, or local Ollama). No paid key required.
 - Carryover from v1: market-wide screener; Upstox/Kite live-data adapter; portfolio-level drawdown.
 
+## 2026-06-18 (session 4, /loop) — document ingestion + parent research surface
+- Built src/research/library.py: ingests txt/md/pdf from a documents dir into a registry-
+  bound DocumentStore, matching filename stem -> source id; unregistered/untiered files
+  skipped and reported (never ingested). Added DocumentStore.source_ids(). pypdf for PDFs.
+- Added the "Ask the research mentor" section to app.py: loads the source library (real
+  config/sources.yaml + documents/, else bundled sample_data), shows loaded sources by tier,
+  answers a typed question with cited verified facts / opinion / unverified badges, or a
+  clear "No verified answer" abstention.
+- Sample library bundled (sample_data/sources.yaml + documents/*, synthetic, labeled).
+- VERIFIED: 43 tests green (+4 ingestion). AppTest with no LLM -> research surface renders,
+  degrades cleanly. LIVE AppTest with ollama_chat/qwen2.5:7b -> typed question returned a
+  green VERIFIED FACT cited to its source through the UI, no exception. This is G8's first
+  working version (parent-facing grounded Q&A). Remaining G8 polish: readability pass, MF/SIP
+  and per-holding entry points into the same surface.
+
 ## 2026-06-18 (session 3) — provider-agnostic LLM
 - Owner directed: no paid Anthropic key; use free/open models. Built `src/llm/client.py`
   (LLMClient + LiteLLMClient); analysts now take an injected client. Default config via

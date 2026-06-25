@@ -76,6 +76,10 @@ class DocumentStore:
     def __len__(self) -> int:
         return len(self._chunks)
 
+    def source_ids(self) -> set[str]:
+        """Distinct source ids that have at least one chunk in the store."""
+        return {c.source_id for c in self._chunks}
+
     def _idf(self) -> dict[str, float]:
         n = len(self._chunks)
         df: Counter = Counter()

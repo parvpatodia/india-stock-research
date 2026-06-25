@@ -42,12 +42,24 @@ from src.portfolio.analysis import (  # noqa: E402
 )
 from src.portfolio.loader import load_holdings  # noqa: E402
 from src.research.analyst import ResearchAnalyst  # noqa: E402
+from src.research.claims import FACT, OPINION, UNVERIFIED  # noqa: E402
+from src.research.grounded_analyst import GroundedAnalyst  # noqa: E402
+from src.research.library import build_library  # noqa: E402
+from src.sources.registry import SourceRegistry  # noqa: E402
 
 load_dotenv()
 
 st.set_page_config(page_title="India Equity Research", layout="wide", page_icon="📊")
 
-SAMPLE_CSV = Path(__file__).resolve().parent / "sample_data" / "sample_portfolio.csv"
+_ROOT = Path(__file__).resolve().parent
+SAMPLE_CSV = _ROOT / "sample_data" / "sample_portfolio.csv"
+
+# Sources/documents: prefer the owner's real config, else fall back to the bundled sample.
+SOURCES_YAML = _ROOT / "config" / "sources.yaml"
+DOCS_DIR = _ROOT / "documents"
+if not SOURCES_YAML.exists():
+    SOURCES_YAML = _ROOT / "sample_data" / "sources.yaml"
+    DOCS_DIR = _ROOT / "sample_data" / "documents"
 
 
 # --- cached data access (the provider is the only network boundary) ---
@@ -60,6 +72,21 @@ def get_provider() -> YFinanceProvider:
 @st.cache_resource
 def get_analyst() -> ResearchAnalyst:
     return ResearchAnalyst()
+
+
+@st.cache_resource
+def get_grounded_analyst() -> GroundedAnalyst:
+    return GroundedAnalyst()
+
+
+@st.cache_resource
+def get_library():
+    """Build the source registry + document store once. (registry, store, skipped_files)."""
+    if not SOURCES_YAML.exists():
+        return None, None, []
+    registry = SourceRegistry.from_config(SOURCES_YAML)
+    store, skipped = build_library(registry, DOCS_DIR)
+    return registry, store, skipped
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -282,6 +309,57 @@ else:
                         p, fundamentals, data_as_of=prices_as_of)
             if p.symbol in st.session_state.notes:
                 st.markdown(st.session_state.notes[p.symbol])
+
+# --- Ask the research mentor (grounded in the source library, cited or it abstains) ---
+
+st.divider()
+st.subheader("Ask the research mentor")
+st.caption("Answers come only from your source library, with citations. If the answer is "
+           "not in a source, it says so. It never guesses, recommends, or predicts.")
+
+registry, store, skipped = get_library()
+if registry is None or store is None or len(store) == 0:
+    st.info("No documents loaded. Add sources to config/sources.yaml and drop their files "
+            "(named by source id) in documents/, or rely on the bundled sample.")
+else:
+    tiers = {}
+    for sid in sorted(store.source_ids()):
+        src = registry.get(sid)
+        if src:
+            tiers.setdefault(src.tier.label, []).append(src.name)
+    with st.expander(f"Source library ({len(store.source_ids())} loaded)"):
+        for tier_label, names in tiers.items():
+            st.markdown(f"**{tier_label}:** " + "; ".join(names))
+        if skipped:
+            st.warning("Skipped (not in the registry, so untiered and not loaded): "
+                       + ", ".join(skipped))
+
+    grounded = get_grounded_analyst()
+    if not grounded.available:
+        st.info("Set LLM_MODEL in your .env to ask questions (e.g. ollama_chat/qwen2.5:7b "
+                "for a free local model). The source library above is already loaded.")
+    question = st.text_input("Your question", placeholder="What was Acme's FY2024 net profit?")
+    if st.button("Ask", disabled=not grounded.available) and question.strip():
+        with st.spinner("Reading the sources..."):
+            result = grounded.answer(question, store, registry,
+                                     as_of=datetime.now().strftime("%Y-%m-%d %H:%M"))
+        if result.abstained:
+            st.warning(f"No verified answer. {result.abstain_reason}")
+        else:
+            for claim in result.claims:
+                cited = ", ".join(
+                    (registry.get(c.source_id).name if registry.get(c.source_id) else c.source_id)
+                    for c in claim.citations
+                ) or "no source"
+                if claim.kind == FACT and claim.is_verified_fact:
+                    st.success(f"✓ {claim.text}")
+                elif claim.kind == UNVERIFIED:
+                    st.error(f"⚠ Unverified: {claim.text}")
+                elif claim.kind == OPINION:
+                    st.info(f"Opinion: {claim.text}")
+                else:
+                    st.write(claim.text)
+                st.caption(f"Source: {cited}")
 
 st.divider()
 st.caption(DISCLAIMER)

@@ -1,0 +1,9 @@
+# SAMPLE source registry for the demo. The owner's real config lives at config/sources.yaml.
+# These point at the synthetic documents in sample_data/documents/ (stem == source id).
+primary:
+  - id: acme_ar_fy24
+    name: Acme Industries Annual Report FY2024 (SAMPLE, synthetic)
+    notes: Synthetic demo document, not real figures.
+  - id: xyz_fund_factsheet
+    name: XYZ Bluechip Fund factsheet (SAMPLE, synthetic)
+    notes: Synthetic demo document, not real figures.
