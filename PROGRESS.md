@@ -43,6 +43,21 @@
   (NVIDIA NIM free key, or local Ollama). No paid key required.
 - Carryover from v1: market-wide screener; Upstox/Kite live-data adapter; portfolio-level drawdown.
 
+## 2026-06-18 (session 5, /loop) — mutual funds & SIPs in the UI
+- Reviewed + hardened session-4 ingestion/render (corrupt-PDF degrade, fail-safe render,
+  fingerprint-keyed source cache) -- all committed.
+- Added src/sip.py: pure SIP future-value math (annuity-due), framed as arithmetic on an
+  assumption, NOT a prediction. Tested (zero-rate, invested=monthly*months, growth bound).
+- Added "Mutual funds & SIPs" section to app.py: live AMFI NAV lookup by fund name (gated
+  behind a search so page load needs no network), and a SIP projection helper with an
+  explicit "not a prediction, returns can be negative" caveat.
+- VERIFIED: 48 tests green (+4 SIP). AppTest default load clean (no network), SIP metrics
+  render (₹12L invested on 10k/10y). Live AppTest: fund search "bluechip" -> 15 real schemes
+  with live NAVs through the UI, no exception.
+- Next logical step: a SIP/MF "what this means" plain-English helper + ingest fund factsheets
+  into the grounded library so the mentor can answer fund questions with citations. IPO path
+  still blocked on an owner-provided data source.
+
 ## 2026-06-18 (session 4, /loop) — document ingestion + parent research surface
 - Built src/research/library.py: ingests txt/md/pdf from a documents dir into a registry-
   bound DocumentStore, matching filename stem -> source id; unregistered/untiered files

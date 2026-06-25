@@ -45,7 +45,9 @@ from src.research.analyst import ResearchAnalyst  # noqa: E402
 from src.research.claims import ESTIMATE, FACT, OPINION  # noqa: E402
 from src.research.grounded_analyst import GroundedAnalyst  # noqa: E402
 from src.research.library import build_library  # noqa: E402
+from src.sip import sip_future_value  # noqa: E402
 from src.sources.registry import SourceRegistry  # noqa: E402
+from src.data.amfi_provider import AMFIProvider  # noqa: E402
 
 load_dotenv()
 
@@ -77,6 +79,17 @@ def get_analyst() -> ResearchAnalyst:
 @st.cache_resource
 def get_grounded_analyst() -> GroundedAnalyst:
     return GroundedAnalyst()
+
+
+@st.cache_resource(show_spinner="Loading AMFI mutual-fund NAVs...")
+def get_amfi() -> AMFIProvider | None:
+    # WHY: loaded lazily (only when the user searches a fund) so a page load needs no network.
+    provider = AMFIProvider()
+    try:
+        provider.load()
+    except Exception:
+        return None
+    return provider
 
 
 def _library_fingerprint() -> str:
@@ -326,6 +339,45 @@ else:
                         p, fundamentals, data_as_of=prices_as_of)
             if p.symbol in st.session_state.notes:
                 st.markdown(st.session_state.notes[p.symbol])
+
+# --- Mutual funds & SIPs ---
+
+st.divider()
+st.subheader("Mutual funds & SIPs")
+
+st.markdown("**Look up a fund's NAV** (live, from AMFI)")
+fund_query = st.text_input("Search a mutual fund by name", key="fund_q",
+                           placeholder="e.g. bluechip, index, flexi cap")
+if fund_query.strip():
+    provider = get_amfi()
+    if provider is None:
+        st.warning("Could not load AMFI NAV data (network issue). Try again in a moment.")
+    else:
+        hits = provider.search(fund_query, limit=15)
+        if hits:
+            st.dataframe(pd.DataFrame([{
+                "Scheme code": h.scheme_code, "Scheme": h.name,
+                "NAV": round(h.nav, 4), "As of": h.date,
+            } for h in hits]), width="stretch", hide_index=True)
+            st.caption("NAVs are from AMFI, as of the date shown per scheme. A past NAV does "
+                       "not predict future returns.")
+        else:
+            st.info("No scheme matched that search.")
+
+st.markdown("**SIP projection** (arithmetic on an assumption, not a prediction)")
+sc = st.columns(3)
+sip_monthly = sc[0].number_input("Monthly SIP (₹)", min_value=0, value=10000, step=500)
+sip_years = sc[1].number_input("Years", min_value=1, max_value=40, value=10)
+sip_return = sc[2].number_input("Assumed annual return (%)", min_value=0.0, max_value=30.0,
+                                value=10.0, step=0.5)
+proj = sip_future_value(sip_monthly, sip_return, int(sip_years))
+pcols = st.columns(3)
+pcols[0].metric("You invest", money(proj.invested))
+pcols[1].metric(f"Projected at {sip_return:.1f}%", money(proj.projected_value))
+pcols[2].metric("Projected gain", money(proj.gain))
+st.caption("This is compound-interest arithmetic on a return YOU assumed. Real fund returns "
+           "vary year to year, are not guaranteed, and can be negative. This is not a "
+           "prediction and not advice.")
 
 # --- Ask the research mentor (grounded in the source library, cited or it abstains) ---
 
