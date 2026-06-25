@@ -43,6 +43,17 @@
   (NVIDIA NIM free key, or local Ollama). No paid key required.
 - Carryover from v1: market-wide screener; Upstox/Kite live-data adapter; portfolio-level drawdown.
 
+## 2026-06-18 (session 6, /loop) — plain-English readability for non-expert parents
+- src/glossary.py: curated one-line definitions (no LLM). Wired as help= tooltips on P&L,
+  HHI, beta, volatility, drawdown, SIP, plus a glossary expander. 51 tests green (+3); AppTest
+  confirms help + glossary render.
+- Next logical step: README refresh to document the now-substantial feature set (grounded
+  research mentor, MF/SIP, glossary, provider-agnostic LLM) so the artifact is properly
+  shippable/demoable per the build contract. Then: quick correctness check of SIP math edge
+  cases; fund-factsheet ingestion (needs owner docs); IPO path (needs owner data source).
+- STILL the highest-value lever: owner's real sources (config/sources.yaml + documents/) and
+  which funds/stocks the parents hold. Autonomous marginal value is tapering.
+
 ## 2026-06-18 (session 5, /loop) — mutual funds & SIPs in the UI
 - Reviewed + hardened session-4 ingestion/render (corrupt-PDF degrade, fail-safe render,
   fingerprint-keyed source cache) -- all committed.
