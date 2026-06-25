@@ -1,75 +1,107 @@
 # India Equity Research
 
-Research and analysis for your Indian (NSE/BSE) stock portfolio. Upload your holdings, get
-live valuation, P&L, concentration and sector breakdown, risk metrics, and grounded
-research notes.
+A research and analysis tool for the Indian market (NSE/BSE), built to be usable by
+non-expert investors. It analyzes your stock portfolio, looks up mutual funds, projects
+SIPs, and answers questions about companies and funds, but only from sources you trust,
+with every claim cited.
 
-**This is decision support, not advice.** It never places trades and never tells you what
-to buy or sell. Every figure is fetched from a data source and timestamped. The AI research
-layer only summarizes the fetched facts. It is told never to introduce a number from memory
-and never to make a recommendation. Verify every figure before you act on it.
+**This is decision support, not advice.** It never places trades, never recommends what to
+buy or sell, and never promises returns. Every number is fetched and timestamped. Research
+answers come only from a tiered library of sources you configure: a claim is shown as a
+verified fact only when a primary source backs it; otherwise it is labeled opinion or
+unverified, or the system says it has no verified answer. Verify every figure before acting.
 
-## What it does (v1)
+## What it does
 
-- **Portfolio analysis**: current value, invested, unrealized P&L per holding and total,
-  position weights.
-- **Concentration**: largest-holding weight, Herfindahl index (HHI), effective number of
+**Portfolio**
+- Upload a holdings CSV (Zerodha/Groww exports work). Value, invested, unrealized P&L per
+  holding and total, and position weights.
+- Concentration: largest-holding weight, Herfindahl index (HHI), effective number of
   holdings, with advisory flags.
-- **Sector breakdown**: allocation by sector.
-- **Risk** (1-year history): annualized volatility and beta of the book vs NIFTY 50, plus
-  the worst single-name drawdown.
-- **Market context**: live NIFTY 50 and SENSEX levels.
-- **AI research notes**: a portfolio overview and per-holding notes, each grounded in the
-  fetched data and sourced. Requires an LLM (provider-agnostic, see below); everything else
-  works without one.
+- Sector breakdown, and live NIFTY 50 / SENSEX context.
+- Risk (1-year history): annualized volatility, beta vs NIFTY 50, worst single-name drawdown.
 
-Not in v1: screening the full market universe, trade execution, recommendations.
+**Mutual funds & SIPs**
+- Look up any fund's NAV by name, live from AMFI (free, no key).
+- SIP projection: compound-interest arithmetic on a return you assume, framed clearly as not
+  a prediction (real returns vary and can be negative).
 
-## Data source
+**Research mentor (grounded)**
+- Ask a plain-English question. The answer comes only from your source library, with
+  citations, or it abstains. It never guesses, recommends, or predicts.
 
-v1 uses **yfinance** (free, no key) with NSE (`.NS`) and BSE (`.BO`) suffixes. A symbol
-Yahoo cannot price is excluded from all totals and flagged, never guessed. The data layer
-sits behind `MarketDataProvider` (`src/data/provider.py`), so moving to a broker feed
-(Upstox free API, or Zerodha Kite) later is one new adapter and no change to the analysis.
+**Readability**
+- A plain-English glossary and hover-help on every metric, for non-expert readers.
 
-## Setup
+Not included: trade execution, buy/sell recommendations, return guarantees, full-market
+screening, IPO data (pending a chosen data source).
+
+## The credibility and grounding contract (why a number can be trusted)
+
+The one property the system enforces: it never presents an unverified claim as a fact.
+
+- **Source tiers.** Primary (annual reports, AGM/SEBI filings, exchange and AMFI data) can
+  back a stated fact. Analyst/press is attributed opinion. Social creators are context only,
+  attributed and dated, never a fact or a number.
+- **Retrieval-grounded.** The model answers only from retrieved chunks of your documents. No
+  matching source means no claim.
+- **Citation enforcement.** A claim is a verified fact only if every citation backing it is
+  primary; anything else is downgraded to "unverified" before it can display.
+- **Abstention.** When sources do not answer, the system says so instead of guessing.
+- **Human in the loop.** It informs; you decide.
+
+## Sources: bring your own
 
 ```bash
-cd india-stock-research
-python3 -m venv .venv
-./.venv/bin/python -m pip install -r requirements.txt
+cp config/sources.example.yaml config/sources.yaml   # list your sources under primary/analyst/creator
+mkdir -p documents                                    # put files named by source id here:
+#   documents/<source_id>.pdf   (also .txt, .md)
 ```
 
-Optional, for the AI research notes only (the LLM is provider-agnostic via LiteLLM):
+With no `config/sources.yaml`, the app falls back to a bundled synthetic sample so you can
+try the research mentor immediately. A file whose stem is not a registered source is skipped
+(never ingested as if trusted); an unreadable file is reported, not fatal.
+
+## Data sources
+
+- Equities: **yfinance** (free, no key), behind `MarketDataProvider` so a broker feed
+  (Upstox/Zerodha) is one new adapter with no change to the analysis.
+- Mutual funds: **AMFI NAVAll** (free, no key).
+- Research: your tiered document library (above).
+
+## LLM (provider-agnostic, optional)
+
+Only the written research answers/notes need an LLM. All analysis, lookups, and SIP math
+work without one. The model is selected by `LLM_MODEL` and routed by LiteLLM, so it is a
+config choice, not a code change.
 
 ```bash
 cp .env.example .env
-# then pick ONE option in .env:
-#   A) NVIDIA NIM (free hosted open models): set LLM_MODEL + NVIDIA_NIM_API_KEY
-#   B) Ollama (fully local, free):           set LLM_MODEL=ollama_chat/<model> + LLM_API_BASE
-#   C) any other LiteLLM provider:           set LLM_MODEL (+ LLM_API_KEY / LLM_API_BASE)
+# pick ONE:
+#   A) NVIDIA NIM (free hosted open models): LLM_MODEL=nvidia_nim/... + NVIDIA_NIM_API_KEY
+#   B) Ollama (fully local, free, private):  LLM_MODEL=ollama_chat/qwen2.5:7b + LLM_API_BASE
+#   C) any other LiteLLM provider:           LLM_MODEL=... (+ LLM_API_KEY / LLM_API_BASE)
 ```
 
-The portfolio and mutual-fund analysis works with no LLM at all. The grounding spine
-validates whatever model writes the notes, so the model is a config choice, not a code
-change. For the structured, grounded extraction this does, a fast instruct model is a
-better fit than a heavy reasoning one.
-
-To verify the LLM is wired correctly end to end (answers a question from a source, cites
-it, and abstains when the answer is not in the sources):
+For the grounded extraction this does, a fast instruct model fits better than a heavy
+reasoning one. For your parents' financial data, a local Ollama model keeps everything on
+the machine. Verify the LLM end to end (answers from a source, cites it, abstains otherwise):
 
 ```bash
 SMOKE_MODEL=ollama_chat/qwen2.5:7b ./.venv/bin/python scripts/live_smoke.py
 ```
 
-## Run
+## Setup and run
 
 ```bash
+cd india-stock-research
+python3 -m venv .venv
+./.venv/bin/python -m pip install -r requirements.txt
 ./.venv/bin/streamlit run app.py
 ```
 
-Then open the URL it prints (default http://localhost:8501). Tick "Use sample portfolio"
-to try it immediately, or upload your own CSV.
+Open the URL it prints (default http://localhost:8501). Tick "Use sample portfolio" to try
+it, or upload your own CSV.
 
 ## Portfolio CSV format
 
@@ -81,9 +113,9 @@ RELIANCE,15,1180.00,Energy
 TCS,10,2350.00,IT
 ```
 
-`Sector` is optional. Symbols may be bare (`RELIANCE`), suffixed (`RELIANCE.NS`),
-prefixed (`NSE:RELIANCE`), or carry the equity series tag (`RELIANCE-EQ`). A purely numeric
-symbol is treated as a BSE scrip code.
+`Sector` is optional. Symbols may be bare (`RELIANCE`), suffixed (`RELIANCE.NS`), prefixed
+(`NSE:RELIANCE`), or carry the equity series tag (`RELIANCE-EQ`). A purely numeric symbol is
+treated as a BSE scrip code.
 
 ## Tests
 
@@ -91,17 +123,29 @@ symbol is treated as a BSE scrip code.
 ./.venv/bin/python -m pytest -q
 ```
 
-Covers the loader (CSV normalization) and the analysis math (P&L, weights, concentration,
-risk), which is the part where a silent bug would cost real money.
+The suite covers the money math and the safety contract: CSV loading, portfolio analysis
+(P&L, weights, concentration, risk), the source registry and credibility tiers, the
+claim/citation contract (including downgrade of unsourced facts), document retrieval and
+abstention, the AMFI parser, the LLM client wiring, document ingestion, SIP math, and the
+glossary.
 
 ## Layout
 
 ```
-app.py                      Streamlit UI
-src/constants.py            domain constants (one source of truth)
-src/portfolio/              models, CSV loader, analysis math (pure, tested)
-src/data/                   MarketDataProvider interface + yfinance adapter
-src/research/               LLM research notes (grounded, graceful no-key degrade)
-tests/                      loader + analysis unit tests
-sample_data/                sample_portfolio.csv
+app.py                       Streamlit UI: portfolio, MF/SIP, research mentor, glossary
+config/sources.example.yaml  source registry template (copy to sources.yaml)
+documents/                   your source files (named by source id); else sample_data/
+scripts/live_smoke.py        live end-to-end check of the grounded pipeline
+src/constants.py             domain constants (one source of truth)
+src/glossary.py              plain-English term definitions
+src/instruments.py           instrument taxonomy (stock/MF/SIP/IPO/other)
+src/sip.py                   SIP projection math (pure, tested)
+src/portfolio/               models, CSV loader, analysis math (pure, tested)
+src/data/                    MarketDataProvider + yfinance adapter; AMFI MF NAV provider
+src/sources/                 credibility-tiered source registry
+src/research/                grounding/retrieval, claim+citation contract, grounded analyst,
+                             document ingestion, portfolio research notes
+src/llm/                     provider-agnostic LLM client (LiteLLM)
+tests/                       unit tests for all of the above
+sample_data/                 sample portfolio CSV + synthetic sources and documents
 ```

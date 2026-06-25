@@ -47,10 +47,10 @@
 - src/glossary.py: curated one-line definitions (no LLM). Wired as help= tooltips on P&L,
   HHI, beta, volatility, drawdown, SIP, plus a glossary expander. 51 tests green (+3); AppTest
   confirms help + glossary render.
-- Next logical step: README refresh to document the now-substantial feature set (grounded
-  research mentor, MF/SIP, glossary, provider-agnostic LLM) so the artifact is properly
-  shippable/demoable per the build contract. Then: quick correctness check of SIP math edge
-  cases; fund-factsheet ingestion (needs owner docs); IPO path (needs owner data source).
+- README fully refreshed to the current feature set (portfolio, MF/SIP, grounded mentor,
+  sources/credibility contract, provider-agnostic LLM, glossary, layout); all referenced
+  paths verified to exist. Next: quick correctness pass on SIP/analysis edge cases; then
+  fund-factsheet ingestion (needs owner docs); IPO path (needs owner data source).
 - STILL the highest-value lever: owner's real sources (config/sources.yaml + documents/) and
   which funds/stocks the parents hold. Autonomous marginal value is tapering.
 
