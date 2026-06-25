@@ -1,5 +1,17 @@
 # PROGRESS
 
+## 2026-06-25 (loop paused) — autonomous build complete
+- Owner chose to pause the /loop (cron job 9ff18873 cancelled). The build is complete and
+  verified for everything buildable without owner data: Streamlit app (portfolio, MF/SIP,
+  grounded research mentor, glossary, first-time guide), provider-agnostic LLM (live-verified
+  on local Ollama qwen2.5:7b), verify.sh gate, build-tested Dockerfile, Streamlit Cloud deploy
+  guide, private data gitignored. 51 tests green.
+- Blocked on owner inputs: real sources (config/sources.yaml + documents/), parents' holdings
+  CSV + the funds they hold, an IPO data source choice.
+- PROCESS FIX: loop commits had carried a Co-Authored-By: Claude trailer (harness default)
+  that violates the repo's no-AI-attribution rule. Repo was unpushed; local history scrubbed
+  of the trailer this session. Going forward: no AI attribution in commits.
+
 ## 2026-06-15 (session 1, BUILD)
 - Scoped to research-only decision support (no trades, no recommendations). See SPEC.md.
 - Data source decision: yfinance v1 behind MarketDataProvider; Upstox/Kite later.
