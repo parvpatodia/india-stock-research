@@ -28,17 +28,22 @@ def load_document_text(path: str | Path) -> str:
 
 
 def build_library(registry: SourceRegistry, documents_dir: str | Path,
-                  store: DocumentStore | None = None) -> tuple[DocumentStore, list[str]]:
+                  store: DocumentStore | None = None
+                  ) -> tuple[DocumentStore, list[str], list[str]]:
     """Build a DocumentStore from every supported file in documents_dir.
 
-    Returns (store, skipped) where skipped lists filenames whose stem is not a registered
-    source. The store is registry-bound, so ingestion of an unregistered id cannot happen.
+    Returns (store, skipped, failed):
+      skipped = filenames whose stem is not a registered source (untiered, not loaded).
+      failed  = filenames that could not be read (corrupt/encrypted).
+    The store is registry-bound, so ingestion of an unregistered id cannot happen, and one
+    unreadable file is reported rather than crashing ingestion of the rest.
     """
     store = store or DocumentStore(registry=registry)
     skipped: list[str] = []
+    failed: list[str] = []
     directory = Path(documents_dir)
     if not directory.is_dir():
-        return store, skipped
+        return store, skipped, failed
     for path in sorted(directory.iterdir()):
         if not path.is_file() or path.suffix.lower() not in _SUPPORTED:
             continue
@@ -46,7 +51,12 @@ def build_library(registry: SourceRegistry, documents_dir: str | Path,
         if registry.get(source_id) is None:
             skipped.append(path.name)
             continue
-        text = load_document_text(path)
+        try:
+            text = load_document_text(path)
+        except Exception:
+            # WHY: a single corrupt/encrypted file must not take down the whole library.
+            failed.append(path.name)
+            continue
         if text.strip():
             store.add_document(source_id, text, locator_prefix=path.name)
-    return store, skipped
+    return store, skipped, failed

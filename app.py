@@ -42,7 +42,7 @@ from src.portfolio.analysis import (  # noqa: E402
 )
 from src.portfolio.loader import load_holdings  # noqa: E402
 from src.research.analyst import ResearchAnalyst  # noqa: E402
-from src.research.claims import FACT, OPINION, UNVERIFIED  # noqa: E402
+from src.research.claims import ESTIMATE, FACT, OPINION  # noqa: E402
 from src.research.grounded_analyst import GroundedAnalyst  # noqa: E402
 from src.research.library import build_library  # noqa: E402
 from src.sources.registry import SourceRegistry  # noqa: E402
@@ -79,14 +79,31 @@ def get_grounded_analyst() -> GroundedAnalyst:
     return GroundedAnalyst()
 
 
+def _library_fingerprint() -> str:
+    """A cache key from the config + document mtimes/sizes. WHY: source curation is the trust
+    control; editing or removing a source must invalidate the cache on the next rerun so a
+    de-trusted source stops answering without a manual restart."""
+    parts = []
+    if SOURCES_YAML.exists():
+        s = SOURCES_YAML.stat()
+        parts.append(f"cfg:{s.st_mtime_ns}:{s.st_size}")
+    if DOCS_DIR.is_dir():
+        for p in sorted(DOCS_DIR.iterdir()):
+            if p.is_file():
+                st_ = p.stat()
+                parts.append(f"{p.name}:{st_.st_mtime_ns}:{st_.st_size}")
+    return "|".join(parts)
+
+
 @st.cache_resource
-def get_library():
-    """Build the source registry + document store once. (registry, store, skipped_files)."""
+def get_library(fingerprint: str):
+    """Build registry + document store. (registry, store, skipped, failed). Keyed on the
+    fingerprint so a changed config/documents set rebuilds rather than serving stale sources."""
     if not SOURCES_YAML.exists():
-        return None, None, []
+        return None, None, [], []
     registry = SourceRegistry.from_config(SOURCES_YAML)
-    store, skipped = build_library(registry, DOCS_DIR)
-    return registry, store, skipped
+    store, skipped, failed = build_library(registry, DOCS_DIR)
+    return registry, store, skipped, failed
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -317,7 +334,7 @@ st.subheader("Ask the research mentor")
 st.caption("Answers come only from your source library, with citations. If the answer is "
            "not in a source, it says so. It never guesses, recommends, or predicts.")
 
-registry, store, skipped = get_library()
+registry, store, skipped, failed = get_library(_library_fingerprint())
 if registry is None or store is None or len(store) == 0:
     st.info("No documents loaded. Add sources to config/sources.yaml and drop their files "
             "(named by source id) in documents/, or rely on the bundled sample.")
@@ -331,8 +348,10 @@ else:
         for tier_label, names in tiers.items():
             st.markdown(f"**{tier_label}:** " + "; ".join(names))
         if skipped:
-            st.warning("Skipped (not in the registry, so untiered and not loaded): "
+            st.warning("Skipped (source not in the registry, so untiered and not loaded): "
                        + ", ".join(skipped))
+        if failed:
+            st.warning("Could not read (corrupt or encrypted), not loaded: " + ", ".join(failed))
 
     grounded = get_grounded_analyst()
     if not grounded.available:
@@ -353,12 +372,15 @@ else:
                 ) or "no source"
                 if claim.kind == FACT and claim.is_verified_fact:
                     st.success(f"✓ {claim.text}")
-                elif claim.kind == UNVERIFIED:
-                    st.error(f"⚠ Unverified: {claim.text}")
                 elif claim.kind == OPINION:
                     st.info(f"Opinion: {claim.text}")
+                elif claim.kind == ESTIMATE:
+                    st.info(f"Estimate (derived, not a primary figure): {claim.text}")
                 else:
-                    st.write(claim.text)
+                    # WHY: fail safe. Anything not a verified fact / attributed opinion /
+                    # labeled estimate (including a FACT that lost verification) renders as
+                    # unverified, never as bare unlabeled text.
+                    st.error(f"⚠ Unverified: {claim.text}")
                 st.caption(f"Source: {cited}")
 
 st.divider()
