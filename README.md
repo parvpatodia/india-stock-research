@@ -120,10 +120,12 @@ treated as a BSE scrip code.
 ## Tests
 
 ```bash
-./.venv/bin/python -m pytest -q
+./verify.sh                          # full gate: compile + tests + headless app smoke
+./.venv/bin/python -m pytest -q      # just the unit suite
 ```
 
-The suite covers the money math and the safety contract: CSV loading, portfolio analysis
+`verify.sh` exits non-zero on the first failure, so it works as a pre-deploy gate. The
+suite covers the money math and the safety contract: CSV loading, portfolio analysis
 (P&L, weights, concentration, risk), the source registry and credibility tiers, the
 claim/citation contract (including downgrade of unsourced facts), document retrieval and
 abstention, the AMFI parser, the LLM client wiring, document ingestion, SIP math, and the
