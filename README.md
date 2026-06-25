@@ -127,9 +127,18 @@ Two honest notes for a hosted deploy:
 - A hosted deploy means portfolio uploads and questions travel to that server. For maximum
   privacy of your family's data, run locally with a local Ollama model.
 
-Containerized deploy is straightforward (the app needs only `requirements.txt` and
-`streamlit run app.py`). A build-tested Dockerfile can be added when a Docker daemon is
-available; it is intentionally not shipped unverified.
+### Docker (build-tested)
+
+```bash
+docker build -t india-equity-research .
+docker run --rm -p 8501:8501 india-equity-research      # then open http://localhost:8501
+```
+
+For the research mentor, pass LLM config as env vars:
+`docker run --rm -p 8501:8501 -e LLM_MODEL=nvidia_nim/... -e NVIDIA_NIM_API_KEY=... india-equity-research`.
+A local Ollama on the host is reachable from the container at `host.docker.internal`
+(`-e LLM_MODEL=ollama_chat/qwen2.5:7b -e LLM_API_BASE=http://host.docker.internal:11434`).
+The image runs headless with telemetry off and has a `/_stcore/health` healthcheck.
 
 ## Portfolio CSV format
 
