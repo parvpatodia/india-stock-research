@@ -62,6 +62,10 @@ With no `config/sources.yaml`, the app falls back to a bundled synthetic sample 
 try the research mentor immediately. A file whose stem is not a registered source is skipped
 (never ingested as if trusted); an unreadable file is reported, not fatal.
 
+`documents/` and `config/sources.yaml` are gitignored, so your real (possibly private, paid,
+or copyrighted) sources are never committed, even when you push to GitHub. Only the synthetic
+`sample_data/` and the `config/sources.example.yaml` template are tracked.
+
 ## Data sources
 
 - Equities: **yfinance** (free, no key), behind `MarketDataProvider` so a broker feed
