@@ -158,6 +158,23 @@ st.title("📊 India Equity Research")
 st.caption("Research and analysis for your NSE/BSE portfolio. Decision support, not advice.")
 st.warning(DISCLAIMER, icon="⚠️")
 
+with st.expander("New here? How to read this page"):
+    st.markdown(
+        "This tool helps you **understand** your investments. It does not give advice and "
+        "never tells you what to buy or sell. You make every decision.\n\n"
+        "- **Portfolio summary** — upload your holdings (or use the sample) to see what they "
+        "are worth now and whether each is up or down.\n"
+        "- **Mutual funds & SIPs** — look up a fund's current price (NAV), and estimate what "
+        "a monthly plan could grow to. The SIP estimate is arithmetic on a return you assume, "
+        "not a promise.\n"
+        "- **Ask the research mentor** — ask a plain question. It answers only from trusted "
+        "sources and shows where each answer came from. A green check ✓ means a verified fact "
+        "from a primary source (like an annual report). If it cannot find the answer, it says "
+        "so instead of guessing.\n\n"
+        "Hover the small **?** next to any number for a plain-English explanation. Always "
+        "double-check a figure before acting on it."
+    )
+
 # --- sidebar: input + status ---
 
 with st.sidebar:
