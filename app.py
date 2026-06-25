@@ -32,6 +32,7 @@ from src.constants import (  # noqa: E402
     SENSEX_SYMBOL,
 )
 from src.data.yfinance_provider import YFinanceProvider  # noqa: E402
+from src.glossary import GLOSSARY, explain  # noqa: E402
 from src.portfolio.analysis import (  # noqa: E402
     analyze_portfolio,
     annualized_volatility,
@@ -226,7 +227,7 @@ m = st.columns(4)
 m[0].metric("Invested", money(analysis.total_invested))
 m[1].metric("Market value", money(analysis.total_value))
 m[2].metric("Unrealized P&L", money(analysis.total_pnl_abs),
-            f"{analysis.total_pnl_pct:+.2f}%")
+            f"{analysis.total_pnl_pct:+.2f}%", help=explain("P&L"))
 m[3].metric("Holdings priced", f"{len(analysis.positions)} / {len(holdings)}")
 
 if analysis.missing_symbols:
@@ -277,7 +278,7 @@ with c2:
 st.subheader("Concentration")
 cc = st.columns(3)
 cc[0].metric("Largest holding", f"{analysis.top_holding_weight * 100:.1f}%")
-cc[1].metric("HHI", f"{analysis.hhi:.3f}")
+cc[1].metric("HHI", f"{analysis.hhi:.3f}", help=explain("Concentration (HHI)"))
 cc[2].metric("Effective # holdings", f"{analysis.effective_holdings:.1f}")
 flags = []
 if analysis.top_holding_weight > CONCENTRATION_TOP_HOLDING_WARN:
@@ -303,12 +304,14 @@ if st.button("Compute risk metrics"):
 
     risk_cols = st.columns(3)
     risk_cols[0].metric("Annualized volatility",
-                        f"{annualized_volatility(port_returns) * 100:.1f}%")
+                        f"{annualized_volatility(port_returns) * 100:.1f}%",
+                        help=explain("Volatility"))
     risk_cols[1].metric(f"Beta vs {INDEX_DISPLAY_NAMES[DEFAULT_BENCHMARK]}",
-                        f"{beta(port_returns, bench_returns):.2f}")
+                        f"{beta(port_returns, bench_returns):.2f}", help=explain("Beta"))
     worst = min((max_drawdown(c) for c in close_by_symbol.values() if not c.empty),
                 default=0.0)
-    risk_cols[2].metric("Worst single-name drawdown", f"{worst * 100:.1f}%")
+    risk_cols[2].metric("Worst single-name drawdown", f"{worst * 100:.1f}%",
+                        help=explain("Maximum drawdown"))
     st.caption("Volatility and beta are for the book at current weights. Drawdown is the "
                "worst peak-to-trough of any single holding over the last year.")
 
@@ -366,7 +369,8 @@ if fund_query.strip():
 
 st.markdown("**SIP projection** (arithmetic on an assumption, not a prediction)")
 sc = st.columns(3)
-sip_monthly = sc[0].number_input("Monthly SIP (₹)", min_value=0, value=10000, step=500)
+sip_monthly = sc[0].number_input("Monthly SIP (₹)", min_value=0, value=10000, step=500,
+                                 help=explain("SIP"))
 sip_years = sc[1].number_input("Years", min_value=1, max_value=40, value=10)
 sip_return = sc[2].number_input("Assumed annual return (%)", min_value=0.0, max_value=30.0,
                                 value=10.0, step=0.5)
@@ -436,4 +440,8 @@ else:
                 st.caption(f"Source: {cited}")
 
 st.divider()
+with st.expander("Plain-English glossary (what these terms mean)"):
+    for _term, _definition in GLOSSARY.items():
+        st.markdown(f"**{_term}** — {_definition}")
+
 st.caption(DISCLAIMER)
