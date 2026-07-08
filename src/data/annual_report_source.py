@@ -37,8 +37,12 @@ verbatim text (a substring copied from the SOURCE) the number came from. If a fi
 present in the SOURCE, set its value to null. NEVER infer, compute, or use outside knowledge; \
 copy only what is written.
 
+Also return "fiscal_year": the 4-digit calendar year in which the reported financial year
+ended (e.g. 2026 for the year ended 31 March 2026).
+
 Shape:
-{"net_profit": {"value": 80775, "unit": "crore", "quote": "Profit for the year 80,775"},
+{"fiscal_year": 2026,
+ "net_profit": {"value": 80775, "unit": "crore", "quote": "Profit for the year 80,775"},
  "operating_cash_flow": {"value": null, "unit": "", "quote": ""}, ...}
 Figures: net_profit, operating_cash_flow, total_debt, equity, ebit, interest_expense.
 """
@@ -91,6 +95,34 @@ def parse_extraction(payload: dict, source_text: str) -> dict[str, float | None]
     return result
 
 
+_FY_PATTERNS = [
+    re.compile(r"year\s+ended[^.]{0,40}?march[,\s]+.{0,6}?(20\d{2})", re.IGNORECASE),
+    re.compile(r"march\s+31[,\s]+(20\d{2})", re.IGNORECASE),
+    re.compile(r"31\s*(?:st)?\s*march[,\s]+(20\d{2})", re.IGNORECASE),
+    re.compile(r"\bFY\s?(20\d{2})", re.IGNORECASE),
+]
+
+
+def _num_year(value) -> int | None:
+    n = _num(value)
+    if n is None:
+        return None
+    y = int(n)
+    return y if 1990 <= y <= 2100 else None
+
+
+def detect_fiscal_year(text: str) -> int | None:
+    """Best-effort report fiscal year (the calendar year the financial year ended)."""
+    head = text[:8000]
+    years: list[int] = []
+    for pattern in _FY_PATTERNS:
+        for m in pattern.finditer(head):
+            y = _num_year(m.group(1))
+            if y:
+                years.append(y)
+    return max(years) if years else None
+
+
 class AnnualReportFigureSource(FigureSource):
     source_id = "annual_report"
 
@@ -99,27 +131,46 @@ class AnnualReportFigureSource(FigureSource):
         self.text_provider = text_provider   # symbol -> full annual-report text (or None)
         self.client = client or LiteLLMClient()
         self.retrieve_k = retrieve_k
+        self._cache: dict[str, tuple[dict, int | None]] = {}
+
+    def _extract(self, symbol: str) -> tuple[dict[str, float | None], int | None]:
+        """Run the LLM extraction once per symbol (memoized). Returns (figures, fiscal_year)."""
+        if symbol in self._cache:
+            return self._cache[symbol]
+        result: tuple[dict, int | None] = ({}, None)
+        text = self.text_provider(symbol)
+        if text and text.strip() and self.client.available:
+            store = DocumentStore(words_per_chunk=180, overlap=30)
+            store.add_document("annual_report", text)
+            chunks = store.retrieve(
+                "net profit revenue total debt borrowings equity EBIT operating income "
+                "operating cash flow interest expense finance costs", k=self.retrieve_k)
+            context = "\n\n".join(rc.chunk.text for rc in chunks)
+            if context.strip():
+                try:
+                    raw = self.client.complete(_EXTRACT_SYSTEM, context, max_tokens=900)
+                    payload = _parse_json(raw)
+                except Exception:
+                    payload = {}
+                parsed = parse_extraction(payload, text)  # ground against the FULL report text
+                fy = _num_year(payload.get("fiscal_year")) or detect_fiscal_year(text)
+                result = (parsed, fy)
+        self._cache[symbol] = result
+        return result
 
     def figures(self, symbol: str) -> dict[str, float | None]:
         out: dict[str, float | None] = {name: None for name in FRAMEWORK_FIGURES}
-        text = self.text_provider(symbol)
-        if not text or not text.strip() or not self.client.available:
-            return out
-        store = DocumentStore(words_per_chunk=180, overlap=30)
-        store.add_document("annual_report", text)
-        chunks = store.retrieve(
-            "net profit revenue total debt borrowings equity EBIT operating income "
-            "operating cash flow interest expense finance costs", k=self.retrieve_k)
-        context = "\n\n".join(rc.chunk.text for rc in chunks)
-        if not context.strip():
-            return out
-        try:
-            raw = self.client.complete(_EXTRACT_SYSTEM, context, max_tokens=900)
-            payload = _parse_json(raw)
-        except Exception:
-            return out
-        parsed = parse_extraction(payload, text)   # ground against the FULL report text
+        parsed, _ = self._extract(symbol)
         for name in _TARGETS:
             if parsed.get(name) is not None:
                 out[name] = parsed[name]
         return out
+
+    def figures_by_year(self, symbol: str) -> dict[str, dict[int, float]]:
+        # WHY: tag the extracted figures with the report's fiscal year so they align with the
+        # SAME year from yfinance/Screener, letting the primary filing break a real tie. Without
+        # a detected year we cannot align, so we return nothing rather than guess the year.
+        parsed, fy = self._extract(symbol)
+        if fy is None:
+            return {}
+        return {name: {fy: parsed[name]} for name in _TARGETS if parsed.get(name) is not None}

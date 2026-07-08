@@ -43,34 +43,47 @@ class VerifiedFigure:
         return self.status == VerificationStatus.VERIFIED
 
 
-def _agree(values: list[float], rel_tolerance: float) -> bool:
-    spread = max(values) - min(values)
-    scale = max(abs(statistics.fmean(values)), _EPS)
-    return (spread / scale) <= rel_tolerance
+def _close(a: float, b: float, rel_tolerance: float) -> bool:
+    return abs(a - b) <= rel_tolerance * max(abs(a), abs(b), _EPS)
 
 
 def verify_figure(name: str, values: list[SourcedValue],
                   rel_tolerance: float = 0.02) -> VerifiedFigure:
-    # WHY 2%: cross-verification catches gross errors (wrong scale, wrong figure, hallucination),
-    # which are far larger than 2%. Two independent sources reporting a financial figure within
-    # 2% is strong corroboration; sub-2% deltas are rounding/definitional noise. The expert
-    # sign-off (report.py) remains the final check, so this is not the last line of defense.
-    """Cross-check a figure across sources. VERIFIED needs >=2 DISTINCT sources agreeing."""
+    """Cross-check a figure across sources using a consensus rule.
+
+    VERIFIED when the largest cluster of mutually-agreeing values covers >= 2 DISTINCT sources;
+    the value is that cluster's median and any disagreeing source is named as a withheld outlier.
+    This lets a third source break a two-source tie (e.g. the annual report confirms one of two
+    disagreeing aggregators) without ever loosening the 2% tolerance. One source -> SINGLE_SOURCE;
+    two or more with no agreeing pair -> CONFLICT. WHY 2%: gross errors (wrong scale/figure/
+    hallucination) are far larger than 2%; sub-2% deltas are rounding. Expert sign-off is final.
+    """
     usable = [v for v in values if v.value is not None]
     if not usable:
         return VerifiedFigure(name, VerificationStatus.UNVERIFIABLE, None, tuple(values),
                               "no usable value")
 
     distinct_sources = {v.source_id for v in usable}
-    nums = [v.value for v in usable]
-
     if len(distinct_sources) < 2:
         return VerifiedFigure(name, VerificationStatus.SINGLE_SOURCE, usable[0].value,
                               tuple(values), "only one independent source; not cross-verified")
 
-    if _agree(nums, rel_tolerance):
-        return VerifiedFigure(name, VerificationStatus.VERIFIED, statistics.median(nums),
-                              tuple(values), f"{len(distinct_sources)} independent sources agree")
+    best_sources: set[str] = set()
+    best_values: list[float] = []
+    for pivot in usable:
+        members = [v for v in usable if _close(v.value, pivot.value, rel_tolerance)]
+        member_sources = {m.source_id for m in members}
+        if len(member_sources) > len(best_sources):
+            best_sources = member_sources
+            best_values = [m.value for m in members]
+
+    if len(best_sources) >= 2:
+        outliers = sorted(distinct_sources - best_sources)
+        note = f"{len(best_sources)} independent sources agree"
+        if outliers:
+            note += f"; outlier source(s) withheld: {', '.join(outliers)}"
+        return VerifiedFigure(name, VerificationStatus.VERIFIED, statistics.median(best_values),
+                              tuple(values), note)
 
     return VerifiedFigure(name, VerificationStatus.CONFLICT, None, tuple(values),
                           "independent sources disagree beyond tolerance")

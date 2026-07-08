@@ -47,6 +47,23 @@ def test_handles_negative_values_loss():
     assert f.status == VerificationStatus.VERIFIED and f.value < 0
 
 
+def test_two_of_three_consensus_verifies_and_names_outlier():
+    # yfinance and the annual report agree; Screener is the odd one out (different definition).
+    f = verify_figure("net profit", [
+        SourcedValue(80000, "yfinance"),
+        SourcedValue(95000, "screener"),
+        SourcedValue(80100, "annual_report"),
+    ])
+    assert f.status == VerificationStatus.VERIFIED
+    assert abs(f.value - 80050) < 200          # median of the agreeing cluster
+    assert "screener" in f.note                # outlier is named/withheld
+
+
+def test_three_way_all_disagree_is_conflict():
+    f = verify_figure("x", [SourcedValue(100, "a"), SourcedValue(130, "b"), SourcedValue(170, "c")])
+    assert f.status == VerificationStatus.CONFLICT and f.value is None
+
+
 def test_verify_identity_parts_sum_to_total():
     f = verify_identity(
         "segment revenue sums to total",

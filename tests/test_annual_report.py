@@ -40,6 +40,18 @@ class FakeYF(FigureSource):
         return {name: self._data.get(name) for name in FRAMEWORK_FIGURES}
 
 
+class FakeYearSource(FigureSource):
+    def __init__(self, source_id, series):
+        self.source_id = source_id
+        self._series = series
+
+    def figures(self, symbol):
+        return {name: None for name in FRAMEWORK_FIGURES}
+
+    def figures_by_year(self, symbol):
+        return self._series
+
+
 # --- pure parse_extraction (grounding + unit conversion) ---
 
 def test_parse_grounded_crore_converts_to_absolute():
@@ -108,3 +120,27 @@ def test_annual_report_and_yfinance_crossverify():
     assert net_profit.is_trustworthy                    # cross-verified across two sources
     assert r.verdict.quality == QualityTier.STRONG      # computed from verified figures
     assert r.verdict.confidence in (Confidence.MEDIUM, Confidence.HIGH)
+
+
+def test_ar_figures_by_year_tags_fiscal_year():
+    resp = json.dumps({"fiscal_year": 2026,
+                       "net_profit": {"value": 80775, "unit": "crore",
+                                      "quote": "Profit for the year was 80,775 crore"}})
+    src = AnnualReportFigureSource(lambda s: AR_TEXT, client=FakeClient(resp))
+    assert src.figures_by_year("X")["net_profit"] == {2026: 80775 * 1e7}
+
+
+def test_annual_report_breaks_a_two_source_conflict():
+    # yfinance and Screener disagree on FY2026 net profit; the annual report confirms yfinance.
+    yf = FakeYearSource("yfinance", {"net_profit": {2026: 807.75e9}})
+    screener = FakeYearSource("screener", {"net_profit": {2026: 957.54e9}})  # the outlier
+    ar_json = json.dumps({"fiscal_year": 2026,
+                          "net_profit": {"value": 80775, "unit": "crore",
+                                         "quote": "Profit for the year was 80,775 crore"}})
+    ar = AnnualReportFigureSource(lambda s: AR_TEXT, client=FakeClient(ar_json))
+
+    r = build_report_for_symbol("RELIANCE", [yf, screener, ar])
+    net_profit = next(f for f in r.figures if f.name == "net_profit")
+    assert net_profit.is_trustworthy                                  # tie broken
+    assert abs(net_profit.value - 807.75e9) / 807.75e9 < 0.02         # resolved to yf/AR, not screener
+    assert "screener" in net_profit.note                              # screener named as outlier
