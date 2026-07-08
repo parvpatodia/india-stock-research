@@ -1,5 +1,24 @@
 # PROGRESS
 
+## 2026-07 — v3 expert-grade platform (V1-V6 complete)
+Built the SPEC v3 platform for the parents' real-money use, all FREE (no paid keys):
+- V1 cross-verification engine (consensus rule, 2% tolerance, computed-identity checks).
+- V2 report + hard expert-review lifecycle (DRAFT until approved; conflict-blocked approval;
+  audit trail; caveated verdict, never certainty).
+- V3 analysis framework (valuation/earnings-quality/leverage/pledge) on verified figures only.
+- V4a source-adapter seam + HttpDocumentAdapter (live-verified on a real NSE annual report).
+- V4b yfinance figure source; V4c free independent sources (Screener + annual-report LLM
+  extraction, grounded by verbatim quote); V4d fiscal-year alignment; V4e annual report as a
+  year-tagged tiebreaker + consensus verification (INFY net profit verified 3-source live).
+- V5 company-search UI: pick a company or live NSE symbol -> draft report -> expert review
+  (approve/reject) -> approved. Optional annual-report URL adds cross-verification.
+- V6 self-improvement loop: expert corrections -> ground-truth cases -> replayed every run;
+  trusted-but-wrong must stay 0; scored in-app + scripts/run_eval.py gate.
+- 113 tests green. All commits free of AI attribution. Verify with ./verify.sh.
+- Open (V4f): more free sources (BSE, Tickertape via bharat-sm-data), per-symbol AR URL
+  auto-resolution, browser-MCP fallback for hosts blocking plain HTTP.
+- Owner still to provide: the real holdings Google Sheet (only after the platform is trusted).
+
 ## 2026-06-25 (loop paused) — autonomous build complete
 - Owner chose to pause the /loop (cron job 9ff18873 cancelled). The build is complete and
   verified for everything buildable without owner data: Streamlit app (portfolio, MF/SIP,

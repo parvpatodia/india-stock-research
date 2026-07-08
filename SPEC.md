@@ -234,7 +234,9 @@ src/eval/                       regression cases from expert corrections + accur
       INFY: net profit VERIFIED via 3-source consensus. Tolerance stays 2% (not loosened).
 - [ ] V4f more free sources (BSE filings, Tickertape via bharat-sm-data) + browser-MCP fallback
       for hosts that block plain HTTP; per-symbol AR URL auto-resolution.
-- [ ] V6 eval loop: expert rejection -> regression case -> accuracy score.
+- [x] V6 self-improvement loop: expert correction -> GroundTruth (value + figure snapshot) ->
+      replayed on every run. Outcomes MATCH / WITHHELD / TRUSTED_WRONG; trusted-wrong must stay 0.
+      Captured in the review panel; scored in-app + via scripts/run_eval.py (gate). "No mistake twice."
 - [ ] V5 company-search -> draft report -> expert review panel -> approved report UI. (apptest)
 - [ ] V6 eval loop: expert correction -> regression case -> accuracy score. (test)
 
