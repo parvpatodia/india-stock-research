@@ -170,6 +170,18 @@ def fetch_news(symbol: str, company_name: str):
     return get_news_source().fetch(symbol, company_name)
 
 
+@st.cache_data(ttl=300, show_spinner="Loading holdings from your Sheet…")
+def fetch_published_holdings(url: str):
+    """Read holdings from a Google Sheet 'Publish to web -> CSV' link. Keyless: the link is
+    public, so no service account is needed. Parsing reuses the CSV loader's column matching."""
+    import io
+    import urllib.request
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (research)"})
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        text = resp.read().decode("utf-8", "replace")
+    return load_holdings(io.StringIO(text))
+
+
 @st.cache_resource
 def get_base_registry() -> SourceRegistry | None:
     return SourceRegistry.from_config(SOURCES_YAML) if SOURCES_YAML.exists() else None
@@ -362,7 +374,14 @@ with st.sidebar:
 # --- resolve the data source (Google Sheet if selected, else CSV) ---
 
 holdings = None
-if sheet_on and use_sheet:
+pub_url = _secret("holdings_csv_url")
+if pub_url and uploaded is None:                      # published-CSV link (keyless, auto-load)
+    try:
+        holdings = fetch_published_holdings(pub_url) or None
+    except Exception as exc:
+        st.error(f"Could not read the published Sheet CSV: {exc}")
+
+if holdings is None and sheet_on and use_sheet:       # service-account path (if ever configured)
     try:
         holdings = read_holdings(get_gateway()) or None
     except Exception as exc:

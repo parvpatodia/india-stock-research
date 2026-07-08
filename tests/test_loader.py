@@ -77,3 +77,13 @@ def test_symbol_column_wins_over_generic_name_column():
                        "Quantity": [10], "Avg Cost": [100]})
     holdings = load_holdings(df)
     assert holdings[0].symbol == "RELIANCE"
+
+
+def test_load_holdings_from_csv_text_filelike():
+    # WHY: the deployed app reads a published Google Sheet CSV link as text -> StringIO.
+    import io
+    text = "Symbol,Quantity,Avg Cost,Sector\nRELIANCE,10,2400,Energy\nSBIN,5,600,\n"
+    holdings = load_holdings(io.StringIO(text))
+    assert [h.symbol for h in holdings] == ["RELIANCE", "SBIN"]
+    assert holdings[0].sector == "Energy"
+    assert holdings[1].sector == "Unknown"

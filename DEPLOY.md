@@ -13,12 +13,17 @@ The app reads real holdings only from the Sheet or an uploaded CSV; `holdings.cs
 2. Model string: `groq/llama-3.3-70b-versatile` (LiteLLM routes it; better annual-report
    extraction than the local 7B).
 
-## 3. Google Sheet as the memory (optional but recommended)
-1. Google Cloud console → new project → enable **Google Sheets API** and **Google Drive API**.
-2. Create a **service account**, make a JSON key, download it.
-3. Open the parents' Sheet → Share → add the service account's `client_email` as **Editor**.
-4. Tabs the app uses (auto-created if missing): `Holdings` (Symbol, Quantity, Avg Cost, Sector),
-   `Reports`, `Log`. The Sheet key is the id in the URL: `/spreadsheets/d/<KEY>/edit`.
+## 3. Holdings from the Google Sheet (keyless — recommended)
+Google's "Secure by Default" policy blocks service-account key downloads on most accounts, so use
+the keyless published-CSV route:
+1. Sheet owner: **File → Share → Publish to web →** select the holdings tab **→ CSV → Publish**.
+2. Copy the link (looks like `.../pub?gid=0&single=true&output=csv`) and set it as
+   `holdings_csv_url` in secrets. Holdings then auto-load; no Google Cloud, no key.
+3. Caveat: a published link is readable by anyone who has it. Read-only (approvals don't write
+   back to the Sheet). Columns must include Symbol, Quantity, Avg Cost (Sector optional).
+
+Service-account read+write (`sheet_key` + `[gcp_service_account]`) still works IF you can create a
+JSON key, but that action is blocked on many Google orgs; prefer the published CSV above.
 
 ## 4. Deploy on Streamlit Community Cloud
 1. https://share.streamlit.io → New app → point at this repo, branch, `app.py`.
