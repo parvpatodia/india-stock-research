@@ -2,8 +2,11 @@
 symbols and write results incrementally to data/batch_reports.txt (gitignored). Slow: each
 symbol fetches and extracts a full annual report via the local LLM.
 
+Symbols come from holdings.csv (gitignored) if present, else the bundled sample, else CLI args,
+so no real portfolio list is ever hardcoded in the repo:
+
     LLM_MODEL=ollama_chat/qwen2.5:7b LLM_API_BASE=http://localhost:11434 \
-        ./.venv/bin/python scripts/batch_reports.py
+        ./.venv/bin/python scripts/batch_reports.py [SYMBOL ...]
 """
 from __future__ import annotations
 
@@ -18,9 +21,16 @@ from src.data.nse_annual_reports import nse_annual_report_source  # noqa: E402
 from src.data.screener_source import ScreenerFigureSource  # noqa: E402
 from src.llm.client import LiteLLMClient  # noqa: E402
 from src.pipeline import build_report_for_symbol  # noqa: E402
+from src.portfolio.loader import load_holdings  # noqa: E402
 
-SYMS = ["MBAPL", "SHAKTIPUMP", "BLS", "ASTRAL", "BRIGADE",
-        "SBIN", "VOLTAMP", "YESBANK", "ADANIPOWER", "ICICIBANK"]
+_ROOT = Path(__file__).resolve().parents[1]
+if len(sys.argv) > 1:                                  # explicit CLI symbols win
+    SYMS = [s.strip().upper() for s in sys.argv[1:]]
+else:                                                  # else read the portfolio (never hardcoded)
+    _src = _ROOT / "holdings.csv"
+    if not _src.exists():
+        _src = _ROOT / "sample_data" / "sample_portfolio.csv"
+    SYMS = [h.symbol for h in load_holdings(_src)]
 
 OUT = Path(__file__).resolve().parents[1] / "data" / "batch_reports.txt"
 OUT.parent.mkdir(parents=True, exist_ok=True)
