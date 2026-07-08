@@ -42,6 +42,14 @@ from src.data.figure_sources import YFinanceFigureSource  # noqa: E402
 from src.data.news_source import NewsSource, registry_with_news  # noqa: E402
 from src.data.nse_annual_reports import nse_annual_report_source  # noqa: E402
 from src.data.screener_source import ScreenerFigureSource  # noqa: E402
+from src.data.sheets_backend import (  # noqa: E402
+    append_log,
+    build_gateway,
+    read_holdings,
+    read_reports,
+    record_from_report,
+    save_report,
+)
 from src.data.yfinance_provider import YFinanceProvider  # noqa: E402
 from src.eval.cases import EvalStore  # noqa: E402
 from src.eval.harness import evaluate, ground_truth_from_report  # noqa: E402
@@ -166,6 +174,38 @@ def get_base_registry() -> SourceRegistry | None:
     return SourceRegistry.from_config(SOURCES_YAML) if SOURCES_YAML.exists() else None
 
 
+def _secret(key: str, default=None):
+    """Read a Streamlit secret, tolerating no secrets file at all (local dev)."""
+    try:
+        return st.secrets.get(key, default)
+    except Exception:
+        return default
+
+
+def _sheet_configured() -> bool:
+    return bool(_secret("sheet_key") and _secret("gcp_service_account"))
+
+
+@st.cache_resource
+def get_gateway():
+    """The persistence backend: the real Google Sheet if a service account is configured in
+    secrets, else a local JSON file (gitignored) so approvals still persist in dev."""
+    creds = _secret("gcp_service_account")
+    creds_dict = dict(creds) if creds else None
+    return build_gateway(creds_dict, _secret("sheet_key"), _ROOT / "data" / "reports.json")
+
+
+def _persist_review(report, sym: str, stance, action: str, reviewer: str, note: str) -> None:
+    """Persist an approve/reject to the gateway (Sheet or local JSON). Best-effort: a
+    persistence error must never block the in-session review action."""
+    try:
+        gw = get_gateway()
+        save_report(gw, record_from_report(report, sym, stance.value))
+        append_log(gw, action, sym, reviewer, note)
+    except Exception:
+        pass
+
+
 def _library_fingerprint() -> str:
     parts = []
     if SOURCES_YAML.exists():
@@ -255,11 +295,18 @@ st.warning(DISCLAIMER, icon="⚠️")
 
 with st.sidebar:
     st.header("Settings")
+    sheet_on = _sheet_configured()
+    use_sheet = st.checkbox("Use my Google Sheet portfolio", value=sheet_on,
+                            disabled=not sheet_on,
+                            help="Reads holdings live from the linked Google Sheet." if sheet_on
+                            else "Not configured. Add gcp_service_account + sheet_key to secrets.")
     uploaded = st.file_uploader("Upload / update portfolio CSV", type=["csv"])
     have_real = HOLDINGS_CSV.exists()
-    use_mine = st.checkbox("Use my portfolio (holdings.csv)", value=have_real and not uploaded,
+    use_mine = st.checkbox("Use my portfolio (holdings.csv)",
+                           value=have_real and not uploaded and not (sheet_on and use_sheet),
                            disabled=not have_real)
-    use_sample = st.checkbox("Use sample portfolio", value=not have_real and not uploaded)
+    use_sample = st.checkbox("Use sample portfolio",
+                             value=not have_real and not uploaded and not (sheet_on and use_sheet))
     st.caption("Columns matched loosely: Symbol, Quantity, Avg Cost, (optional) Sector. "
                "Zerodha/Groww exports work too.")
     st.divider()
@@ -275,28 +322,34 @@ with st.sidebar:
         st.info("AI research: off. Set LLM_MODEL to enable the annual-report tiebreaker and the "
                 "research chat. The cross-verified analysis works without it.")
 
-# --- resolve the data source ---
+# --- resolve the data source (Google Sheet if selected, else CSV) ---
 
-source = None
-if uploaded is not None:
-    source = uploaded
-elif use_mine and HOLDINGS_CSV.exists():
-    source = HOLDINGS_CSV
-elif use_sample:
-    source = SAMPLE_CSV
+holdings = None
+if sheet_on and use_sheet:
+    try:
+        holdings = read_holdings(get_gateway()) or None
+    except Exception as exc:
+        st.error(f"Could not read the Google Sheet: {exc}")
 
-if source is None:
-    st.info("Upload a portfolio CSV, or tick a portfolio option in the sidebar, to begin.")
-    st.stop()
-
-try:
-    holdings = load_holdings(source)
-except Exception as exc:
-    st.error(f"Could not read that CSV: {exc}")
-    st.stop()
+if holdings is None:
+    source = None
+    if uploaded is not None:
+        source = uploaded
+    elif use_mine and HOLDINGS_CSV.exists():
+        source = HOLDINGS_CSV
+    elif use_sample:
+        source = SAMPLE_CSV
+    if source is None:
+        st.info("Upload a portfolio CSV, or tick a portfolio option in the sidebar, to begin.")
+        st.stop()
+    try:
+        holdings = load_holdings(source)
+    except Exception as exc:
+        st.error(f"Could not read that CSV: {exc}")
+        st.stop()
 
 if not holdings:
-    st.error("No valid holdings found in that file.")
+    st.error("No valid holdings found.")
     st.stop()
 
 symbols = tuple(h.symbol for h in holdings)
@@ -539,8 +592,10 @@ with tab_research:
             rc = st.columns(2)
             if rc[0].button("Approve", key=f"ap_{active}"):
                 try:
-                    st.session_state.reports[active] = report.approve(
-                        reviewer=reviewer, note=note, acknowledge_conflicts=ack)
+                    updated = report.approve(reviewer=reviewer, note=note,
+                                             acknowledge_conflicts=ack)
+                    st.session_state.reports[active] = updated
+                    _persist_review(updated, sym, stance, "approved", reviewer, note)
                     st.rerun()
                 except ValueError as exc:
                     st.error(str(exc))
@@ -549,8 +604,9 @@ with tab_research:
             if rc[1].button("Reject", key=f"rj_{active}"):
                 try:
                     fixes = tuple(c.strip() for c in corrections.splitlines() if c.strip())
-                    st.session_state.reports[active] = report.reject(
-                        reviewer=reviewer, note=note, corrections=fixes)
+                    updated = report.reject(reviewer=reviewer, note=note, corrections=fixes)
+                    st.session_state.reports[active] = updated
+                    _persist_review(updated, sym, stance, "rejected", reviewer, note)
                     st.rerun()
                 except ValueError as exc:
                     st.error(str(exc))
@@ -584,21 +640,30 @@ with tab_invest:
 
     amount = st.number_input(f"Amount to invest ({CURRENCY})", min_value=0, value=0, step=50000)
 
-    # Candidates = expert-APPROVED reports in this session. Unreviewed drafts never qualify.
-    approved = {}
+    # Approved names = persisted (durable, from the Sheet/local store) + this session's approvals
+    # (fresher). Only APPROVED qualifies; unreviewed drafts never appear here, on purpose.
+    approved_stance: dict[str, Stance] = {}
+    try:
+        for r in read_reports(get_gateway()):
+            if r.status == "approved" and r.stance:
+                try:
+                    approved_stance[r.symbol] = Stance(r.stance)
+                except ValueError:
+                    pass
+    except Exception:
+        pass
     for key, rep in st.session_state.reports.items():
         if rep.is_trusted and rep.verdict is not None:
-            sym = key.split(" ")[0]
-            approved[sym] = rep
+            approved_stance[key.split(" ")[0]] = stance_from_verdict(rep.verdict)
 
-    if not approved:
+    if not approved_stance:
         st.info("No approved research yet. Go to **Research a Stock**, review a report, and "
                 "click Approve. Only approved names can be suggested here, on purpose.")
     else:
         candidates = [
-            AllocationCandidate(symbol=sym, stance=stance_from_verdict(rep.verdict),
+            AllocationCandidate(symbol=sym, stance=stance,
                                 current_value=value_by_symbol.get(sym, 0.0))
-            for sym, rep in approved.items()
+            for sym, stance in approved_stance.items()
         ]
         st.markdown("**Approved names considered:**")
         for c in candidates:
