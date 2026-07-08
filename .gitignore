@@ -16,4 +16,5 @@ config/sources.yaml
 /portfolio.csv
 /holdings.csv
 # Runtime eval cases captured from expert corrections (may reference real figures).
-data/
+# Anchored to the repo root so it does NOT also ignore the src/data/ package.
+/data/

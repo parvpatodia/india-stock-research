@@ -55,6 +55,11 @@ class SourceRegistry:
     def by_tier(self, tier: CredibilityTier) -> list[Source]:
         return [s for s in self._by_id.values() if s.tier == tier]
 
+    def all_sources(self) -> list[Source]:
+        """Every registered source. Used to merge registries (e.g. add live news feeds to a
+        config-loaded registry) without reaching into private state."""
+        return list(self._by_id.values())
+
     def __len__(self) -> int:
         return len(self._by_id)
 

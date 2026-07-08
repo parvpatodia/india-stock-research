@@ -26,6 +26,9 @@ primary:
   #   notes: Ingest the PDF text under this source id.
 
 analyst:
+  # Live news feeds (Google News India, Yahoo Finance) are auto-registered at this tier by
+  # src/data/news_source.py; you do NOT list them here. They are context only: attributed to
+  # the publisher, dated, and never the basis for a fact or a number.
   # - id: broker_x_research
   #   name: <registered broker> research desk
   #   url: <url>

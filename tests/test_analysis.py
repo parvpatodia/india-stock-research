@@ -5,6 +5,7 @@ from src.portfolio.analysis import (
     analyze_portfolio,
     annualized_volatility,
     beta,
+    enrich_sectors,
     max_drawdown,
     portfolio_daily_returns,
 )
@@ -84,3 +85,42 @@ def test_portfolio_daily_returns_equal_weight_cancel():
     close_b = pd.Series([100, 90, 81])    # -10%, -10%
     pr = portfolio_daily_returns({"A": close_a, "B": close_b}, {"A": 0.5, "B": 0.5})
     assert all(abs(x) < 1e-9 for x in pr)
+
+
+# --- sector backfill ---
+
+def test_enrich_sectors_backfills_blank_and_keeps_existing():
+    holdings = [Holding("A", 10, 100.0), Holding("B", 5, 200.0, "Energy")]
+    calls: list[str] = []
+
+    def fetcher(sym: str) -> dict:
+        calls.append(sym)
+        return {"A": {"sector": "Financial Services", "industry": "Banks"}}.get(sym, {})
+
+    out = enrich_sectors(holdings, fetcher)
+    assert out[0].sector == "Financial Services"   # blank ("Unknown") backfilled
+    assert out[1].sector == "Energy"               # existing kept
+    assert calls == ["A"]                           # not refetched for the one already set
+
+
+def test_enrich_sectors_falls_back_to_industry_then_unknown():
+    holdings = [Holding("A", 10, 100.0), Holding("B", 5, 200.0)]
+
+    def fetcher(sym: str) -> dict:
+        return {
+            "A": {"sector": None, "industry": "Auto Components"},
+            "B": {"sector": None, "industry": None},
+        }[sym]
+
+    out = enrich_sectors(holdings, fetcher)
+    assert out[0].sector == "Auto Components"       # sector missing -> industry
+    assert out[1].sector == "Unknown"               # neither known -> stays Unknown
+
+
+def test_enrich_sectors_survives_fetcher_error():
+    # WHY: one bad ticker must never crash the page (provider degrade-to-missing contract).
+    def fetcher(sym: str) -> dict:
+        raise RuntimeError("network down")
+
+    out = enrich_sectors([Holding("A", 10, 100.0)], fetcher)
+    assert out[0].sector == "Unknown"

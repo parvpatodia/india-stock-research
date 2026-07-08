@@ -1,0 +1,228 @@
+"""Google Sheet persistence: the parents' Sheet is the app's memory.
+
+The Sheet holds their Holdings, a log of expert-approved Reports, and an append-only audit Log.
+Access is via a Google service account (the Sheet is shared with the service email once), so
+there is no per-user OAuth. Everything goes through a small SheetGateway: the real one wraps
+gspread, an in-memory one drives the tests, and a local-JSON one is the offline fallback when no
+service account is configured. Nothing here decides trust or verdicts; it only stores and returns
+records, so the persistence layer can be swapped without touching the analysis.
+"""
+from __future__ import annotations
+
+import json
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, fields
+from datetime import datetime, timezone
+from pathlib import Path
+
+import pandas as pd
+
+from ..portfolio.loader import load_holdings
+from ..portfolio.models import Holding
+from ..research.report import Report
+
+HOLDINGS_TAB = "Holdings"
+REPORTS_TAB = "Reports"
+LOG_TAB = "Log"
+
+LOG_HEADER = ["timestamp", "action", "symbol", "reviewer", "note"]
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+@dataclass(frozen=True)
+class ReportRecord:
+    """One row of the Reports tab: the approved (or draft) verdict + stance for a symbol."""
+    symbol: str
+    company: str
+    valuation: str
+    quality: str
+    leaning: str
+    confidence: str
+    stance: str
+    status: str
+    reviewer: str
+    updated_at: str
+    note: str = ""
+
+    def as_row(self) -> dict:
+        return {f.name: getattr(self, f.name) for f in fields(self)}
+
+    @classmethod
+    def from_row(cls, row: dict) -> "ReportRecord":
+        return cls(**{f.name: str(row.get(f.name, "")) for f in fields(cls)})
+
+
+REPORT_HEADER = [f.name for f in fields(ReportRecord)]
+
+
+def record_from_report(report: Report, symbol: str, stance: str) -> ReportRecord:
+    """Build a persistable record from a Report + its stance string. Reviewer/note come from the
+    latest audit event so the stored row reflects who acted and why. stance is passed as a string
+    to keep this data layer decoupled from the analysis layer."""
+    verdict = report.verdict
+    last = report.audit[-1] if report.audit else None
+    return ReportRecord(
+        symbol=symbol.strip().upper(),
+        company=report.company,
+        valuation=verdict.valuation.value if verdict else "unknown",
+        quality=verdict.quality.value if verdict else "unknown",
+        leaning=verdict.leaning.value if verdict else "unknown",
+        confidence=verdict.confidence.value if verdict else "low",
+        stance=stance,
+        status=report.status.value,
+        reviewer=last.reviewer if last else "",
+        updated_at=_now(),
+        note=last.note if last else "",
+    )
+
+
+class SheetGateway(ABC):
+    """Thin tab-level store. Rows are dicts keyed by header. write overwrites a tab (fine at this
+    scale); append adds one row."""
+
+    @abstractmethod
+    def read(self, tab: str) -> list[dict]: ...
+
+    @abstractmethod
+    def write(self, tab: str, header: list[str], rows: list[dict]) -> None: ...
+
+    @abstractmethod
+    def append(self, tab: str, header: list[str], row: dict) -> None: ...
+
+
+class InMemoryGateway(SheetGateway):
+    """For tests. Seed with {tab: [row, ...]}."""
+
+    def __init__(self, data: dict[str, list[dict]] | None = None):
+        self._data: dict[str, list[dict]] = {k: [dict(r) for r in v] for k, v in (data or {}).items()}
+
+    def read(self, tab: str) -> list[dict]:
+        return [dict(r) for r in self._data.get(tab, [])]
+
+    def write(self, tab: str, header: list[str], rows: list[dict]) -> None:
+        self._data[tab] = [{h: r.get(h, "") for h in header} for r in rows]
+
+    def append(self, tab: str, header: list[str], row: dict) -> None:
+        self._data.setdefault(tab, []).append({h: row.get(h, "") for h in header})
+
+
+class LocalJsonGateway(SheetGateway):
+    """Offline fallback: persist tabs to a JSON file (under data/, gitignored). Same interface as
+    the real Sheet, so local dev and tests behave identically to production."""
+
+    def __init__(self, path: str | Path):
+        self.path = Path(path)
+
+    def _load(self) -> dict:
+        if not self.path.exists():
+            return {}
+        try:
+            return json.loads(self.path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, ValueError):
+            return {}
+
+    def _save(self, data: dict) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    def read(self, tab: str) -> list[dict]:
+        return [dict(r) for r in self._load().get(tab, [])]
+
+    def write(self, tab: str, header: list[str], rows: list[dict]) -> None:
+        data = self._load()
+        data[tab] = [{h: r.get(h, "") for h in header} for r in rows]
+        self._save(data)
+
+    def append(self, tab: str, header: list[str], row: dict) -> None:
+        data = self._load()
+        data.setdefault(tab, []).append({h: row.get(h, "") for h in header})
+        self._save(data)
+
+
+class GspreadGateway(SheetGateway):
+    """Real Google Sheet via a service account. gspread is lazy-imported so the module (and the
+    test suite) load without it; only this path needs it."""
+
+    def __init__(self, creds_dict: dict, sheet_key: str):
+        import gspread
+        self._gspread = gspread
+        self._sheet = gspread.service_account_from_dict(creds_dict).open_by_key(sheet_key)
+
+    def _worksheet(self, tab: str, header: list[str] | None = None):
+        try:
+            return self._sheet.worksheet(tab)
+        except self._gspread.WorksheetNotFound:
+            ws = self._sheet.add_worksheet(title=tab, rows=100, cols=max(len(header or []), 10))
+            if header:
+                ws.update([header])
+            return ws
+
+    def read(self, tab: str) -> list[dict]:
+        try:
+            return self._worksheet(tab).get_all_records()
+        except Exception:
+            return []
+
+    def write(self, tab: str, header: list[str], rows: list[dict]) -> None:
+        ws = self._worksheet(tab, header)
+        grid = [header] + [[str(r.get(h, "")) for h in header] for r in rows]
+        ws.clear()
+        ws.update(grid)   # gspread 6.x: update(values, range_name=None) -> writes from A1
+
+    def append(self, tab: str, header: list[str], row: dict) -> None:
+        ws = self._worksheet(tab, header)
+        if not ws.get_all_values():
+            ws.update([header])
+        ws.append_row([str(row.get(h, "")) for h in header])
+
+
+def build_gateway(creds_dict: dict | None, sheet_key: str | None,
+                  local_fallback_path: str | Path) -> SheetGateway:
+    """Real Sheet if a service account + key are configured, else the local-JSON fallback. A
+    failed Sheet connection falls back to local rather than crashing the app."""
+    if creds_dict and sheet_key:
+        try:
+            return GspreadGateway(creds_dict, sheet_key)
+        except Exception:
+            pass
+    return LocalJsonGateway(local_fallback_path)
+
+
+# --- backend operations (gateway-agnostic) ---
+
+def read_holdings(gateway: SheetGateway) -> list[Holding]:
+    """Read the Holdings tab into Holding objects, reusing the CSV loader's column matching."""
+    records = gateway.read(HOLDINGS_TAB)
+    if not records:
+        return []
+    return load_holdings(pd.DataFrame(records))
+
+
+def save_report(gateway: SheetGateway, record: ReportRecord) -> None:
+    """Upsert a report row by symbol (one current row per name; history lives in the Log)."""
+    existing = gateway.read(REPORTS_TAB)
+    out: list[dict] = []
+    replaced = False
+    for row in existing:
+        if str(row.get("symbol", "")).strip().upper() == record.symbol:
+            out.append(record.as_row())
+            replaced = True
+        else:
+            out.append(row)
+    if not replaced:
+        out.append(record.as_row())
+    gateway.write(REPORTS_TAB, REPORT_HEADER, out)
+
+
+def read_reports(gateway: SheetGateway) -> list[ReportRecord]:
+    return [ReportRecord.from_row(r) for r in gateway.read(REPORTS_TAB)]
+
+
+def append_log(gateway: SheetGateway, action: str, symbol: str,
+               reviewer: str, note: str = "") -> None:
+    gateway.append(LOG_TAB, LOG_HEADER,
+                   {"timestamp": _now(), "action": action, "symbol": symbol,
+                    "reviewer": reviewer, "note": note})
