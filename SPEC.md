@@ -228,8 +228,12 @@ src/eval/                       regression cases from expert corrections + accur
       period-mismatch conflicts); EBIT defined consistently (PBT + interest). Live on RELIANCE:
       OCF/debt/equity verify; net-profit/EBIT/interest conflicts CONFIRMED as genuine source
       definition differences (consolidation/minority), correctly withheld for the expert.
-- [ ] V4e break real P&L conflicts with a 3rd primary source (annual-report extraction as a
-      tiebreaker, and/or BSE filings); add more free sources; browser-MCP fallback for blocked hosts.
+- [x] V4e annual report as a year-tagged 3rd source + consensus verification (largest agreeing
+      cluster >=2 sources wins, outliers named/withheld). A two-source conflict is resolved when
+      the primary filing confirms one side; a wrong extraction stays a withheld outlier. Live on
+      INFY: net profit VERIFIED via 3-source consensus. Tolerance stays 2% (not loosened).
+- [ ] V4f more free sources (BSE filings, Tickertape via bharat-sm-data) + browser-MCP fallback
+      for hosts that block plain HTTP; per-symbol AR URL auto-resolution.
 - [ ] V6 eval loop: expert rejection -> regression case -> accuracy score.
 - [ ] V5 company-search -> draft report -> expert review panel -> approved report UI. (apptest)
 - [ ] V6 eval loop: expert correction -> regression case -> accuracy score. (test)
