@@ -60,7 +60,7 @@ from src.sip import sip_future_value  # noqa: E402
 from src.sources.registry import SourceRegistry  # noqa: E402
 from src.data.amfi_provider import AMFIProvider  # noqa: E402
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent / ".env")  # load the app's own .env regardless of cwd
 
 st.set_page_config(page_title="India Equity Research", layout="wide", page_icon="📊")
 
