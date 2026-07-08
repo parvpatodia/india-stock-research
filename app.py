@@ -25,6 +25,7 @@ from dotenv import load_dotenv  # noqa: E402
 from src.analysis.sizing import (  # noqa: E402
     AllocationCandidate,
     Stance,
+    long_term_guidance,
     position_sizing,
     stance_from_verdict,
     suggest_allocation,
@@ -309,7 +310,7 @@ _STANCE_PDF = {Stance.FAVORABLE: "[+] ", Stance.NEUTRAL: "[~] ",
                Stance.UNFAVORABLE: "[-] ", Stance.INSUFFICIENT_DATA: "[?] "}
 
 
-def build_pdf_report(title: str, report, stance: Stance) -> bytes:
+def build_pdf_report(title: str, report, stance: Stance, guidance=None) -> bytes:
     """A downloadable PDF of the report, mirroring what is on screen. Uses the core Helvetica
     font (Latin-1), so text is sanitized and the rupee sign is written as 'Rs.'."""
     from fpdf import FPDF
@@ -346,6 +347,12 @@ def build_pdf_report(title: str, report, stance: Stance) -> bytes:
     if report.insights:
         line("Why, in plain terms", size=12, style="B", h=7)
         for point in report.insights:
+            line(f"- {point}", size=11)
+        pdf.ln(1)
+
+    if guidance is not None:
+        line(f"For a long-term investor: {guidance.headline}", size=12, style="B", h=7)
+        for point in guidance.points:
             line(f"- {point}", size=11)
         pdf.ln(1)
 
@@ -618,29 +625,22 @@ with tab_research:
             for point in report.insights:
                 st.markdown(f"- {point}")
 
-        # how much (transparent cap math), framed by the stance
-        held = value_by_symbol.get(sym, 0.0)
-        sizing = position_sizing(held, analysis.total_value, cap_pct)
-        if stance in (Stance.FAVORABLE, Stance.NEUTRAL):
-            if sizing.over_cap:
-                st.info(f"You already hold {money(held)}, which is over your "
-                        f"{cap_pct:.0%} per-stock cap of {money(sizing.cap_value)}. "
-                        "Even though the evidence isn't negative, adding more would concentrate "
-                        "the book further.")
-            else:
-                st.info(f"Your {cap_pct:.0%} per-stock cap is {money(sizing.cap_value)}. "
-                        f"You hold {money(held)}, so there is room for about "
-                        f"{money(sizing.headroom)} more if you decide to add. This is arithmetic "
-                        "on your own limit, not a recommendation.")
-        elif stance == Stance.UNFAVORABLE:
-            st.info(f"The verified evidence leans unfavorable, so this is not a spot to add. "
-                    f"You hold {money(held)}.")
+        # what to do — long-term hold/trim/accumulate guidance with thesis-based triggers
+        held_value = value_by_symbol.get(sym, 0.0)
+        sizing = position_sizing(held_value, analysis.total_value, cap_pct)
+        guidance = long_term_guidance(stance, sizing, report.verdict, held=held_value > 0)
+        st.info(f"**For a long-term investor: {guidance.headline}**")
+        for point in guidance.points:
+            st.markdown(f"- {point}")
+        if held_value > 0:
+            st.caption(f"You currently hold {money(held_value)} in {sym}; your "
+                       f"{cap_pct:.0%} per-stock cap is {money(sizing.cap_value)}.")
 
         st.caption(report.verdict.caveat if report.verdict else DISCLAIMER)
 
         # download (PDF)
         st.download_button("⬇️ Download full report (PDF)",
-                           data=build_pdf_report(active, report, stance),
+                           data=build_pdf_report(active, report, stance, guidance),
                            file_name=f"{sym}_research.pdf", mime="application/pdf")
 
         # the evidence, one tap away

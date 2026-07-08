@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from ..constants import CONCENTRATION_TOP_HOLDING_WARN
-from ..research.report import Confidence, Leaning, Verdict
+from ..research.report import Confidence, Leaning, QualityTier, ValuationTier, Verdict
 
 # Per-stock ceiling for sizing. Reuse the concentration-flag threshold so staying within the
 # cap also keeps the book below the "concentrated" warning (one source of truth). Expert-tunable.
@@ -164,3 +164,78 @@ def suggest_allocation(amount: float,
 
     return AllocationPlan(amount=amount, allocations=tuple(allocations),
                           uninvested=remaining, notes=tuple(notes))
+
+
+@dataclass(frozen=True)
+class Guidance:
+    """Long-term (not trading) hold / trim / accumulate guidance with thesis-based triggers."""
+    headline: str
+    points: tuple[str, ...]
+
+
+def _money(x: float) -> str:
+    return f"₹{x:,.0f}"
+
+
+def long_term_guidance(stance: Stance, sizing: SizingAdvice, verdict: Verdict | None,
+                       held: bool) -> Guidance:
+    """Turn the stance + cap math + verdict into plain long-term guidance. Thesis-based, never a
+    dated sell/buy call: it says what to do now and the conditions under which to revisit."""
+    if verdict is None or stance == Stance.INSUFFICIENT_DATA:
+        return Guidance(
+            "Not enough verified data to guide a decision.",
+            ("Don't act on this until the figures cross-verify across sources, or your expert "
+             "reviews and approves it. Withholding is the safe choice here.",))
+
+    expensive = verdict.valuation == ValuationTier.EXPENSIVE
+    cheap_or_fair = verdict.valuation in (ValuationTier.CHEAP, ValuationTier.FAIR)
+    weak = verdict.quality == QualityTier.WEAK
+
+    # Conditions to revisit, drawn from what the verdict actually flagged.
+    triggers = []
+    if expensive:
+        triggers.append("the price stays well above its own history")
+    if verdict.quality in (QualityTier.WEAK, QualityTier.MIXED):
+        triggers.append("cash conversion, margins, or debt get worse")
+    if not triggers:
+        triggers.append("the fundamentals or valuation change materially")
+    revisit = "Revisit if " + ", or ".join(triggers) + "."
+
+    if weak:
+        return Guidance(
+            "Long-term: review whether the thesis still holds.",
+            ("The concern here is business quality, not just price, and for a long-term holding "
+             "weak fundamentals matter more than a cheap price.",
+             "Decide if the reasons you own it still apply. " + revisit))
+
+    if stance == Stance.UNFAVORABLE:  # strong business but expensive
+        pts = ["It looks like a solid business, but it's priced above its own history, so new "
+               "money would buy in expensive, not a spot to add."]
+        if held and sizing.over_cap:
+            pts.append(f"You hold {_money(sizing.current_value)}, already over your "
+                       f"{sizing.cap_pct:.0%} cap ({_money(sizing.cap_value)}); trimming toward "
+                       "the cap on strength is reasonable.")
+        elif held:
+            pts.append("Holding for the long term is reasonable; just don't add at this price.")
+        pts.append(revisit)
+        return Guidance("Long-term: hold a quality business, but don't add here.", tuple(pts))
+
+    if stance == Stance.FAVORABLE and cheap_or_fair:
+        if sizing.over_cap:
+            return Guidance(
+                "Long-term: positive, but you're already at your cap.",
+                (f"You hold {_money(sizing.current_value)}, at/over your {sizing.cap_pct:.0%} "
+                 f"limit ({_money(sizing.cap_value)}). The thesis is good, but adding more "
+                 "concentrates risk. Hold; rebalance toward the cap if you wish.",
+                 revisit))
+        return Guidance(
+            "Long-term: reasonable to accumulate, within your cap.",
+            (f"The evidence is favorable and there's about {_money(sizing.headroom)} of room "
+             f"before your {sizing.cap_pct:.0%} per-stock limit.",
+             "Add gradually over time rather than all at once, you're investing long term, not "
+             "timing the market.",
+             revisit))
+
+    return Guidance(
+        "Long-term: hold.",
+        ("Nothing in the verified data points to adding or trimming right now.", revisit))

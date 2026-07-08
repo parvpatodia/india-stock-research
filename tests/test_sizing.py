@@ -1,6 +1,7 @@
 from src.analysis.sizing import (
     AllocationCandidate,
     Stance,
+    long_term_guidance,
     position_sizing,
     stance_from_verdict,
     suggest_allocation,
@@ -96,6 +97,46 @@ def test_allocation_zero_amount_is_a_noop():
     cands = [AllocationCandidate("A", Stance.FAVORABLE, 0.0)]
     plan = suggest_allocation(0.0, cands, portfolio_value=100.0, cap_pct=0.25)
     assert plan.allocations == () and plan.uninvested == 0.0
+
+
+def _v(valuation, quality, leaning, conf=Confidence.MEDIUM):
+    return Verdict(valuation=valuation, quality=quality, leaning=leaning, confidence=conf)
+
+
+def test_guidance_insufficient_data_says_do_not_act():
+    g = long_term_guidance(Stance.INSUFFICIENT_DATA,
+                           position_sizing(0, 100, 0.25), None, held=False)
+    assert "Not enough verified data" in g.headline
+    assert any("Don't act" in p for p in g.points)
+
+
+def test_guidance_favorable_with_room_suggests_accumulate_gradually():
+    v = _v(ValuationTier.CHEAP, QualityTier.STRONG, Leaning.CONSTRUCTIVE)
+    g = long_term_guidance(Stance.FAVORABLE, position_sizing(0, 100, 0.25), v, held=False)
+    assert "accumulate" in g.headline.lower()
+    assert any("room" in p for p in g.points) and any("gradually" in p for p in g.points)
+
+
+def test_guidance_favorable_over_cap_says_hold_dont_add():
+    v = _v(ValuationTier.CHEAP, QualityTier.STRONG, Leaning.CONSTRUCTIVE)
+    g = long_term_guidance(Stance.FAVORABLE, position_sizing(40, 100, 0.25), v, held=True)
+    assert "cap" in g.headline.lower()
+    assert any("concentrates risk" in p for p in g.points)
+
+
+def test_guidance_unfavorable_strong_business_hold_dont_add_and_trim():
+    v = _v(ValuationTier.EXPENSIVE, QualityTier.STRONG, Leaning.CAUTIOUS)
+    g = long_term_guidance(Stance.UNFAVORABLE, position_sizing(40, 100, 0.25), v, held=True)
+    assert "don't add" in g.headline.lower()
+    assert any("trimming toward" in p for p in g.points)          # over-cap trim suggestion
+    assert any("Revisit if" in p for p in g.points)
+
+
+def test_guidance_weak_quality_reviews_thesis():
+    v = _v(ValuationTier.CHEAP, QualityTier.WEAK, Leaning.CAUTIOUS)
+    g = long_term_guidance(Stance.UNFAVORABLE, position_sizing(0, 100, 0.25), v, held=True)
+    assert "thesis" in g.headline.lower()
+    assert any("weak fundamentals matter more" in p for p in g.points)
 
 
 def test_allocation_spreads_across_two_favorable_names():
