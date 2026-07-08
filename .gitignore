@@ -15,3 +15,5 @@ config/sources.yaml
 # A real portfolio export dropped at the repo root (your holdings are private).
 /portfolio.csv
 /holdings.csv
+# Runtime eval cases captured from expert corrections (may reference real figures).
+data/

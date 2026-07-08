@@ -47,6 +47,8 @@ from src.research.claims import ESTIMATE, FACT, OPINION  # noqa: E402
 from src.research.grounded_analyst import GroundedAnalyst  # noqa: E402
 from src.research.library import build_library  # noqa: E402
 from src.research.report import ReviewStatus  # noqa: E402
+from src.eval.cases import EvalStore  # noqa: E402
+from src.eval.harness import evaluate, ground_truth_from_report  # noqa: E402
 from src.pipeline import build_company_report, build_report_for_symbol  # noqa: E402
 from src.data.figure_sources import YFinanceFigureSource  # noqa: E402
 from src.data.screener_source import ScreenerFigureSource  # noqa: E402
@@ -64,6 +66,7 @@ st.set_page_config(page_title="India Equity Research", layout="wide", page_icon=
 
 _ROOT = Path(__file__).resolve().parent
 SAMPLE_CSV = _ROOT / "sample_data" / "sample_portfolio.csv"
+EVAL_STORE = _ROOT / "data" / "eval_cases.jsonl"
 
 # Sources/documents: prefer the owner's real config, else fall back to the bundled sample.
 SOURCES_YAML = _ROOT / "config" / "sources.yaml"
@@ -481,6 +484,22 @@ if report is not None:
             st.markdown("**Review history:**")
             for e in report.audit:
                 st.caption(f"{e.timestamp} — {e.status.value} by {e.reviewer}: {e.note}")
+
+        st.markdown("**Record a corrected figure** (feeds the learning loop; no mistake twice)")
+        gt_fig = st.selectbox("Figure", [f.name for f in report.figures], key=f"gtf_{active}")
+        gt_val = st.number_input("Correct value (absolute rupees)", value=0.0, step=1.0,
+                                 format="%.0f", key=f"gtv_{active}")
+        if st.button("Save correction", key=f"gts_{active}") and reviewer.strip():
+            EvalStore(EVAL_STORE).add(ground_truth_from_report(
+                report, gt_fig, gt_val, note=note, reviewer=reviewer.strip()))
+            st.success(f"Recorded ground truth for {gt_fig}. It will be checked on every run.")
+
+cases = EvalStore(EVAL_STORE).load()
+if cases:
+    ev = evaluate(cases)
+    st.caption(f"Learning loop: {len(cases)} recorded corrections, accuracy {ev.accuracy:.0%} "
+               f"({ev.matches}/{ev.total}), trusted-but-wrong {ev.trusted_wrong} "
+               f"(must be 0).")
 
 # --- Mutual funds & SIPs ---
 
