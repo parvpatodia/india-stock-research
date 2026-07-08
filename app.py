@@ -42,7 +42,10 @@ from src.constants import (  # noqa: E402
 from src.data.annual_report_source import AnnualReportFigureSource  # noqa: E402
 from src.data.figure_sources import YFinanceFigureSource  # noqa: E402
 from src.data.news_source import NewsSource, registry_with_news  # noqa: E402
-from src.data.nse_annual_reports import nse_annual_report_source  # noqa: E402
+from src.data.nse_annual_reports import (  # noqa: E402
+    fetch_annual_report_text,
+    nse_annual_report_source,
+)
 from src.data.screener_source import ScreenerFigureSource  # noqa: E402
 from src.data.sheets_backend import (  # noqa: E402
     AppsScriptGateway,
@@ -71,6 +74,7 @@ from src.portfolio.analysis import (  # noqa: E402
 from src.portfolio.loader import load_holdings  # noqa: E402
 from src.research.analyst import ResearchAnalyst  # noqa: E402
 from src.research.claims import ESTIMATE, FACT, OPINION  # noqa: E402
+from src.research.annual_report_reader import read_filing  # noqa: E402
 from src.research.grounded_analyst import GroundedAnalyst  # noqa: E402
 from src.research.grounding import DocumentStore  # noqa: E402
 from src.research.library import build_library  # noqa: E402
@@ -170,6 +174,11 @@ def fetch_fundamentals(symbol: str) -> dict:
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_news(symbol: str, company_name: str):
     return get_news_source().fetch(symbol, company_name)
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def fetch_ar_text(symbol: str, url: str = ""):
+    return fetch_annual_report_text(symbol, url)
 
 
 @st.cache_data(ttl=300, show_spinner="Loading holdings from your Sheet…")
@@ -683,6 +692,36 @@ with tab_research:
                             f"{it.published or 'undated'}_")
             st.caption("News is reporting, attributed and dated. It is NOT cross-verified like a "
                        "figure and does not move the verdict above.")
+
+        # grounded annual-report reading (cited to the filing; abstains if it can't read it)
+        with st.expander("What the annual report says (read by AI, cited to the filing)"):
+            if not LiteLLMClient().available:
+                st.caption("Set the AI model to read the annual report.")
+            else:
+                ar_url = st.text_input("Annual report PDF URL (optional; blank = auto-fetch "
+                                       "from NSE)", key=f"arurl_{active}")
+                if st.button("Read the annual report", key=f"arread_{active}"):
+                    with st.spinner("Fetching and reading the filing…"):
+                        text = fetch_ar_text(sym, ar_url.strip())
+                        readings = read_filing(text, LiteLLMClient()) if text else []
+                        st.session_state.setdefault("ar_readings", {})[active] = (bool(text), readings)
+                cached_reading = st.session_state.get("ar_readings", {}).get(active)
+                if cached_reading is not None:
+                    had_text, readings = cached_reading
+                    if not had_text:
+                        st.warning("Couldn't read the filing (the report source may block cloud "
+                                   "servers). Paste the report's PDF URL above and try again.")
+                    for fr in readings:
+                        st.markdown(f"**{fr.topic}**")
+                        if fr.result.abstained:
+                            st.caption("Nothing citable found in the filing for this.")
+                        else:
+                            for claim in fr.result.claims:
+                                mark = "✓" if claim.is_verified_fact else "•"
+                                st.markdown(f"- {mark} {claim.text}")
+                    if readings:
+                        st.caption("Each point is drawn from and cited to the annual report; "
+                                   "anything not found in the filing is left out, not guessed.")
 
         # expert review panel (the safety gate) + learning loop
         with st.expander("Expert review panel", expanded=not report.is_trusted):

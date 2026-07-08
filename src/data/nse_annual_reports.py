@@ -87,3 +87,19 @@ def nse_annual_report_source(client=None,
         return text
 
     return AnnualReportFigureSource(text_provider, client=client)
+
+
+def fetch_annual_report_text(symbol: str, url: str = "",
+                             resolver: "NseAnnualReportResolver | None" = None,
+                             adapter: HttpDocumentAdapter | None = None) -> str | None:
+    """Raw annual-report text for grounded reading: from `url` if given, else resolve the latest
+    from NSE. Returns None if unavailable (e.g. NSE blocks the server IP), so the caller abstains."""
+    adapter = adapter or HttpDocumentAdapter("annual_report")
+    target = url.strip()
+    if not target:
+        resolver = resolver or NseAnnualReportResolver()
+        target = resolver.latest_report_url(symbol.strip().upper()) or ""
+    if not target:
+        return None
+    docs = adapter.fetch(target)
+    return docs[0].text if docs else None
