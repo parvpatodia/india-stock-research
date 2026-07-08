@@ -25,13 +25,17 @@ from .research.verification import SourcedValue, verify_figure
 
 def build_company_report(company: str,
                          figures: dict[str, list[SourcedValue]],
-                         claims: tuple[Claim, ...] = ()) -> Report:
+                         claims: tuple[Claim, ...] = (),
+                         median_pe: float | None = None) -> Report:
     verified = {name: verify_figure(name, values) for name, values in figures.items()}
 
     def tv(name: str):
         return value_if_trustworthy(verified.get(name))
 
-    valuation = valuation_vs_history(tv("current_pe"), tv("median_pe"))
+    # median_pe is a computed baseline for the (opinion) valuation tier; fall back to a
+    # cross-verified median_pe figure if one was supplied, else None -> valuation unknown.
+    median = median_pe if median_pe is not None else tv("median_pe")
+    valuation = valuation_vs_history(tv("current_pe"), median)
     quality_signals = [
         earnings_quality(tv("operating_cash_flow"), tv("net_profit")),
         leverage_health(tv("total_debt"), tv("equity"), tv("ebit"), tv("interest_expense")),
@@ -114,6 +118,9 @@ def gather_aligned_figures(symbol: str,
 
 def build_report_for_symbol(symbol: str, sources: list[FigureSource],
                             claims: tuple[Claim, ...] = ()) -> Report:
-    """Real-data entry point: gather fiscal-year-aligned figures across sources, then run the
-    pipeline. A single source stays single-source (low confidence); agreeing sources verify."""
-    return build_company_report(symbol, gather_aligned_figures(symbol, sources), claims=claims)
+    """Real-data entry point: gather fiscal-year-aligned figures across sources, compute the
+    historical median P/E for the valuation baseline, then run the pipeline. A single source
+    stays single-source (low confidence); agreeing sources verify."""
+    from .analysis.valuation import compute_median_pe
+    return build_company_report(symbol, gather_aligned_figures(symbol, sources),
+                                claims=claims, median_pe=compute_median_pe(symbol))
