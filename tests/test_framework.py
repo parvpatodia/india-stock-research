@@ -1,0 +1,88 @@
+from src.analysis.framework import (
+    assemble_verdict,
+    earnings_quality,
+    leverage_health,
+    promoter_pledge,
+    valuation_vs_history,
+    value_if_trustworthy,
+)
+from src.research.report import Confidence, Leaning, QualityTier, ValuationTier
+from src.research.verification import SourcedValue, verify_figure
+
+
+def test_value_if_trustworthy_only_returns_verified():
+    verified = verify_figure("x", [SourcedValue(10, "a"), SourcedValue(10, "b")])
+    single = verify_figure("y", [SourcedValue(10, "a")])
+    conflict = verify_figure("z", [SourcedValue(10, "a"), SourcedValue(20, "b")])
+    assert value_if_trustworthy(verified) == 10
+    assert value_if_trustworthy(single) is None      # single-source is not trustworthy
+    assert value_if_trustworthy(conflict) is None     # conflict is not trustworthy
+    assert value_if_trustworthy(None) is None
+
+
+def test_valuation_tiers():
+    assert valuation_vs_history(15, 25).verdict == "cheap"       # 60% of history
+    assert valuation_vs_history(25, 25).verdict == "fair"
+    assert valuation_vs_history(40, 25).verdict == "expensive"
+    assert valuation_vs_history(40, 25).concern is True
+    assert valuation_vs_history(None, 25).known is False
+    assert valuation_vs_history(-5, 25).known is False           # loss-making
+
+
+def test_earnings_quality():
+    assert earnings_quality(90, 100).verdict == "strong"
+    assert earnings_quality(40, 100).verdict == "weak"
+    assert earnings_quality(40, 100).concern is True
+    assert earnings_quality(65, 100).verdict == "mixed"
+    assert earnings_quality(90, 0).known is False
+
+
+def test_leverage_health():
+    assert leverage_health(20, 100, 50, 5).verdict == "healthy"   # D/E 0.2, cover 10x
+    assert leverage_health(150, 100, 10, 8).verdict == "stretched"  # D/E 1.5
+    assert leverage_health(20, 100, 6, 3).verdict == "stretched"    # cover 2x < 3
+    assert leverage_health(20, 0, 5, 1).known is False
+
+
+def test_promoter_pledge():
+    assert promoter_pledge(0).verdict == "none"
+    assert promoter_pledge(10).verdict == "watch"
+    assert promoter_pledge(40).verdict == "high"
+    assert promoter_pledge(40).concern is True
+    assert promoter_pledge(None).known is False
+
+
+def test_assemble_verdict_constructive_high_confidence():
+    v = assemble_verdict(
+        valuation_vs_history(15, 25),  # cheap
+        [earnings_quality(90, 100), leverage_health(20, 100, 50, 5), promoter_pledge(0)],
+    )
+    assert v.valuation == ValuationTier.CHEAP
+    assert v.quality == QualityTier.STRONG
+    assert v.leaning == Leaning.CONSTRUCTIVE
+    assert v.confidence == Confidence.HIGH
+    assert v.caveat  # always present
+    assert len(v.reasons) == 4
+
+
+def test_assemble_verdict_cautious_on_concerns():
+    v = assemble_verdict(
+        valuation_vs_history(40, 25),  # expensive (concern)
+        [earnings_quality(40, 100), leverage_health(150, 100, 10, 8), promoter_pledge(40)],
+    )
+    assert v.valuation == ValuationTier.EXPENSIVE
+    assert v.quality == QualityTier.WEAK  # 3 concerns
+    assert v.leaning == Leaning.CAUTIOUS
+
+
+def test_assemble_verdict_unknown_is_low_confidence():
+    v = assemble_verdict(
+        valuation_vs_history(None, None),
+        [earnings_quality(None, None), leverage_health(None, None, None, None),
+         promoter_pledge(None)],
+    )
+    assert v.valuation == ValuationTier.UNKNOWN
+    assert v.quality == QualityTier.UNKNOWN
+    assert v.leaning == Leaning.UNKNOWN
+    assert v.confidence == Confidence.LOW
+    assert v.reasons == ()

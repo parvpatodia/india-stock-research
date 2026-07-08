@@ -1,0 +1,161 @@
+"""Seasoned-investor analysis metrics, computed ONLY from cross-verified figures.
+
+Each analyzer takes plain numbers and returns a MetricResult. If a required input is missing
+(because the underlying figure was not cross-verified, so the caller passed None), the metric
+is `known=False` and contributes nothing to the verdict rather than being guessed. Thresholds
+are documented heuristics a human expert can tune; they are not gospel, and the verdict they
+produce is always caveated and expert-gated (see report.py).
+
+Pull inputs with value_if_trustworthy(figure): it yields a figure's value only when that
+figure is VERIFIED, so an unverified number can never drive a metric.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from ..research.report import (
+    Confidence,
+    Leaning,
+    QualityTier,
+    ValuationTier,
+    Verdict,
+)
+from ..research.verification import VerifiedFigure
+
+# --- documented heuristic thresholds (expert-tunable) ---
+_PE_CHEAP = 0.80        # current P/E below 80% of its own history median reads cheap
+_PE_EXPENSIVE = 1.20    # above 120% reads expensive
+_OCF_STRONG = 0.80      # operating cash flow >= 80% of net profit = earnings backed by cash
+_OCF_WEAK = 0.50        # below 50% = a quality-of-earnings concern
+_DE_HEALTHY = 0.50      # debt/equity below this is comfortable
+_DE_STRETCHED = 1.00    # above this is stretched
+_COVERAGE_MIN = 3.0     # interest coverage (EBIT/interest) below this is a concern
+_PLEDGE_HIGH = 25.0     # promoter pledge above 25% is a serious red flag
+
+
+@dataclass(frozen=True)
+class MetricResult:
+    name: str
+    known: bool
+    verdict: str        # short human label, e.g. "cheap" / "strong" / "concern" / "unknown"
+    detail: str         # plain-English reason including the numbers used
+    concern: bool = False  # True = a negative signal, used to aggregate quality
+
+
+def value_if_trustworthy(figure: VerifiedFigure | None) -> float | None:
+    # WHY: enforces "only cross-verified numbers drive analysis" at the boundary.
+    if figure is None or not figure.is_trustworthy:
+        return None
+    return figure.value
+
+
+def _unknown(name: str, why: str) -> MetricResult:
+    return MetricResult(name, known=False, verdict="unknown", detail=why)
+
+
+def valuation_vs_history(current_pe: float | None,
+                         median_pe: float | None) -> MetricResult:
+    name = "Valuation (P/E vs own history)"
+    if current_pe is None or median_pe is None or current_pe <= 0 or median_pe <= 0:
+        return _unknown(name, "P/E or its historical median is unavailable or non-positive "
+                              "(e.g. loss-making); cannot judge valuation.")
+    ratio = current_pe / median_pe
+    if ratio < _PE_CHEAP:
+        v, concern = "cheap", False
+    elif ratio > _PE_EXPENSIVE:
+        v, concern = "expensive", True
+    else:
+        v, concern = "fair", False
+    return MetricResult(name, True, v,
+                        f"P/E {current_pe:.1f} vs its own median {median_pe:.1f} "
+                        f"({ratio:.0%} of history) reads {v}.", concern)
+
+
+def earnings_quality(operating_cash_flow: float | None,
+                     net_profit: float | None) -> MetricResult:
+    name = "Earnings quality (cash flow vs profit)"
+    if operating_cash_flow is None or net_profit is None or net_profit <= 0:
+        return _unknown(name, "operating cash flow or (positive) net profit unavailable.")
+    ratio = operating_cash_flow / net_profit
+    if ratio >= _OCF_STRONG:
+        v, concern = "strong", False
+    elif ratio < _OCF_WEAK:
+        v, concern = "weak", True
+    else:
+        v, concern = "mixed", False
+    return MetricResult(name, True, v,
+                        f"operating cash flow is {ratio:.0%} of net profit; profits are "
+                        f"{'well' if concern is False and v == 'strong' else 'only partly'} "
+                        f"backed by cash.", concern)
+
+
+def leverage_health(total_debt: float | None, equity: float | None,
+                    ebit: float | None, interest: float | None) -> MetricResult:
+    name = "Leverage and interest cover"
+    if total_debt is None or equity is None or equity <= 0:
+        return _unknown(name, "debt or (positive) equity unavailable.")
+    de = total_debt / equity
+    coverage = None
+    if ebit is not None and interest is not None and interest > 0:
+        coverage = ebit / interest
+    stretched = de > _DE_STRETCHED or (coverage is not None and coverage < _COVERAGE_MIN)
+    healthy = de < _DE_HEALTHY and (coverage is None or coverage >= _COVERAGE_MIN)
+    v = "stretched" if stretched else ("healthy" if healthy else "moderate")
+    cov_txt = f", interest cover {coverage:.1f}x" if coverage is not None else ""
+    return MetricResult(name, True, v,
+                        f"debt/equity {de:.2f}{cov_txt} reads {v}.", concern=stretched)
+
+
+def promoter_pledge(pledge_pct: float | None) -> MetricResult:
+    name = "Promoter pledge"
+    if pledge_pct is None:
+        return _unknown(name, "promoter pledge percentage unavailable.")
+    if pledge_pct <= 0:
+        return MetricResult(name, True, "none", "no promoter pledging.", concern=False)
+    if pledge_pct > _PLEDGE_HIGH:
+        return MetricResult(name, True, "high",
+                            f"{pledge_pct:.0f}% of promoter holding is pledged; a serious "
+                            "red flag.", concern=True)
+    return MetricResult(name, True, "watch",
+                        f"{pledge_pct:.0f}% of promoter holding is pledged; watch it.",
+                        concern=False)
+
+
+def assemble_verdict(valuation: MetricResult,
+                     quality_signals: list[MetricResult]) -> Verdict:
+    """Turn the metrics into a caveated Verdict. Confidence reflects how much was actually
+    known; a thinly-evidenced verdict is low confidence, not a confident guess."""
+    valuation_tier = {
+        "cheap": ValuationTier.CHEAP, "fair": ValuationTier.FAIR,
+        "expensive": ValuationTier.EXPENSIVE,
+    }.get(valuation.verdict, ValuationTier.UNKNOWN)
+
+    known_quality = [m for m in quality_signals if m.known]
+    concerns = [m for m in known_quality if m.concern]
+    if not known_quality:
+        quality_tier = QualityTier.UNKNOWN
+    elif len(concerns) >= 2:
+        quality_tier = QualityTier.WEAK
+    elif len(concerns) == 1:
+        quality_tier = QualityTier.MIXED
+    else:
+        quality_tier = QualityTier.STRONG
+
+    if valuation_tier == ValuationTier.UNKNOWN and quality_tier == QualityTier.UNKNOWN:
+        leaning = Leaning.UNKNOWN
+    elif valuation_tier == ValuationTier.EXPENSIVE or quality_tier == QualityTier.WEAK:
+        leaning = Leaning.CAUTIOUS
+    elif (valuation_tier in (ValuationTier.CHEAP, ValuationTier.FAIR)
+          and quality_tier == QualityTier.STRONG):
+        leaning = Leaning.CONSTRUCTIVE
+    else:
+        leaning = Leaning.NEUTRAL
+
+    all_metrics = [valuation, *quality_signals]
+    known_frac = sum(1 for m in all_metrics if m.known) / max(len(all_metrics), 1)
+    confidence = (Confidence.HIGH if known_frac >= 0.75
+                  else Confidence.MEDIUM if known_frac >= 0.5 else Confidence.LOW)
+
+    reasons = tuple(m.detail for m in all_metrics if m.known)
+    return Verdict(valuation=valuation_tier, quality=quality_tier, leaning=leaning,
+                   confidence=confidence, reasons=reasons)
