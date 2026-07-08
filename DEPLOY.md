@@ -40,6 +40,20 @@ Alternatives (only if you skip the Apps Script bridge):
    `LLM_API_KEY`, and the `[gcp_service_account]` block + `sheet_key`.
 4. Deploy. Open on the iPhone in Safari → Share → **Add to Home Screen** for an app icon.
 
+## 4b. Daily suggestions engine (24/7, free)
+A GitHub Actions cron (`.github/workflows/daily.yml`) runs the research every morning, ranks
+long-term-fit names (favorable/neutral, within your per-stock cap, improving trends), writes a
+`Today` tab to the Sheet (shown in the app's Invest tab), and pushes the top picks to ntfy.
+1. Repo → Settings → Secrets and variables → Actions → add: `APPS_SCRIPT_URL`, `APPS_SCRIPT_TOKEN`
+   (same as the app), `LLM_MODEL`, `LLM_API_KEY` (optional, for the AR tiebreaker), and
+   `NTFY_TOPIC` (a long, hard-to-guess topic name you choose, e.g. `parv-stocks-9f3a2c`).
+2. Phone push: install the free **ntfy** app (iOS/Android) → Subscribe → enter the same topic.
+3. Optional: add a `Watchlist` tab to the Sheet (a `Symbol` column) to research names you don't
+   yet own. Trigger a first run from the repo's Actions tab (workflow_dispatch).
+
+Note: GitHub's runners are datacenter IPs; if Screener is blocked there (single-source →
+nothing cross-verifies → no picks), switch the second source to an API (e.g. a free FMP key).
+
 ## 5. Verify after deploy
 - Password gate appears and only the shared password gets in.
 - Portfolio loads (from the Sheet if configured, else an uploaded CSV).

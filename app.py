@@ -738,6 +738,21 @@ with tab_research:
 
 with tab_invest:
     st.subheader("Invest a lump sum")
+
+    # Today's picks: written each morning by the daily engine (scripts/daily_suggestions.py).
+    try:
+        today_rows = get_gateway().read("Today")
+    except Exception:
+        today_rows = []
+    if today_rows:
+        st.markdown("**📌 Today's long-term picks** (auto-refreshed daily)")
+        for r in today_rows[:6]:
+            st.markdown(f"- **{r.get('symbol', '')}** ({r.get('stance', '')}) — "
+                        f"{r.get('reason', '')}")
+        st.caption(f"As of {today_rows[0].get('date', '')}. Researched, cross-verified, and within "
+                   "your per-stock cap. Not a buy order.")
+        st.divider()
+
     st.caption("Given an amount, this spreads it across your APPROVED names that the evidence "
                "supports, each kept under your per-stock cap. Not a buy order, you decide.")
 
