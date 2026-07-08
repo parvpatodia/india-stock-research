@@ -215,7 +215,12 @@ src/eval/                       regression cases from expert corrections + accur
 - [ ] V3 analysis framework: valuation/health/governance metrics from verified figures. (test)
 - [x] V4a source-adapter interface + HttpDocumentAdapter (PDF/HTML/text); ingest only into
       registered sources. Live-verified fetch of a real NSE annual report. See SOURCES.md. (test+live)
-- [ ] V4b concrete adapters for owner-provided REST APIs + browser-MCP fallback for blocked hosts.
+- [x] V4b figure-source layer: FigureSource interface + YFinanceFigureSource (real data);
+      pipeline gathers figures across sources and cross-verifies. Single source -> not trusted,
+      verdict stays low-confidence (honest); a 2nd source makes agreeing figures VERIFIED.
+      Live-verified on RELIANCE via the UI. (test + live)
+- [ ] V4c 2nd independent figure source (owner REST API adapter, or AR-text extraction) so
+      figures actually cross-verify; browser-MCP fallback for hosts that block plain HTTP.
 - [ ] V5 company-search -> draft report -> expert review panel -> approved report UI. (apptest)
 - [ ] V6 eval loop: expert correction -> regression case -> accuracy score. (test)
 

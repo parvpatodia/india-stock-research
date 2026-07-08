@@ -47,7 +47,8 @@ from src.research.claims import ESTIMATE, FACT, OPINION  # noqa: E402
 from src.research.grounded_analyst import GroundedAnalyst  # noqa: E402
 from src.research.library import build_library  # noqa: E402
 from src.research.report import ReviewStatus  # noqa: E402
-from src.pipeline import build_company_report  # noqa: E402
+from src.pipeline import build_company_report, build_report_for_symbol  # noqa: E402
+from src.data.figure_sources import YFinanceFigureSource  # noqa: E402
 from src.samples import SAMPLE_COMPANIES  # noqa: E402
 from src.sip import sip_future_value  # noqa: E402
 from src.sources.registry import SourceRegistry  # noqa: E402
@@ -373,13 +374,28 @@ st.caption("A draft report is NOT for decisions until your expert approves it. T
 if "reports" not in st.session_state:
     st.session_state.reports = {}
 
-company = st.selectbox("Company (sample set for now; real data via the source APIs later)",
-                       list(SAMPLE_COMPANIES.keys()))
-if st.button("Generate draft report"):
-    st.session_state.reports[company] = build_company_report(company, SAMPLE_COMPANIES[company])
+csrc = st.columns(2)
+with csrc[0]:
+    sample = st.selectbox("Sample company", list(SAMPLE_COMPANIES.keys()))
+    if st.button("Generate draft (sample)"):
+        st.session_state.reports[sample] = build_company_report(sample, SAMPLE_COMPANIES[sample])
+        st.session_state.active_report = sample
+with csrc[1]:
+    live_symbol = st.text_input("or a live NSE symbol (yfinance, single source)",
+                                placeholder="RELIANCE")
+    if st.button("Generate live draft"):
+        sym = live_symbol.strip().upper()
+        if sym:
+            key = f"{sym} (live/yfinance)"
+            with st.spinner(f"Pulling {sym} from yfinance..."):
+                st.session_state.reports[key] = build_report_for_symbol(
+                    sym, [YFinanceFigureSource()])
+            st.session_state.active_report = key
 
-report = st.session_state.reports.get(company)
+active = st.session_state.get("active_report")
+report = st.session_state.reports.get(active) if active else None
 if report is not None:
+    st.markdown(f"#### {active}")
     if report.is_trusted:
         last = report.audit[-1]
         st.success(f"APPROVED by {last.reviewer} at {last.timestamp}. Reviewed.")
@@ -412,28 +428,33 @@ if report is not None:
     if report.conflicts:
         st.error(f"{len(report.conflicts)} figure(s) in CONFLICT (independent sources disagree); "
                  "withheld from the verdict. Resolve or acknowledge before approving.")
+    single = [f for f in report.figures if f.status.value == "single_source"]
+    if single:
+        st.info(f"{len(single)} figure(s) are single-source (not cross-verified), so the verdict "
+                "is intentionally low-confidence. Add a second independent source (your APIs) to "
+                "cross-verify and raise confidence.")
 
     with st.expander("Expert review panel", expanded=not report.is_trusted):
-        reviewer = st.text_input("Reviewer (your name)", key=f"rv_{company}")
-        note = st.text_area("Note", key=f"note_{company}")
+        reviewer = st.text_input("Reviewer (your name)", key=f"rv_{active}")
+        note = st.text_area("Note", key=f"note_{active}")
         ack = False
         if report.conflicts:
             ack = st.checkbox("I checked the conflicting figures by hand and accept them",
-                              key=f"ack_{company}")
+                              key=f"ack_{active}")
         rc = st.columns(2)
-        if rc[0].button("Approve", key=f"ap_{company}"):
+        if rc[0].button("Approve", key=f"ap_{active}"):
             try:
-                st.session_state.reports[company] = report.approve(
+                st.session_state.reports[active] = report.approve(
                     reviewer=reviewer, note=note, acknowledge_conflicts=ack)
                 st.rerun()
             except ValueError as exc:
                 st.error(str(exc))
         corrections = rc[1].text_area("Corrections (one per line, for rejection)",
-                                      key=f"corr_{company}")
-        if rc[1].button("Reject", key=f"rj_{company}"):
+                                      key=f"corr_{active}")
+        if rc[1].button("Reject", key=f"rj_{active}"):
             try:
                 fixes = tuple(c.strip() for c in corrections.splitlines() if c.strip())
-                st.session_state.reports[company] = report.reject(
+                st.session_state.reports[active] = report.reject(
                     reviewer=reviewer, note=note, corrections=fixes)
                 st.rerun()
             except ValueError as exc:
