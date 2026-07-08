@@ -49,6 +49,7 @@ from src.research.library import build_library  # noqa: E402
 from src.research.report import ReviewStatus  # noqa: E402
 from src.pipeline import build_company_report, build_report_for_symbol  # noqa: E402
 from src.data.figure_sources import YFinanceFigureSource  # noqa: E402
+from src.data.screener_source import ScreenerFigureSource  # noqa: E402
 from src.data.annual_report_source import AnnualReportFigureSource  # noqa: E402
 from src.sources.adapters import HttpDocumentAdapter  # noqa: E402
 from src.llm.client import LiteLLMClient  # noqa: E402
@@ -392,8 +393,9 @@ with csrc[1]:
     if st.button("Generate live draft"):
         sym = live_symbol.strip().upper()
         if sym:
-            sources = [YFinanceFigureSource()]
-            label = "yfinance"
+            # yfinance + Screener are both free; two sources let figures cross-verify.
+            sources = [YFinanceFigureSource(), ScreenerFigureSource()]
+            label = "yfinance + screener"
             if ar_url.strip():
                 _adapter = HttpDocumentAdapter("annual_report")
 
@@ -402,7 +404,7 @@ with csrc[1]:
                     return docs[0].text if docs else None
 
                 sources.append(AnnualReportFigureSource(_ar_text, client=LiteLLMClient()))
-                label = "yfinance + annual report"
+                label += " + annual report"
             key = f"{sym} (live/{label})"
             with st.spinner(f"Analyzing {sym} ({label})..."):
                 st.session_state.reports[key] = build_report_for_symbol(sym, sources)

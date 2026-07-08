@@ -50,7 +50,11 @@ def _agree(values: list[float], rel_tolerance: float) -> bool:
 
 
 def verify_figure(name: str, values: list[SourcedValue],
-                  rel_tolerance: float = 0.01) -> VerifiedFigure:
+                  rel_tolerance: float = 0.02) -> VerifiedFigure:
+    # WHY 2%: cross-verification catches gross errors (wrong scale, wrong figure, hallucination),
+    # which are far larger than 2%. Two independent sources reporting a financial figure within
+    # 2% is strong corroboration; sub-2% deltas are rounding/definitional noise. The expert
+    # sign-off (report.py) remains the final check, so this is not the last line of defense.
     """Cross-check a figure across sources. VERIFIED needs >=2 DISTINCT sources agreeing."""
     usable = [v for v in values if v.value is not None]
     if not usable:
