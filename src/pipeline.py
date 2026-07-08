@@ -7,7 +7,7 @@ LLM and no network; sources are passed in, so it is fully testable.
 """
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 from .analysis.framework import (
     assemble_verdict,
@@ -17,7 +17,7 @@ from .analysis.framework import (
     valuation_vs_history,
     value_if_trustworthy,
 )
-from .data.figure_sources import FigureSource
+from .data.figure_sources import POINT_FIGURES, YEAR_FIGURES, FigureSource
 from .research.claims import Claim
 from .research.report import Report, ReviewStatus
 from .research.verification import SourcedValue, verify_figure
@@ -59,8 +59,61 @@ def gather_figures(symbol: str,
     return dict(merged)
 
 
+def _latest_common_year(per_source: dict[str, dict[int, float]]) -> int | None:
+    """The most recent fiscal year present in >=2 sources; else the latest year available."""
+    if not per_source:
+        return None
+    counts = Counter(year for yearmap in per_source.values() for year in yearmap)
+    common = [year for year, c in counts.items() if c >= 2]
+    if common:
+        return max(common)
+    all_years = [year for yearmap in per_source.values() for year in yearmap]
+    return max(all_years) if all_years else None
+
+
+def gather_aligned_figures(symbol: str,
+                           sources: list[FigureSource]) -> dict[str, list[SourcedValue]]:
+    """Cross-source figures with fiscal-year alignment.
+
+    For each statement figure, compare the SAME latest common fiscal year across sources (so a
+    source that reports one year ahead of another does not spuriously conflict). Point figures
+    (current P/E, pledge) are compared as-is. Scalar-only sources (e.g. annual-report extraction)
+    fill in a figure only when fewer than two year-aligned sources cover it.
+    """
+    scalar_by_source = {src.source_id: src.figures(symbol) for src in sources}
+    series_by_figure: dict[str, dict[str, dict[int, float]]] = defaultdict(dict)
+    for src in sources:
+        for figure, yearmap in src.figures_by_year(symbol).items():
+            if yearmap:
+                series_by_figure[figure][src.source_id] = yearmap
+
+    merged: dict[str, list[SourcedValue]] = defaultdict(list)
+
+    for figure in YEAR_FIGURES:
+        per_source = series_by_figure.get(figure, {})
+        year = _latest_common_year(per_source)
+        used = set()
+        if year is not None:
+            for sid, yearmap in per_source.items():
+                if yearmap.get(year) is not None:
+                    merged[figure].append(SourcedValue(yearmap[year], sid, locator=f"FY{year}"))
+                    used.add(sid)
+        for sid, scalar in scalar_by_source.items():  # fallback for scalar-only sources
+            if len(merged[figure]) >= 2:
+                break
+            if sid not in used and scalar.get(figure) is not None:
+                merged[figure].append(SourcedValue(scalar[figure], sid, locator="reported"))
+
+    for figure in POINT_FIGURES:
+        for sid, scalar in scalar_by_source.items():
+            if scalar.get(figure) is not None:
+                merged[figure].append(SourcedValue(scalar[figure], sid))
+
+    return dict(merged)
+
+
 def build_report_for_symbol(symbol: str, sources: list[FigureSource],
                             claims: tuple[Claim, ...] = ()) -> Report:
-    """Real-data entry point: pull figures from the given sources, then run the same pipeline.
-    With a single source, figures are single-source and the verdict stays low-confidence."""
-    return build_company_report(symbol, gather_figures(symbol, sources), claims=claims)
+    """Real-data entry point: gather fiscal-year-aligned figures across sources, then run the
+    pipeline. A single source stays single-source (low confidence); agreeing sources verify."""
+    return build_company_report(symbol, gather_aligned_figures(symbol, sources), claims=claims)

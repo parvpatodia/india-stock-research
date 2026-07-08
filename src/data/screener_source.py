@@ -65,14 +65,12 @@ def _latest_annual(df, label: str) -> float | None:
     return None
 
 
-def parse_screener_figures(html: str) -> dict[str, float | None]:
-    """Pure: parse Screener HTML into framework figures (absolute rupees). Missing -> None."""
-    out: dict[str, float | None] = {name: None for name in FRAMEWORK_FIGURES}
+def _find_tables(html: str):
+    """Return (pnl, balance, cash) DataFrames from Screener HTML, or Nones."""
     try:
         tables = pd.read_html(io.StringIO(html))
     except Exception:
         tables = []
-
     pnl = balance = cash = None
     for df in tables:
         if df.shape[1] < 2:
@@ -86,6 +84,51 @@ def parse_screener_figures(html: str) -> dict[str, float | None]:
             balance = df
         if cash is None and any("cash from operating activity" in l for l in labels):
             cash = df
+    return pnl, balance, cash
+
+
+def _annual_series(df, label: str) -> dict[int, float]:
+    """{fiscal_year: value} across every year column for the first matching row."""
+    out: dict[int, float] = {}
+    if df is None:
+        return out
+    for _, row in df.iterrows():
+        lab = _clean_label(row.iloc[0])
+        if lab == label or lab.startswith(label):
+            for col in list(df.columns)[1:]:
+                m = _YEAR_RE.search(str(col))
+                n = _num(row[col])
+                if m and n is not None:
+                    out[int(m.group(1))] = n
+            break
+    return out
+
+
+def parse_screener_series(html: str) -> dict[str, dict[int, float]]:
+    """Pure: per-fiscal-year series for the statement figures (absolute rupees)."""
+    pnl, balance, cash = _find_tables(html)
+    net = _annual_series(pnl, "net profit")
+    pbt = _annual_series(pnl, "profit before tax")
+    interest = _annual_series(pnl, "interest")
+    ocf = _annual_series(cash, "cash from operating activity")
+    debt = _annual_series(balance, "borrowings")
+    eqcap = _annual_series(balance, "equity capital")
+    reserves = _annual_series(balance, "reserves")
+    series = {
+        "net_profit": {y: v * _CRORE for y, v in net.items()},
+        "operating_cash_flow": {y: v * _CRORE for y, v in ocf.items()},
+        "total_debt": {y: v * _CRORE for y, v in debt.items()},
+        "interest_expense": {y: abs(v) * _CRORE for y, v in interest.items()},
+        "ebit": {y: (pbt[y] + interest[y]) * _CRORE for y in pbt if y in interest},
+        "equity": {y: (eqcap[y] + reserves[y]) * _CRORE for y in eqcap if y in reserves},
+    }
+    return {name: yearmap for name, yearmap in series.items() if yearmap}
+
+
+def parse_screener_figures(html: str) -> dict[str, float | None]:
+    """Pure: parse Screener HTML into framework figures (absolute rupees). Missing -> None."""
+    out: dict[str, float | None] = {name: None for name in FRAMEWORK_FIGURES}
+    pnl, balance, cash = _find_tables(html)
 
     net_profit = _latest_annual(pnl, "net profit")
     pbt = _latest_annual(pnl, "profit before tax")
@@ -138,3 +181,9 @@ class ScreenerFigureSource(FigureSource):
         if not html:
             return {name: None for name in FRAMEWORK_FIGURES}
         return parse_screener_figures(html)
+
+    def figures_by_year(self, symbol: str) -> dict[str, dict[int, float]]:
+        html = self._fetcher(symbol.strip().upper())
+        if not html:
+            return {}
+        return parse_screener_series(html)
