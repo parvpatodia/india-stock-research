@@ -26,7 +26,7 @@ class FakeClient(LLMClient):
     def available(self):
         return self._available
 
-    def complete(self, system, user, max_tokens=1000):
+    def complete(self, system, user, max_tokens=1000, json_mode=False, json_schema=None):
         return self._response
 
 
@@ -80,6 +80,17 @@ def test_parse_handles_comma_string_value():
 
 def test_parse_null_value_is_none():
     payload = {"net_profit": {"value": None, "unit": "crore", "quote": "x"}}
+    assert parse_extraction(payload, AR_TEXT)["net_profit"] is None
+
+
+def test_numeric_grounding_accepts_real_number_with_bad_quote():
+    # The number 80,775 IS in the report; the quote is paraphrased (as garbled PDF text causes).
+    payload = {"net_profit": {"value": 80775, "unit": "crore", "quote": "paraphrased, not verbatim"}}
+    assert parse_extraction(payload, AR_TEXT)["net_profit"] == 80775 * 1e7
+
+
+def test_numeric_grounding_rejects_absent_number():
+    payload = {"net_profit": {"value": 12345, "unit": "crore", "quote": "not in report"}}
     assert parse_extraction(payload, AR_TEXT)["net_profit"] is None
 
 

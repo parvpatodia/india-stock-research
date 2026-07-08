@@ -18,7 +18,8 @@ class FakeClient(LLMClient):
     def available(self) -> bool:
         return self._available
 
-    def complete(self, system: str, user: str, max_tokens: int = 1000) -> str:
+    def complete(self, system: str, user: str, max_tokens: int = 1000,
+                 json_mode: bool = False, json_schema: dict | None = None) -> str:
         return self._response
 
 

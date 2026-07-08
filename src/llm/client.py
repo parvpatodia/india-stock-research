@@ -23,8 +23,10 @@ class LLMClient(ABC):
         """True if a model is configured and a call can be attempted."""
 
     @abstractmethod
-    def complete(self, system: str, user: str, max_tokens: int = 1000) -> str:
-        """Return the model's text reply. Raises on transport/config failure."""
+    def complete(self, system: str, user: str, max_tokens: int = 1000,
+                 json_mode: bool = False, json_schema: dict | None = None) -> str:
+        """Return the model's text reply. json_mode forces valid JSON; json_schema forces a
+        specific JSON structure (needed so small models fill the exact keys, not their own)."""
 
     @property
     def model_name(self) -> str:
@@ -53,7 +55,8 @@ class LiteLLMClient(LLMClient):
     def model_name(self) -> str:
         return self.model or "none"
 
-    def complete(self, system: str, user: str, max_tokens: int = 1000) -> str:
+    def complete(self, system: str, user: str, max_tokens: int = 1000,
+                 json_mode: bool = False, json_schema: dict | None = None) -> str:
         if not self.available:
             raise RuntimeError("no LLM configured (set LLM_MODEL)")
         # WHY: import lazily so the package loads (and unit tests with a fake client run)
@@ -66,6 +69,15 @@ class LiteLLMClient(LLMClient):
             max_tokens=max_tokens,
             temperature=self.temperature,
         )
+        if json_schema is not None:
+            # WHY: force the EXACT key structure. With plain json_mode small models return valid
+            # JSON but invent their own keys; a schema makes them fill the fields we asked for.
+            kwargs["response_format"] = {"type": "json_schema",
+                                         "json_schema": {"name": "extraction", "schema": json_schema}}
+        elif json_mode:
+            # WHY: force valid-JSON output (prose otherwise breaks the parse). LiteLLM maps this
+            # to Ollama's format=json / OpenAI json_object.
+            kwargs["response_format"] = {"type": "json_object"}
         if self.api_key:
             kwargs["api_key"] = self.api_key
         if self.api_base:

@@ -77,7 +77,7 @@ class GroundedAnalyst:
         )
         user = f"QUESTION:\n{question}\n\nSOURCES:\n{sources_block}"
         try:
-            raw = self.client.complete(_SYSTEM, user, max_tokens=1200)
+            raw = self.client.complete(_SYSTEM, user, max_tokens=1200, json_mode=True)
             return _parse_json(raw)
         except Exception as exc:
             return {"abstain": True, "reason": f"answer generation failed: {exc}"}
