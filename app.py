@@ -53,6 +53,7 @@ from src.pipeline import build_company_report, build_report_for_symbol  # noqa: 
 from src.data.figure_sources import YFinanceFigureSource  # noqa: E402
 from src.data.screener_source import ScreenerFigureSource  # noqa: E402
 from src.data.annual_report_source import AnnualReportFigureSource  # noqa: E402
+from src.data.nse_annual_reports import nse_annual_report_source  # noqa: E402
 from src.sources.adapters import HttpDocumentAdapter  # noqa: E402
 from src.llm.client import LiteLLMClient  # noqa: E402
 from src.samples import SAMPLE_COMPANIES  # noqa: E402
@@ -389,17 +390,18 @@ with csrc[0]:
         st.session_state.active_report = sample
 with csrc[1]:
     live_symbol = st.text_input("or a live NSE symbol", placeholder="RELIANCE")
-    ar_url = st.text_input("Annual report PDF URL (optional; cross-verifies against yfinance)",
-                           placeholder="https://nsearchives.nseindia.com/annual_reports/...pdf")
-    st.caption("The annual-report path needs an LLM configured (LLM_MODEL) and is slower; "
-               "extracted figures are shown only if they agree with yfinance.")
+    ar_url = st.text_input("Annual report PDF URL (optional override)",
+                           placeholder="leave blank to auto-fetch from NSE")
+    st.caption("yfinance + Screener are always used (free). If an LLM is configured (LLM_MODEL), "
+               "the latest annual report is auto-fetched from NSE and used as a third source; "
+               "its figures show only when they agree with the others. Slower.")
     if st.button("Generate live draft"):
         sym = live_symbol.strip().upper()
         if sym:
             # yfinance + Screener are both free; two sources let figures cross-verify.
             sources = [YFinanceFigureSource(), ScreenerFigureSource()]
             label = "yfinance + screener"
-            if ar_url.strip():
+            if ar_url.strip():                       # manual override URL
                 _adapter = HttpDocumentAdapter("annual_report")
 
                 def _ar_text(_symbol, _url=ar_url.strip()):
@@ -408,6 +410,9 @@ with csrc[1]:
 
                 sources.append(AnnualReportFigureSource(_ar_text, client=LiteLLMClient()))
                 label += " + annual report"
+            elif LiteLLMClient().available:          # auto-resolve the AR from NSE
+                sources.append(nse_annual_report_source(client=LiteLLMClient()))
+                label += " + annual report (auto)"
             key = f"{sym} (live/{label})"
             with st.spinner(f"Analyzing {sym} ({label})..."):
                 st.session_state.reports[key] = build_report_for_symbol(sym, sources)
