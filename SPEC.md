@@ -245,8 +245,12 @@ src/eval/                       regression cases from expert corrections + accur
 - [x] V7 median-P/E valuation: computed historical median P/E baseline so the valuation tier
       populates for every stock (current P/E stays a cross-verified fact; median is an opinion
       baseline). Live-verified: Adani Power expensive, Brigade/BLS cheap, Shakti Pumps fair.
-- [ ] V8 bank-specific framework (NIM, GNPA, CASA, ROA, capital adequacy) so banks (SBIN/ICICI/
-      Yes Bank) get a real verdict instead of "unknown".
+- [x] V8 bank framework: is_bank routing; ROA (net profit / total assets) instead of the
+      industrial lenses; valuation applies; verdict always carries a "GNPA/CASA/CRAR not in free
+      feeds, check the filing" caveat. Banks now get valuation + caveat (was blank "unknown").
+      Honest ceiling: ROA often stays unknown because net profit / total assets do not
+      cross-verify for banks (consolidated vs standalone differ); the system withholds rather
+      than trust a mismatch. Deeper fix (diminishing returns): normalize consolidation basis.
 
 ## Success criteria (v3)
 - Reports are never treated as trusted without expert approval (enforced in code + test).
