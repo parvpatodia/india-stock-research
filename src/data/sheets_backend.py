@@ -179,6 +179,46 @@ class GspreadGateway(SheetGateway):
         ws.append_row([str(row.get(h, "")) for h in header])
 
 
+class AppsScriptGateway(SheetGateway):
+    """Talk to a Google Apps Script web app bound to the owner's Sheet copy. Keyless: no service
+    account. The web app is deployed 'execute as me / anyone', and every request carries a shared
+    secret token the script checks, so the endpoint is bearer-token private (not public like a
+    published CSV). getter/poster are injectable so the mapping is tested offline; the defaults use
+    `requests` (installed via gspread) which follows the Apps Script 302 redirect transparently."""
+
+    def __init__(self, url: str, token: str, getter=None, poster=None):
+        self._url = url
+        self._token = token
+        self._getter = getter or self._http_get
+        self._poster = poster or self._http_post
+
+    def _http_get(self, params: dict):
+        import requests
+        resp = requests.get(self._url, params=params, timeout=20)  # token already in params
+        resp.raise_for_status()
+        return resp.json()
+
+    def _http_post(self, payload: dict):
+        import requests
+        resp = requests.post(self._url, json=payload, timeout=20)  # token already in payload
+        resp.raise_for_status()
+        return resp.json()
+
+    def read(self, tab: str) -> list[dict]:
+        out = self._getter({"action": "read", "tab": tab, "token": self._token})
+        if isinstance(out, list):
+            return out
+        return out.get("rows", []) if isinstance(out, dict) else []
+
+    def write(self, tab: str, header: list[str], rows: list[dict]) -> None:
+        self._poster({"action": "write", "tab": tab, "header": header, "rows": rows,
+                      "token": self._token})
+
+    def append(self, tab: str, header: list[str], row: dict) -> None:
+        self._poster({"action": "append", "tab": tab, "header": header, "row": row,
+                      "token": self._token})
+
+
 def build_gateway(creds_dict: dict | None, sheet_key: str | None,
                   local_fallback_path: str | Path) -> SheetGateway:
     """Real Sheet if a service account + key are configured, else the local-JSON fallback. A

@@ -44,6 +44,7 @@ from src.data.news_source import NewsSource, registry_with_news  # noqa: E402
 from src.data.nse_annual_reports import nse_annual_report_source  # noqa: E402
 from src.data.screener_source import ScreenerFigureSource  # noqa: E402
 from src.data.sheets_backend import (  # noqa: E402
+    AppsScriptGateway,
     append_log,
     build_gateway,
     read_holdings,
@@ -196,13 +197,18 @@ def _secret(key: str, default=None):
 
 
 def _sheet_configured() -> bool:
-    return bool(_secret("sheet_key") and _secret("gcp_service_account"))
+    return bool((_secret("apps_script_url") and _secret("apps_script_token"))
+                or (_secret("sheet_key") and _secret("gcp_service_account")))
 
 
 @st.cache_resource
 def get_gateway():
-    """The persistence backend: the real Google Sheet if a service account is configured in
-    secrets, else a local JSON file (gitignored) so approvals still persist in dev."""
+    """The persistence backend: the Apps Script web app (keyless, token-gated) if configured,
+    else a service-account Sheet, else a local JSON file (gitignored) so approvals still persist
+    in dev. All satisfy the same SheetGateway interface."""
+    url, token = _secret("apps_script_url"), _secret("apps_script_token")
+    if url and token:
+        return AppsScriptGateway(url, token)
     creds = _secret("gcp_service_account")
     creds_dict = dict(creds) if creds else None
     return build_gateway(creds_dict, _secret("sheet_key"), _ROOT / "data" / "reports.json")

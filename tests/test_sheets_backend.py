@@ -1,5 +1,6 @@
 from src.analysis.sizing import Stance
 from src.data.sheets_backend import (
+    AppsScriptGateway,
     InMemoryGateway,
     LocalJsonGateway,
     ReportRecord,
@@ -76,6 +77,32 @@ def test_append_log_records_action_and_timestamp():
     assert len(rows) == 1
     assert rows[0]["action"] == "approved" and rows[0]["symbol"] == "BLS"
     assert rows[0]["reviewer"] == "parv" and rows[0]["timestamp"]
+
+
+def test_apps_script_gateway_maps_actions_to_transport():
+    # Fake the web app with an in-memory store; assert read/write/append map to the right calls.
+    backing = InMemoryGateway()
+    tokens_seen = []
+
+    def getter(params):
+        tokens_seen.append(params.get("token"))
+        assert params["action"] == "read"
+        return backing.read(params["tab"])
+
+    def poster(payload):
+        tokens_seen.append(payload.get("token"))
+        if payload["action"] == "write":
+            backing.write(payload["tab"], payload["header"], payload["rows"])
+        elif payload["action"] == "append":
+            backing.append(payload["tab"], payload["header"], payload["row"])
+        return {"ok": True}
+
+    gw = AppsScriptGateway("https://script/exec", "sekret", getter=getter, poster=poster)
+    save_report(gw, record_from_report(_approved_report(), "BLS", Stance.FAVORABLE.value))
+    append_log(gw, "approved", "BLS", "parv")
+    assert [r.symbol for r in read_reports(gw)] == ["BLS"]
+    assert gw.read("Log")[0]["symbol"] == "BLS"
+    assert set(tokens_seen) == {"sekret"}          # every call carried the shared token
 
 
 def test_local_json_gateway_persists_across_instances(tmp_path):

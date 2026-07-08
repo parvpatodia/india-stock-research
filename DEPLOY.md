@@ -13,17 +13,25 @@ The app reads real holdings only from the Sheet or an uploaded CSV; `holdings.cs
 2. Model string: `groq/llama-3.3-70b-versatile` (LiteLLM routes it; better annual-report
    extraction than the local 7B).
 
-## 3. Holdings from the Google Sheet (keyless — recommended)
-Google's "Secure by Default" policy blocks service-account key downloads on most accounts, so use
-the keyless published-CSV route:
-1. Sheet owner: **File → Share → Publish to web →** select the holdings tab **→ CSV → Publish**.
-2. Copy the link (looks like `.../pub?gid=0&single=true&output=csv`) and set it as
-   `holdings_csv_url` in secrets. Holdings then auto-load; no Google Cloud, no key.
-3. Caveat: a published link is readable by anyone who has it. Read-only (approvals don't write
-   back to the Sheet). Columns must include Symbol, Quantity, Avg Cost (Sector optional).
+## 3. Sheet bridge via Apps Script (keyless, PRIVATE, read+write — recommended)
+Google's "Secure by Default" policy blocks service-account key downloads on most accounts. The
+Apps Script bridge needs no key, keeps the Sheet private (token-gated, not public), and supports
+both auto-loading holdings and writing approvals back.
+1. Own the Sheet: make your own copy (File → Make a copy) so you can deploy scripts on it. Your
+   holdings must be the first tab (or a tab named `Holdings`) with column headers in **row 1**.
+2. In that copy: **Extensions → Apps Script**. Paste `apps_script/Code.gs` from this repo, set
+   `TOKEN` to a long random string.
+3. **Deploy → New deployment → Web app → Execute as: Me, Who has access: Anyone → Deploy**,
+   authorize, and copy the URL ending in `/exec`.
+4. In secrets, set `apps_script_url` (the /exec URL) and `apps_script_token` (same as `TOKEN`).
+   Holdings auto-load; approvals write to auto-created `Reports` + `Log` tabs. Every request
+   carries the token, so "Anyone" access is still private.
 
-Service-account read+write (`sheet_key` + `[gcp_service_account]`) still works IF you can create a
-JSON key, but that action is blocked on many Google orgs; prefer the published CSV above.
+Alternatives (only if you skip the Apps Script bridge):
+- `holdings_csv_url`: a "Publish to web → CSV" link — auto-loads holdings but is **public** to
+  anyone with the link, and read-only.
+- Service account (`sheet_key` + `[gcp_service_account]`): read+write, but the JSON key is blocked
+  on many Google orgs.
 
 ## 4. Deploy on Streamlit Community Cloud
 1. https://share.streamlit.io → New app → point at this repo, branch, `app.py`.
