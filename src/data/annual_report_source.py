@@ -28,10 +28,10 @@ _UNIT_SCALE = {
 # Raw items extracted from the report. EBIT is derived (PBT + interest), matching how the
 # other sources define it, because annual reports do not print an "EBIT" line.
 _EXTRACT_ITEMS = ("net_profit", "operating_cash_flow", "total_debt", "equity",
-                  "profit_before_tax", "interest_expense")
+                  "profit_before_tax", "interest_expense", "total_assets")
 # Framework figures this source exposes (EBIT derived, no standalone profit_before_tax).
 _TARGETS = ("net_profit", "operating_cash_flow", "total_debt", "equity", "ebit",
-            "interest_expense")
+            "interest_expense", "total_assets")
 
 # Per-figure retrieval queries: pull the CONSOLIDATED statement region for each figure, so the
 # model sees the actual statement lines rather than narrative text.
@@ -42,6 +42,7 @@ _FIGURE_QUERIES = {
     "equity": "total equity attributable to owners equity share capital other equity consolidated",
     "profit_before_tax": "profit before tax consolidated statement of profit and loss",
     "interest_expense": "finance costs interest expense consolidated statement of profit and loss",
+    "total_assets": "total assets consolidated balance sheet",
 }
 
 _EXTRACT_SYSTEM = """You extract specific financial figures from an Indian company's annual \
@@ -62,7 +63,8 @@ Shape:
 {"fiscal_year": 2026,
  "net_profit": {"value": 26248, "unit": "crore", "quote": "Profit for the year 26,248"},
  "profit_before_tax": {"value": null, "unit": "", "quote": ""}, ...}
-Figures: net_profit, operating_cash_flow, total_debt, equity, profit_before_tax, interest_expense.
+Figures: net_profit, operating_cash_flow, total_debt, equity, profit_before_tax,
+interest_expense, total_assets.
 """
 
 # Strict output schema so the model fills THESE keys (small models otherwise invent their own).

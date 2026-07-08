@@ -26,7 +26,8 @@ from .research.verification import SourcedValue, verify_figure
 def build_company_report(company: str,
                          figures: dict[str, list[SourcedValue]],
                          claims: tuple[Claim, ...] = (),
-                         median_pe: float | None = None) -> Report:
+                         median_pe: float | None = None,
+                         is_bank: bool = False) -> Report:
     verified = {name: verify_figure(name, values) for name, values in figures.items()}
 
     def tv(name: str):
@@ -36,12 +37,18 @@ def build_company_report(company: str,
     # cross-verified median_pe figure if one was supplied, else None -> valuation unknown.
     median = median_pe if median_pe is not None else tv("median_pe")
     valuation = valuation_vs_history(tv("current_pe"), median)
-    quality_signals = [
-        earnings_quality(tv("operating_cash_flow"), tv("net_profit")),
-        leverage_health(tv("total_debt"), tv("equity"), tv("ebit"), tv("interest_expense")),
-        promoter_pledge(tv("promoter_pledge_pct")),
-    ]
-    verdict = assemble_verdict(valuation, quality_signals)
+    if is_bank:
+        # WHY: the industrial lenses (D/E, coverage, EBIT) do not apply to banks; use ROA.
+        from .analysis.bank_framework import assemble_bank_verdict, return_on_assets
+        roa = return_on_assets(tv("net_profit"), tv("total_assets"))
+        verdict = assemble_bank_verdict(valuation, roa)
+    else:
+        quality_signals = [
+            earnings_quality(tv("operating_cash_flow"), tv("net_profit")),
+            leverage_health(tv("total_debt"), tv("equity"), tv("ebit"), tv("interest_expense")),
+            promoter_pledge(tv("promoter_pledge_pct")),
+        ]
+        verdict = assemble_verdict(valuation, quality_signals)
 
     return Report(
         company=company,
@@ -121,6 +128,8 @@ def build_report_for_symbol(symbol: str, sources: list[FigureSource],
     """Real-data entry point: gather fiscal-year-aligned figures across sources, compute the
     historical median P/E for the valuation baseline, then run the pipeline. A single source
     stays single-source (low confidence); agreeing sources verify."""
+    from .analysis.bank_framework import is_bank
     from .analysis.valuation import compute_median_pe
     return build_company_report(symbol, gather_aligned_figures(symbol, sources),
-                                claims=claims, median_pe=compute_median_pe(symbol))
+                                claims=claims, median_pe=compute_median_pe(symbol),
+                                is_bank=is_bank(symbol))

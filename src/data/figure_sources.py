@@ -18,10 +18,11 @@ from .yfinance_provider import to_yahoo_symbol
 FRAMEWORK_FIGURES = (
     "current_pe", "median_pe", "operating_cash_flow", "net_profit",
     "total_debt", "equity", "ebit", "interest_expense", "promoter_pledge_pct",
+    "total_assets",
 )
 # Figures that come from an annual fiscal-year statement (align by year across sources).
 YEAR_FIGURES = ("net_profit", "operating_cash_flow", "total_debt", "equity", "ebit",
-                "interest_expense")
+                "interest_expense", "total_assets")
 # Figures that are point-in-time (current), not tied to a fiscal year.
 POINT_FIGURES = ("current_pe", "median_pe", "promoter_pledge_pct")
 
@@ -127,6 +128,7 @@ class YFinanceFigureSource(FigureSource):
         out["total_debt"] = _latest(balance, ["Total Debt"]) or _num(info.get("totalDebt"))
         out["equity"] = _latest(
             balance, ["Stockholders Equity", "Total Stockholder Equity", "Common Stock Equity"])
+        out["total_assets"] = _latest(balance, ["Total Assets"]) or _num(info.get("totalAssets"))
         return out
 
     def figures_by_year(self, symbol: str) -> dict[str, dict[int, float]]:
@@ -150,5 +152,6 @@ class YFinanceFigureSource(FigureSource):
             "total_debt": _series_from_statement(balance, ["Total Debt"]),
             "equity": _series_from_statement(
                 balance, ["Stockholders Equity", "Total Stockholder Equity", "Common Stock Equity"]),
+            "total_assets": _series_from_statement(balance, ["Total Assets"]),
         }
         return {name: yearmap for name, yearmap in series.items() if yearmap}

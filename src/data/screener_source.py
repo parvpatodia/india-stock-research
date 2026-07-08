@@ -114,6 +114,7 @@ def parse_screener_series(html: str) -> dict[str, dict[int, float]]:
     debt = _annual_series(balance, "borrowings")
     eqcap = _annual_series(balance, "equity capital")
     reserves = _annual_series(balance, "reserves")
+    tassets = _annual_series(balance, "total liabilities")
     series = {
         "net_profit": {y: v * _CRORE for y, v in net.items()},
         "operating_cash_flow": {y: v * _CRORE for y, v in ocf.items()},
@@ -121,6 +122,7 @@ def parse_screener_series(html: str) -> dict[str, dict[int, float]]:
         "interest_expense": {y: abs(v) * _CRORE for y, v in interest.items()},
         "ebit": {y: (pbt[y] + interest[y]) * _CRORE for y in pbt if y in interest},
         "equity": {y: (eqcap[y] + reserves[y]) * _CRORE for y in eqcap if y in reserves},
+        "total_assets": {y: v * _CRORE for y, v in tassets.items()},
     }
     return {name: yearmap for name, yearmap in series.items() if yearmap}
 
@@ -150,6 +152,9 @@ def parse_screener_figures(html: str) -> dict[str, float | None]:
         out["ebit"] = (pbt + interest) * _CRORE  # EBIT = profit before tax + interest
     if equity_capital is not None and reserves is not None:
         out["equity"] = (equity_capital + reserves) * _CRORE  # shareholders' equity
+    total_assets = _latest_annual(balance, "total liabilities")  # Screener's grand total = assets
+    if total_assets is not None:
+        out["total_assets"] = total_assets * _CRORE
     m = _PE_RE.search(html)
     if m:
         out["current_pe"] = _num(m.group(1))
