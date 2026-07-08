@@ -232,8 +232,10 @@ src/eval/                       regression cases from expert corrections + accur
       cluster >=2 sources wins, outliers named/withheld). A two-source conflict is resolved when
       the primary filing confirms one side; a wrong extraction stays a withheld outlier. Live on
       INFY: net profit VERIFIED via 3-source consensus. Tolerance stays 2% (not loosened).
-- [ ] V4f more free sources (BSE filings, Tickertape via bharat-sm-data) + browser-MCP fallback
-      for hosts that block plain HTTP; per-symbol AR URL auto-resolution.
+- [x] V4f per-symbol annual-report auto-resolution: NseAnnualReportResolver (cookie-primed NSE
+      listing) + nse_annual_report_source chains resolve->fetch->extract; app auto-includes the AR
+      per symbol when an LLM is set. Live-verified (RELIANCE/INFY/TCS URLs; INFY net profit
+      VERIFIED 3-source auto). Still open: BSE/Tickertape sources, browser-MCP fallback for blocked hosts.
 - [x] V6 self-improvement loop: expert correction -> GroundTruth (value + figure snapshot) ->
       replayed on every run. Outcomes MATCH / WITHHELD / TRUSTED_WRONG; trusted-wrong must stay 0.
       Captured in the review panel; scored in-app + via scripts/run_eval.py (gate). "No mistake twice."
