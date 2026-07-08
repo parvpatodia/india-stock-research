@@ -27,7 +27,8 @@ def build_company_report(company: str,
                          figures: dict[str, list[SourcedValue]],
                          claims: tuple[Claim, ...] = (),
                          median_pe: float | None = None,
-                         is_bank: bool = False) -> Report:
+                         is_bank: bool = False,
+                         trend_insights: tuple[str, ...] = ()) -> Report:
     verified = {name: verify_figure(name, values) for name, values in figures.items()}
 
     def tv(name: str):
@@ -66,7 +67,7 @@ def build_company_report(company: str,
         figures=tuple(verified.values()),
         verdict=verdict,
         status=ReviewStatus.DRAFT,
-        insights=tuple(insights),
+        insights=tuple(insights) + tuple(trend_insights),
     )
 
 
@@ -134,13 +135,29 @@ def gather_aligned_figures(symbol: str,
     return dict(merged)
 
 
+def gather_series(symbol: str,
+                  sources: list[FigureSource]) -> dict[str, dict[str, dict[int, float]]]:
+    """Per-figure, per-source multi-year series: {figure: {source_id: {year: value}}}. Used to
+    cross-verify each year for trend analysis."""
+    out: dict[str, dict[str, dict[int, float]]] = defaultdict(dict)
+    for src in sources:
+        for figure, yearmap in src.figures_by_year(symbol).items():
+            if yearmap:
+                out[figure][src.source_id] = yearmap
+    return dict(out)
+
+
 def build_report_for_symbol(symbol: str, sources: list[FigureSource],
                             claims: tuple[Claim, ...] = ()) -> Report:
     """Real-data entry point: gather fiscal-year-aligned figures across sources, compute the
-    historical median P/E for the valuation baseline, then run the pipeline. A single source
-    stays single-source (low confidence); agreeing sources verify."""
+    historical median P/E for the valuation baseline, add cross-verified multi-year trends, then
+    run the pipeline. A single source stays single-source (low confidence); agreeing sources verify."""
     from .analysis.bank_framework import is_bank
+    from .analysis.trends import trend_points, verified_series
     from .analysis.valuation import compute_median_pe
+    series = gather_series(symbol, sources)
+    trend_insights = tuple(trend_points(verified_series(series.get("revenue", {})),
+                                        verified_series(series.get("net_profit", {}))))
     return build_company_report(symbol, gather_aligned_figures(symbol, sources),
                                 claims=claims, median_pe=compute_median_pe(symbol),
-                                is_bank=is_bank(symbol))
+                                is_bank=is_bank(symbol), trend_insights=trend_insights)
