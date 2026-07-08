@@ -49,6 +49,9 @@ from src.research.library import build_library  # noqa: E402
 from src.research.report import ReviewStatus  # noqa: E402
 from src.pipeline import build_company_report, build_report_for_symbol  # noqa: E402
 from src.data.figure_sources import YFinanceFigureSource  # noqa: E402
+from src.data.annual_report_source import AnnualReportFigureSource  # noqa: E402
+from src.sources.adapters import HttpDocumentAdapter  # noqa: E402
+from src.llm.client import LiteLLMClient  # noqa: E402
 from src.samples import SAMPLE_COMPANIES  # noqa: E402
 from src.sip import sip_future_value  # noqa: E402
 from src.sources.registry import SourceRegistry  # noqa: E402
@@ -381,15 +384,28 @@ with csrc[0]:
         st.session_state.reports[sample] = build_company_report(sample, SAMPLE_COMPANIES[sample])
         st.session_state.active_report = sample
 with csrc[1]:
-    live_symbol = st.text_input("or a live NSE symbol (yfinance, single source)",
-                                placeholder="RELIANCE")
+    live_symbol = st.text_input("or a live NSE symbol", placeholder="RELIANCE")
+    ar_url = st.text_input("Annual report PDF URL (optional; cross-verifies against yfinance)",
+                           placeholder="https://nsearchives.nseindia.com/annual_reports/...pdf")
+    st.caption("The annual-report path needs an LLM configured (LLM_MODEL) and is slower; "
+               "extracted figures are shown only if they agree with yfinance.")
     if st.button("Generate live draft"):
         sym = live_symbol.strip().upper()
         if sym:
-            key = f"{sym} (live/yfinance)"
-            with st.spinner(f"Pulling {sym} from yfinance..."):
-                st.session_state.reports[key] = build_report_for_symbol(
-                    sym, [YFinanceFigureSource()])
+            sources = [YFinanceFigureSource()]
+            label = "yfinance"
+            if ar_url.strip():
+                _adapter = HttpDocumentAdapter("annual_report")
+
+                def _ar_text(_symbol, _url=ar_url.strip()):
+                    docs = _adapter.fetch(_url)
+                    return docs[0].text if docs else None
+
+                sources.append(AnnualReportFigureSource(_ar_text, client=LiteLLMClient()))
+                label = "yfinance + annual report"
+            key = f"{sym} (live/{label})"
+            with st.spinner(f"Analyzing {sym} ({label})..."):
+                st.session_state.reports[key] = build_report_for_symbol(sym, sources)
             st.session_state.active_report = key
 
 active = st.session_state.get("active_report")
