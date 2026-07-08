@@ -169,14 +169,26 @@ class ScreenerFigureSource(FigureSource):
 
     @staticmethod
     def _http_fetch(symbol: str) -> str | None:
-        import urllib.request
+        # WHY: full browser-like headers + a session. Screener sits behind Cloudflare, which
+        # blocks bare user-agents from datacenter IPs (Streamlit Cloud), starving cross-
+        # verification to a single source. This is best-effort, not guaranteed past a JS challenge.
+        import requests
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                          "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,"
+                      "image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://www.screener.in/",
+            "Connection": "keep-alive",
+        }
+        session = requests.Session()
         for path in (f"https://www.screener.in/company/{symbol}/consolidated/",
                      f"https://www.screener.in/company/{symbol}/"):
             try:
-                req = urllib.request.Request(path, headers={"User-Agent": "Mozilla/5.0 (research)"})
-                with urllib.request.urlopen(req, timeout=30) as resp:
-                    if resp.status == 200:
-                        return resp.read().decode("utf-8", "replace")
+                resp = session.get(path, headers=headers, timeout=30)
+                if resp.status_code == 200 and resp.text:
+                    return resp.text
             except Exception:
                 continue
         return None
