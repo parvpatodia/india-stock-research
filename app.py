@@ -305,33 +305,65 @@ def plain_summary(verdict, stance: Stance) -> str:
     return f"It {val}, with {qual}. {headline}."
 
 
-def build_markdown_report(title: str, report, stance: Stance) -> str:
-    """A plain-text report the user can download and read or share. Mirrors what is on screen."""
+_STANCE_PDF = {Stance.FAVORABLE: "[+] ", Stance.NEUTRAL: "[~] ",
+               Stance.UNFAVORABLE: "[-] ", Stance.INSUFFICIENT_DATA: "[?] "}
+
+
+def build_pdf_report(title: str, report, stance: Stance) -> bytes:
+    """A downloadable PDF of the report, mirroring what is on screen. Uses the core Helvetica
+    font (Latin-1), so text is sanitized and the rupee sign is written as 'Rs.'."""
+    from fpdf import FPDF
+    from fpdf.enums import XPos, YPos
+
+    def s(text) -> str:
+        return str(text).replace("₹", "Rs.").encode("latin-1", "replace").decode("latin-1")
+
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    def line(text: str, size: int = 11, style: str = "", h: float = 6, gap: float = 0):
+        # WHY: new_x=LMARGIN resets the cursor to the left each line; fpdf's default leaves it at
+        # the right margin, so the next multi_cell(0) would compute zero width and raise.
+        pdf.set_font("Helvetica", style, size)
+        pdf.multi_cell(0, h, s(text), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        if gap:
+            pdf.ln(gap)
+
     v = report.verdict
-    lines = [f"# {title}", ""]
+    line(title, size=15, style="B", h=8)
     status = ("APPROVED (reviewed)" if report.is_trusted
               else "REJECTED, not for decisions" if report.status == ReviewStatus.REJECTED
               else "DRAFT, not yet reviewed by your expert")
-    lines += [f"**Status:** {status}", f"**Generated:** {report.created_at}", ""]
-    icon, headline = _STANCE_UI[stance]
-    lines += [f"## {icon} {headline}", "", plain_summary(v, stance), ""]
+    pdf.set_text_color(90, 90, 90)
+    line(f"Status: {status}    Generated: {report.created_at}", size=10, gap=2)
+    pdf.set_text_color(0, 0, 0)
+
+    _, headline = _STANCE_UI[stance]
+    line(_STANCE_PDF[stance] + headline, size=13, style="B", h=8)
+    line(plain_summary(v, stance), size=11, gap=2)
+
     if v is not None:
-        lines += ["## Verdict",
-                  f"- Valuation: {v.valuation.value}",
-                  f"- Quality: {v.quality.value}",
-                  f"- Leaning: {v.leaning.value}",
-                  f"- Confidence: {v.confidence.value}", ""]
+        line("Verdict", size=12, style="B", h=7)
+        line(f"Valuation: {v.valuation.value}    Quality: {v.quality.value}    "
+             f"Leaning: {v.leaning.value}    Confidence: {v.confidence.value}", gap=1)
         if v.reasons:
-            lines += ["## Why (each from cross-verified figures)"]
-            lines += [f"- {r}" for r in v.reasons]
-            lines += [""]
-    lines += ["## Figures"]
+            line("Why (each from cross-verified figures)", size=12, style="B", h=7)
+            for reason in v.reasons:
+                line(f"- {reason}")
+            pdf.ln(1)
+
+    line("Figures", size=12, style="B", h=7)
     for f in report.figures:
         val = f"{f.value:,.2f}" if f.value is not None else "withheld (not cross-verified)"
         srcs = ", ".join(sorted({sv.source_id for sv in f.sources}))
-        lines += [f"- {f.name}: {val}  [{f.status.value}; sources: {srcs}]"]
-    lines += ["", "---", (v.caveat if v is not None else DISCLAIMER), "", DISCLAIMER]
-    return "\n".join(lines)
+        line(f"- {f.name}: {val}  [{f.status.value}; {srcs}]", size=10, h=5)
+
+    if v is not None:
+        pdf.ln(2)
+        pdf.set_text_color(90, 90, 90)
+        line(v.caveat, size=9, style="I", h=5)
+    return bytes(pdf.output())
 
 
 # --- auth + hosted-model secrets (both no-ops locally with no secrets file) ---
@@ -343,8 +375,7 @@ if not _check_password():
 # --- header ---
 
 st.title("📊 India Equity Research")
-st.caption("Understand your investments. Research only, no advice, and never a buy or sell order.")
-st.warning(DISCLAIMER, icon="⚠️")
+st.caption("Understand your investments.")
 
 # --- sidebar: input + settings + status ---
 
@@ -597,10 +628,10 @@ with tab_research:
 
         st.caption(report.verdict.caveat if report.verdict else DISCLAIMER)
 
-        # download
-        st.download_button("⬇️ Download full report",
-                           data=build_markdown_report(active, report, stance),
-                           file_name=f"{sym}_research.md", mime="text/markdown")
+        # download (PDF)
+        st.download_button("⬇️ Download full report (PDF)",
+                           data=build_pdf_report(active, report, stance),
+                           file_name=f"{sym}_research.pdf", mime="application/pdf")
 
         # the evidence, one tap away
         with st.expander("See the evidence (figures, reasons, sources)"):
@@ -835,5 +866,3 @@ with st.expander("Mutual funds & SIP projection"):
 with st.expander("Glossary"):
     for term, meaning in GLOSSARY.items():
         st.markdown(f"**{term}** — {meaning}")
-
-st.caption(DISCLAIMER)
