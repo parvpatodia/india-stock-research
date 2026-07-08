@@ -17,11 +17,18 @@ from .models import Holding
 # last. WHY: a file with both an "Avg Cost" and a total "Cost" column must resolve to the
 # per-share average, never the total, or every P&L number is silently wrong. Tuples (not
 # sets) so the priority is deterministic across Python builds.
-_SYMBOL_HEADERS = ("symbol", "instrument", "ticker", "scrip name", "scrip",
-                   "stock name", "stock", "company", "name")
+# WHY: ticker-style columns come BEFORE display-name columns. A sheet with both a display
+# "Stock Name" ("Adani Power Ltd.") and a ticker "Stock Formula Name" ("ADANIPOWER") must resolve
+# the symbol to the ticker, or every price lookup fails on the human-readable name.
+_SYMBOL_HEADERS = ("symbol", "ticker", "ticker symbol", "nse symbol", "nse code", "bse code",
+                   "yahoo symbol", "stock formula name", "formula name", "instrument",
+                   "scrip name", "scrip", "stock name", "stock", "company", "name")
 _QTY_HEADERS = ("quantity", "qty.", "qty", "net qty", "holding qty", "shares", "units")
+# WHY: per-share average only. "Per Unit Cost" (avg buy price) must win over any total like
+# "Investment Cost"; the bare "cost" fallback stays last so a total column is never picked as avg.
 _COST_HEADERS = ("avg. cost", "avg cost", "average cost", "average buy price",
-                 "avg buy price", "buy avg", "avg price", "average price", "cost")
+                 "avg buy price", "buy avg", "avg price", "average price",
+                 "per unit cost", "unit cost", "cost per unit", "cost")
 _SECTOR_HEADERS = ("sector", "industry")
 
 

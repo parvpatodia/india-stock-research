@@ -79,6 +79,22 @@ def test_symbol_column_wins_over_generic_name_column():
     assert holdings[0].symbol == "RELIANCE"
 
 
+def test_maps_google_finance_sheet_ticker_and_per_unit_cost():
+    # WHY (real sheet): ticker lives in 'Stock Formula Name' (not the display 'Stock Name'), the
+    # avg buy price in 'Per Unit Cost' (not the 'Investment Cost' total), and a TOTAL row trails.
+    df = pd.DataFrame({
+        "Stock Name": ["Adani Power Ltd.", "BLS International", "TOTAL"],
+        "Stock Formula Name": ["ADANIPOWER", "BLS", ""],
+        "Quantity": [1840, 1250, ""],
+        "Per Unit Cost": [226, 400, ""],
+        "Investment Cost": [415840, 500000, ""],
+    })
+    holdings = load_holdings(df)
+    assert [h.symbol for h in holdings] == ["ADANIPOWER", "BLS"]   # tickers, TOTAL skipped
+    assert holdings[0].avg_cost == 226.0                           # per-unit, not the total
+    assert holdings[0].quantity == 1840
+
+
 def test_load_holdings_from_csv_text_filelike():
     # WHY: the deployed app reads a published Google Sheet CSV link as text -> StringIO.
     import io
