@@ -142,3 +142,83 @@ hosted routing sends data off-machine (NIM = US, Ollama = local).
 - Grounded analyst abstains cleanly with no key and no matching source.
 - `config/sources.example.yaml` documents how the owner plugs in his sources.
 - No unsourced claim can render as fact (enforced in code, covered by a test).
+
+---
+
+# SPEC v3: expert-grade research platform (owner's parents, real money)
+
+## What changed and why
+The owner's parents described how real investors work (primary docs first, aggregators
+second, a skeptical human checking everything) and asked for a platform that researches a
+company end to end and gives an actionable report. Two asks were rejected as impossible/
+dangerous and reframed (confirmed with owner 2026-06-30):
+- REJECTED: guaranteed buy/sell/timing calls, and "zero errors / never wrong / foolproof."
+  No one can time markets or guarantee a call; an LLM cannot be promised zero hallucination.
+  Promising either would be the dangerous lie. SEBI also regulates buy/sell advice as a service.
+- REFRAMED INTO: a seasoned-analyst-grade research + decision-support platform where a human
+  expert signs off before anything is trusted, every number is cross-verified, and the system
+  abstains when unsure. "No mistake twice" (regression on every caught error), not "no mistake
+  ever." "Foolproof" = traceable + cross-checked + abstaining + expert-gated.
+
+## Locked decisions (owner, 2026-06-30)
+1. **Output level = labeled verdict.** Each report has the full analysis PLUS a structured,
+   caveated verdict: valuation tier (cheap/fair/expensive vs own history), quality tier
+   (strong/weak), and a leaning, each with a confidence level and reasons tied to cited,
+   cross-verified figures. Shown as opinion, never as certainty. No naked buy/sell order.
+2. **Hard expert sign-off per report.** A report is DRAFT until the human expert reviews and
+   approves it. Parents see approved reports; a draft is clearly labeled "not yet reviewed."
+   Expert corrections feed the eval/regression loop.
+3. **Source APIs owner-provided.** Owner will supply APIs for sites hosting AGM transcripts
+   and annual reports for all companies. These plug in behind a source-adapter interface;
+   build the interface + free public sources now, slot the APIs in when credentials arrive.
+   Use them "accurately and honestly": tier them, cite them, cross-check them.
+
+## Verification protocol (the owner's #1 rule: check twice or thrice)
+Every figure: (1) extracted from a primary document with page/locator cited; (2) cross-checked
+against >=1 independent source OR a computed identity (balance sheet balances, segment
+revenues sum to total, YoY math); (3) shown as fact ONLY if independent sources agree within
+tolerance. Disagreement -> status CONFLICT, value withheld, flagged. One source -> SINGLE_SOURCE,
+shown but marked not cross-verified. Implemented in `src/research/verification.py`.
+
+## Analysis framework (what a seasoned Indian investor actually checks)
+- Business: what it does, segments, moat, sector context (from AR MD&A, filings).
+- Financials: revenue/profit trend, margins, ROE/ROCE, debt and interest coverage, and
+  operating cash flow vs reported profit (quality of earnings).
+- Valuation: P/E, P/B, EV/EBITDA vs the company's OWN history and sector, dividend yield.
+- Governance red flags: promoter pledge, related-party transactions, auditor changes/
+  qualifications, contingent liabilities, receivables/working-capital blowups, dilution.
+- Every metric is a cross-verified figure with a citation, or it is shown as unverified.
+
+## Review lifecycle (safety gate)
+Report status: DRAFT -> (expert) APPROVED | REJECTED(+corrections). Only APPROVED is trusted.
+Rejections capture the correction as a test case. Audit trail on every report.
+
+## Self-improvement loop (no mistake twice, not no mistake ever)
+Expert corrections -> regression test cases; every caught error becomes a test so it cannot
+recur; adversarial review of each report before display; a running eval scores figure-accuracy
+and verdict-calibration over time. This is measurable and honest.
+
+## Architecture additions (v3)
+```
+src/research/verification.py    cross-source + computed-identity figure verification
+src/research/report.py          Report, Verdict, ReviewStatus, review workflow, audit trail
+src/analysis/framework.py       seasoned-investor metric computations (valuation/health/flags)
+src/sources/adapters/           source-adapter interface + owner-provided API adapters (later)
+src/eval/                       regression cases from expert corrections + accuracy eval
+```
+
+## Feature checklist v3 (each gated by a runnable check)
+- [ ] V1 verification: cross-source agree->VERIFIED, disagree->CONFLICT, one->SINGLE_SOURCE;
+      computed-identity (sum/balance) check. Only VERIFIED is trustworthy. (test)
+- [ ] V2 report+review: DRAFT/APPROVED/REJECTED lifecycle; only approved trusted; audit trail;
+      caveated Verdict (valuation/quality/leaning + confidence + reasons). (test)
+- [ ] V3 analysis framework: valuation/health/governance metrics from verified figures. (test)
+- [ ] V4 source-adapter interface: pluggable; owner APIs slot in; free public adapter(s). (test)
+- [ ] V5 company-search -> draft report -> expert review panel -> approved report UI. (apptest)
+- [ ] V6 eval loop: expert correction -> regression case -> accuracy score. (test)
+
+## Success criteria (v3)
+- Reports are never treated as trusted without expert approval (enforced in code + test).
+- No figure is shown as fact unless cross-verified; conflicts are flagged, not hidden. (test)
+- The verdict is always caveated and carries the disclaimer + review status.
+- Built and proven on sample companies before any real holdings are connected.
