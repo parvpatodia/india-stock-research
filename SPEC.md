@@ -219,8 +219,13 @@ src/eval/                       regression cases from expert corrections + accur
       pipeline gathers figures across sources and cross-verifies. Single source -> not trusted,
       verdict stays low-confidence (honest); a 2nd source makes agreeing figures VERIFIED.
       Live-verified on RELIANCE via the UI. (test + live)
-- [ ] V4c 2nd independent figure source (owner REST API adapter, or AR-text extraction) so
-      figures actually cross-verify; browser-MCP fallback for hosts that block plain HTTP.
+- [x] V4c independent sources for cross-verification, all FREE (no paid keys, owner's constraint):
+      (1) AnnualReportFigureSource (LLM extraction, grounded by verbatim quote); (2) ScreenerFigureSource
+      (parses Screener's public tables, crore->absolute). Both cross-check against yfinance; only
+      agreeing figures are trusted. verify tolerance = 2%. Live-verified on RELIANCE (ocf/debt/equity
+      cross-verify; P&L conflicts are genuine source/period differences, withheld for the expert).
+- [ ] V4d reduce false conflicts: align the SAME fiscal year across sources; add more free sources
+      (BSE filings, Tickertape via bharat-sm-data); browser-MCP fallback for hosts blocking plain HTTP.
 - [ ] V5 company-search -> draft report -> expert review panel -> approved report UI. (apptest)
 - [ ] V6 eval loop: expert correction -> regression case -> accuracy score. (test)
 
