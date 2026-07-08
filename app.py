@@ -46,6 +46,9 @@ from src.research.analyst import ResearchAnalyst  # noqa: E402
 from src.research.claims import ESTIMATE, FACT, OPINION  # noqa: E402
 from src.research.grounded_analyst import GroundedAnalyst  # noqa: E402
 from src.research.library import build_library  # noqa: E402
+from src.research.report import ReviewStatus  # noqa: E402
+from src.pipeline import build_company_report  # noqa: E402
+from src.samples import SAMPLE_COMPANIES  # noqa: E402
 from src.sip import sip_future_value  # noqa: E402
 from src.sources.registry import SourceRegistry  # noqa: E402
 from src.data.amfi_provider import AMFIProvider  # noqa: E402
@@ -359,6 +362,86 @@ else:
                         p, fundamentals, data_as_of=prices_as_of)
             if p.symbol in st.session_state.notes:
                 st.markdown(st.session_state.notes[p.symbol])
+
+# --- Company research (expert-reviewed) ---
+
+st.divider()
+st.subheader("Company research (expert-reviewed)")
+st.caption("A draft report is NOT for decisions until your expert approves it. The verdict is "
+           "a caveated opinion from cross-verified figures, never a certainty or a buy/sell order.")
+
+if "reports" not in st.session_state:
+    st.session_state.reports = {}
+
+company = st.selectbox("Company (sample set for now; real data via the source APIs later)",
+                       list(SAMPLE_COMPANIES.keys()))
+if st.button("Generate draft report"):
+    st.session_state.reports[company] = build_company_report(company, SAMPLE_COMPANIES[company])
+
+report = st.session_state.reports.get(company)
+if report is not None:
+    if report.is_trusted:
+        last = report.audit[-1]
+        st.success(f"APPROVED by {last.reviewer} at {last.timestamp}. Reviewed.")
+    elif report.status == ReviewStatus.REJECTED:
+        st.error("REJECTED, sent back for correction. Not for decisions.")
+    else:
+        st.warning("DRAFT, not yet reviewed by your expert. Not for decisions.")
+
+    v = report.verdict
+    vc = st.columns(4)
+    vc[0].metric("Valuation", v.valuation.value)
+    vc[1].metric("Quality", v.quality.value)
+    vc[2].metric("Leaning", v.leaning.value)
+    vc[3].metric("Confidence", v.confidence.value)
+    if v.reasons:
+        st.markdown("**Why (each from cross-verified figures):**")
+        for reason in v.reasons:
+            st.markdown(f"- {reason}")
+    st.caption(v.caveat)
+
+    fig_rows = [{
+        "Figure": f.name,
+        "Status": f.status.value,
+        # WHY: keep the column all-string; a mixed float/"withheld" column crashes st.dataframe
+        # (pyarrow can't convert "withheld" to double). Surfaced by a conflict (withheld) figure.
+        "Value": (f"{f.value:,.2f}" if f.value is not None else "withheld"),
+        "Sources": ", ".join(sorted({sv.source_id for sv in f.sources})),
+    } for f in report.figures]
+    st.dataframe(pd.DataFrame(fig_rows), width="stretch", hide_index=True)
+    if report.conflicts:
+        st.error(f"{len(report.conflicts)} figure(s) in CONFLICT (independent sources disagree); "
+                 "withheld from the verdict. Resolve or acknowledge before approving.")
+
+    with st.expander("Expert review panel", expanded=not report.is_trusted):
+        reviewer = st.text_input("Reviewer (your name)", key=f"rv_{company}")
+        note = st.text_area("Note", key=f"note_{company}")
+        ack = False
+        if report.conflicts:
+            ack = st.checkbox("I checked the conflicting figures by hand and accept them",
+                              key=f"ack_{company}")
+        rc = st.columns(2)
+        if rc[0].button("Approve", key=f"ap_{company}"):
+            try:
+                st.session_state.reports[company] = report.approve(
+                    reviewer=reviewer, note=note, acknowledge_conflicts=ack)
+                st.rerun()
+            except ValueError as exc:
+                st.error(str(exc))
+        corrections = rc[1].text_area("Corrections (one per line, for rejection)",
+                                      key=f"corr_{company}")
+        if rc[1].button("Reject", key=f"rj_{company}"):
+            try:
+                fixes = tuple(c.strip() for c in corrections.splitlines() if c.strip())
+                st.session_state.reports[company] = report.reject(
+                    reviewer=reviewer, note=note, corrections=fixes)
+                st.rerun()
+            except ValueError as exc:
+                st.error(str(exc))
+        if report.audit:
+            st.markdown("**Review history:**")
+            for e in report.audit:
+                st.caption(f"{e.timestamp} — {e.status.value} by {e.reviewer}: {e.note}")
 
 # --- Mutual funds & SIPs ---
 
