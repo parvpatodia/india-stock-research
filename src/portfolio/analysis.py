@@ -6,11 +6,40 @@ which matters because a silent bug in P&L or weights costs real money.
 from __future__ import annotations
 
 import math
+from dataclasses import replace
+from typing import Callable
 
 import pandas as pd
 
 from ..constants import TRADING_DAYS_PER_YEAR
 from .models import Holding, PortfolioAnalysis, PositionAnalysis
+
+
+def enrich_sectors(holdings: list[Holding],
+                   fundamentals_fetcher: Callable[[str], dict]) -> list[Holding]:
+    """Backfill a blank ("Unknown") sector from a fundamentals lookup.
+
+    WHY: portfolio CSVs usually leave Sector empty, so the holdings table and the sector
+    allocation chart collapse into one "Unknown" bucket. yfinance already exposes
+    info["sector"]; use it, but only for holdings missing one (never refetch a set sector),
+    fall back to industry, and never let one failed lookup crash the page (mirrors the
+    provider's degrade-to-missing contract). Pure: the fetcher is injected so tests run offline.
+    """
+    out: list[Holding] = []
+    for h in holdings:
+        if h.sector and h.sector != "Unknown":
+            out.append(h)
+            continue
+        sector = "Unknown"
+        try:
+            info = fundamentals_fetcher(h.symbol) or {}
+            candidate = info.get("sector") or info.get("industry")
+            if candidate and str(candidate).strip():
+                sector = str(candidate).strip()
+        except Exception:
+            sector = "Unknown"
+        out.append(replace(h, sector=sector))
+    return out
 
 
 def analyze_portfolio(holdings: list[Holding],

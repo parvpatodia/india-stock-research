@@ -38,6 +38,7 @@ from src.portfolio.analysis import (  # noqa: E402
     annualized_volatility,
     beta,
     daily_returns,
+    enrich_sectors,
     max_drawdown,
     portfolio_daily_returns,
 )
@@ -232,6 +233,11 @@ if not holdings:
     st.stop()
 
 symbols = tuple(h.symbol for h in holdings)
+
+# Backfill blank sectors from yfinance so the table and sector chart aren't all "Unknown".
+# fetch_fundamentals is cached per-symbol, so this only pays a network cost on a cold cache.
+with st.spinner("Looking up sectors…"):
+    holdings = enrich_sectors(holdings, fetch_fundamentals)
 
 # --- market context ---
 
