@@ -49,14 +49,13 @@ from src.research.library import build_library  # noqa: E402
 from src.research.report import ReviewStatus  # noqa: E402
 from src.eval.cases import EvalStore  # noqa: E402
 from src.eval.harness import evaluate, ground_truth_from_report  # noqa: E402
-from src.pipeline import build_company_report, build_report_for_symbol  # noqa: E402
+from src.pipeline import build_report_for_symbol  # noqa: E402
 from src.data.figure_sources import YFinanceFigureSource  # noqa: E402
 from src.data.screener_source import ScreenerFigureSource  # noqa: E402
 from src.data.annual_report_source import AnnualReportFigureSource  # noqa: E402
 from src.data.nse_annual_reports import nse_annual_report_source  # noqa: E402
 from src.sources.adapters import HttpDocumentAdapter  # noqa: E402
 from src.llm.client import LiteLLMClient  # noqa: E402
-from src.samples import SAMPLE_COMPANIES  # noqa: E402
 from src.sip import sip_future_value  # noqa: E402
 from src.sources.registry import SourceRegistry  # noqa: E402
 from src.data.amfi_provider import AMFIProvider  # noqa: E402
@@ -67,6 +66,7 @@ st.set_page_config(page_title="India Equity Research", layout="wide", page_icon=
 
 _ROOT = Path(__file__).resolve().parent
 SAMPLE_CSV = _ROOT / "sample_data" / "sample_portfolio.csv"
+HOLDINGS_CSV = _ROOT / "holdings.csv"   # the owner's real portfolio (gitignored)
 EVAL_STORE = _ROOT / "data" / "eval_cases.jsonl"
 
 # Sources/documents: prefer the owner's real config, else fall back to the bundled sample.
@@ -191,10 +191,13 @@ with st.expander("New here? How to read this page"):
 
 with st.sidebar:
     st.header("Portfolio")
-    uploaded = st.file_uploader("Upload portfolio CSV", type=["csv"])
-    use_sample = st.checkbox("Use sample portfolio", value=not uploaded)
+    uploaded = st.file_uploader("Upload / update portfolio CSV", type=["csv"])
+    have_real = HOLDINGS_CSV.exists()
+    use_mine = st.checkbox("Use my portfolio (holdings.csv)", value=have_real and not uploaded,
+                           disabled=not have_real)
+    use_sample = st.checkbox("Use sample portfolio", value=not have_real and not uploaded)
     st.caption("Columns matched loosely: Symbol, Quantity, Avg Cost, (optional) Sector. "
-               "Zerodha/Groww exports work too.")
+               "Zerodha/Groww exports work too. Upload here to update your holdings.")
 
     st.divider()
     analyst = get_analyst()
@@ -209,11 +212,13 @@ with st.sidebar:
 source = None
 if uploaded is not None:
     source = uploaded
+elif use_mine and HOLDINGS_CSV.exists():
+    source = HOLDINGS_CSV
 elif use_sample:
     source = SAMPLE_CSV
 
 if source is None:
-    st.info("Upload a portfolio CSV or tick 'Use sample portfolio' in the sidebar to begin.")
+    st.info("Upload a portfolio CSV, or tick a portfolio option in the sidebar, to begin.")
     st.stop()
 
 try:
@@ -382,41 +387,45 @@ st.caption("A draft report is NOT for decisions until your expert approves it. T
 if "reports" not in st.session_state:
     st.session_state.reports = {}
 
-csrc = st.columns(2)
-with csrc[0]:
-    sample = st.selectbox("Sample company", list(SAMPLE_COMPANIES.keys()))
-    if st.button("Generate draft (sample)"):
-        st.session_state.reports[sample] = build_company_report(sample, SAMPLE_COMPANIES[sample])
-        st.session_state.active_report = sample
-with csrc[1]:
-    live_symbol = st.text_input("or a live NSE symbol", placeholder="RELIANCE")
+
+def _run_live(sym: str, ar_override: str = ""):
+    sources = [YFinanceFigureSource(), ScreenerFigureSource()]  # both free; cross-verify
+    label = "yfinance + screener"
+    if ar_override.strip():                          # manual annual-report URL
+        _adapter = HttpDocumentAdapter("annual_report")
+
+        def _ar_text(_symbol, _url=ar_override.strip()):
+            docs = _adapter.fetch(_url)
+            return docs[0].text if docs else None
+
+        sources.append(AnnualReportFigureSource(_ar_text, client=LiteLLMClient()))
+        label += " + annual report"
+    elif LiteLLMClient().available:                  # auto-resolve the annual report from NSE
+        sources.append(nse_annual_report_source(client=LiteLLMClient()))
+        label += " + annual report (auto)"
+    key = f"{sym} (live/{label})"
+    with st.spinner(f"Analyzing {sym} ({label})..."):
+        st.session_state.reports[key] = build_report_for_symbol(sym, sources)
+    st.session_state.active_report = key
+
+
+port_syms = sorted(symbols)
+rc1, rc2 = st.columns(2)
+with rc1:
+    st.markdown(f"**Your holdings ({len(port_syms)})**")
+    pick = st.selectbox("Pick a holding to research", port_syms)
+    if st.button("Analyze this holding"):
+        _run_live(pick)
+with rc2:
+    st.markdown("**Search any stock**")
+    typed = st.text_input("NSE symbol", placeholder="RELIANCE")
     ar_url = st.text_input("Annual report PDF URL (optional override)",
-                           placeholder="leave blank to auto-fetch from NSE")
-    st.caption("yfinance + Screener are always used (free). If an LLM is configured (LLM_MODEL), "
-               "the latest annual report is auto-fetched from NSE and used as a third source; "
-               "its figures show only when they agree with the others. Slower.")
-    if st.button("Generate live draft"):
-        sym = live_symbol.strip().upper()
-        if sym:
-            # yfinance + Screener are both free; two sources let figures cross-verify.
-            sources = [YFinanceFigureSource(), ScreenerFigureSource()]
-            label = "yfinance + screener"
-            if ar_url.strip():                       # manual override URL
-                _adapter = HttpDocumentAdapter("annual_report")
-
-                def _ar_text(_symbol, _url=ar_url.strip()):
-                    docs = _adapter.fetch(_url)
-                    return docs[0].text if docs else None
-
-                sources.append(AnnualReportFigureSource(_ar_text, client=LiteLLMClient()))
-                label += " + annual report"
-            elif LiteLLMClient().available:          # auto-resolve the AR from NSE
-                sources.append(nse_annual_report_source(client=LiteLLMClient()))
-                label += " + annual report (auto)"
-            key = f"{sym} (live/{label})"
-            with st.spinner(f"Analyzing {sym} ({label})..."):
-                st.session_state.reports[key] = build_report_for_symbol(sym, sources)
-            st.session_state.active_report = key
+                           placeholder="blank = auto-fetch from NSE")
+    if st.button("Analyze") and typed.strip():
+        _run_live(typed.strip().upper(), ar_url)
+st.caption("yfinance + Screener are always used (free); if an LLM is set (LLM_MODEL), the annual "
+           "report is auto-fetched from NSE as a third source. A draft is NOT for decisions until "
+           "your expert approves it.")
 
 active = st.session_state.get("active_report")
 report = st.session_state.reports.get(active) if active else None
