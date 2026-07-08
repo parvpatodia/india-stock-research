@@ -9,6 +9,7 @@ Run:  streamlit run app.py
 """
 from __future__ import annotations
 
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -206,6 +207,36 @@ def _persist_review(report, sym: str, stance, action: str, reviewer: str, note: 
         pass
 
 
+def _bridge_secrets_to_env() -> None:
+    """Copy LLM config from Streamlit secrets into env vars. WHY: on Streamlit Cloud the model
+    is set in the Secrets UI, but LiteLLMClient reads os.environ; this bridges the two so the
+    hosted model (e.g. Groq) works there. No-op locally with no secrets file."""
+    for key in ("LLM_MODEL", "LLM_API_KEY", "LLM_API_BASE", "GROQ_API_KEY"):
+        value = _secret(key)
+        if value and not os.environ.get(key):
+            os.environ[key] = str(value)
+
+
+def _check_password() -> bool:
+    """Shared-password gate. Open when no password is configured (local dev); required once a
+    password is set in secrets (deployed). Data is only fetched after this returns True."""
+    expected = _secret("app_password")
+    if not expected:
+        return True
+    if st.session_state.get("_authed"):
+        return True
+    st.title("🔒 India Equity Research")
+    st.caption("Enter the password to continue.")
+    pw = st.text_input("Password", type="password")
+    if st.button("Enter"):
+        if pw == expected:
+            st.session_state["_authed"] = True
+            st.rerun()
+        else:
+            st.error("Incorrect password.")
+    return False
+
+
 def _library_fingerprint() -> str:
     parts = []
     if SOURCES_YAML.exists():
@@ -284,6 +315,12 @@ def build_markdown_report(title: str, report, stance: Stance) -> str:
     lines += ["", "---", (v.caveat if v is not None else DISCLAIMER), "", DISCLAIMER]
     return "\n".join(lines)
 
+
+# --- auth + hosted-model secrets (both no-ops locally with no secrets file) ---
+
+_bridge_secrets_to_env()
+if not _check_password():
+    st.stop()
 
 # --- header ---
 
