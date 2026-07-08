@@ -224,8 +224,13 @@ src/eval/                       regression cases from expert corrections + accur
       (parses Screener's public tables, crore->absolute). Both cross-check against yfinance; only
       agreeing figures are trusted. verify tolerance = 2%. Live-verified on RELIANCE (ocf/debt/equity
       cross-verify; P&L conflicts are genuine source/period differences, withheld for the expert).
-- [ ] V4d reduce false conflicts: align the SAME fiscal year across sources; add more free sources
-      (BSE filings, Tickertape via bharat-sm-data); browser-MCP fallback for hosts blocking plain HTTP.
+- [x] V4d fiscal-year alignment: cross-verify the same latest common FY across sources (removes
+      period-mismatch conflicts); EBIT defined consistently (PBT + interest). Live on RELIANCE:
+      OCF/debt/equity verify; net-profit/EBIT/interest conflicts CONFIRMED as genuine source
+      definition differences (consolidation/minority), correctly withheld for the expert.
+- [ ] V4e break real P&L conflicts with a 3rd primary source (annual-report extraction as a
+      tiebreaker, and/or BSE filings); add more free sources; browser-MCP fallback for blocked hosts.
+- [ ] V6 eval loop: expert rejection -> regression case -> accuracy score.
 - [ ] V5 company-search -> draft report -> expert review panel -> approved report UI. (apptest)
 - [ ] V6 eval loop: expert correction -> regression case -> accuracy score. (test)
 
