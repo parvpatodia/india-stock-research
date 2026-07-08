@@ -10,3 +10,6 @@
 
 <!-- BUILD metrics (signal, not target): 2026-07-08 | parv_corrections=0 | repeat_mistakes=0 | bugs_found=2 (untracked load-bearing file via gitignore bug; clumsy invest dataframe caught pre-commit) | shipped_first_try=6 (each phase passed verify.sh on first run) | rework_commits=1 (gitignore fix + rescued file). Adversarial self-review found the untracked-file bug via the fresh-checkout discipline, not after deploy. -->
 
+<!-- BUILD metrics: 2026-07-08 (post-deploy iteration) | parv_corrections=1 (WhatsApp free tier isn't viable -> substituted ntfy, flagged honestly) | repeat_mistakes=0 | bugs_found=3 (fpdf multi_cell zero-width cursor; plain_points used unfetched median_pe -> price reason missing; screener bare-UA blocked on Cloud) | shipped_first_try=high (PDF, warning, screener-harden, CA-A/B/C/D/E each green after fix) | rework_commits=0. Also caught two self-made test-expectation errors (CAGR float-equality, ranking room=+1) before commit. Recurring lesson: verify metric wiring against REAL data live (the median_pe + trend bugs only showed on live symbols, not unit tests). -->
+
+
