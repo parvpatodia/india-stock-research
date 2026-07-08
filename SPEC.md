@@ -213,7 +213,9 @@ src/eval/                       regression cases from expert corrections + accur
 - [ ] V2 report+review: DRAFT/APPROVED/REJECTED lifecycle; only approved trusted; audit trail;
       caveated Verdict (valuation/quality/leaning + confidence + reasons). (test)
 - [ ] V3 analysis framework: valuation/health/governance metrics from verified figures. (test)
-- [ ] V4 source-adapter interface: pluggable; owner APIs slot in; free public adapter(s). (test)
+- [x] V4a source-adapter interface + HttpDocumentAdapter (PDF/HTML/text); ingest only into
+      registered sources. Live-verified fetch of a real NSE annual report. See SOURCES.md. (test+live)
+- [ ] V4b concrete adapters for owner-provided REST APIs + browser-MCP fallback for blocked hosts.
 - [ ] V5 company-search -> draft report -> expert review panel -> approved report UI. (apptest)
 - [ ] V6 eval loop: expert correction -> regression case -> accuracy score. (test)
 
