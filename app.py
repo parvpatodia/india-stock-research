@@ -343,6 +343,12 @@ def build_pdf_report(title: str, report, stance: Stance) -> bytes:
     line(_STANCE_PDF[stance] + headline, size=13, style="B", h=8)
     line(plain_summary(v, stance), size=11, gap=2)
 
+    if report.insights:
+        line("Why, in plain terms", size=12, style="B", h=7)
+        for point in report.insights:
+            line(f"- {point}", size=11)
+        pdf.ln(1)
+
     if v is not None:
         line("Verdict", size=12, style="B", h=7)
         line(f"Valuation: {v.valuation.value}    Quality: {v.quality.value}    "
@@ -604,9 +610,13 @@ with tab_research:
         else:
             st.warning("DRAFT, not yet reviewed by your expert. Not for decisions.")
 
-        # summary-first: one line + stance
+        # summary-first: one line + stance + the 5-6 plain-language reasons
         st.markdown(f"### {icon} {sym}: {headline}")
         st.write(plain_summary(report.verdict, stance))
+        if report.insights:
+            st.markdown("**Why, in plain terms:**")
+            for point in report.insights:
+                st.markdown(f"- {point}")
 
         # how much (transparent cap math), framed by the stance
         held = value_by_symbol.get(sym, 0.0)

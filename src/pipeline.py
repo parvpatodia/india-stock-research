@@ -50,12 +50,23 @@ def build_company_report(company: str,
         ]
         verdict = assemble_verdict(valuation, quality_signals)
 
+    # Plain-language "why" points from the ratio suite + core figures (cross-verified only).
+    from .analysis.deep_metrics import compute_deep_metrics, plain_points
+    tvals = {name: tv(name) for name in (
+        "current_pe", "operating_cash_flow", "net_profit", "total_debt",
+        "equity", "ebit", "interest_expense", "total_assets", "revenue")}
+    # WHY: use the computed median actually used for the valuation tier, not the (unfetched)
+    # median_pe figure, so the price/valuation reason renders whenever valuation was assessed.
+    tvals["median_pe"] = median
+    insights = plain_points(tvals, compute_deep_metrics(tvals, is_bank=is_bank))
+
     return Report(
         company=company,
         claims=tuple(claims),
         figures=tuple(verified.values()),
         verdict=verdict,
         status=ReviewStatus.DRAFT,
+        insights=tuple(insights),
     )
 
 

@@ -86,6 +86,9 @@ class Report:
     status: ReviewStatus = ReviewStatus.DRAFT
     audit: tuple[ReviewEvent, ...] = ()
     created_at: str = field(default_factory=_now)
+    # Plain-language "why" points (deterministic, from cross-verified figures). Presentation
+    # only; kept as strings so this module needs no import from the analysis layer.
+    insights: tuple[str, ...] = ()
 
     @property
     def is_trusted(self) -> bool:
