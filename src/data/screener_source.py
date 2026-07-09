@@ -20,6 +20,7 @@ from .figure_sources import FRAMEWORK_FIGURES, FigureSource
 _CRORE = 1e7
 _PE_RE = re.compile(r"Stock P/E.*?([\d,]+\.?\d+)", re.IGNORECASE | re.DOTALL)
 _YEAR_RE = re.compile(r"(\d{4})\s*$")
+_MONTH_YEAR_RE = re.compile(r"([A-Za-z]{3})\s+(\d{4})\s*$")
 
 
 def _clean_label(value) -> str:
@@ -38,12 +39,19 @@ def _num(value) -> float | None:
 
 
 def _is_annual(df) -> bool:
-    years = []
-    for col in list(df.columns)[1:4]:
-        m = _YEAR_RE.search(str(col))
+    # WHY (resilience): Screener's quarterly results table precedes the annual P&L and shares its
+    # row labels, so "distinct years in the first few columns" misfires on a quarter that straddles
+    # a calendar year (e.g. Dec 2023 / Mar 2024 / Jun 2024). Annual columns instead all share ONE
+    # fiscal-year-end month across >=2 distinct years; a quarterly table cycles through months. Test
+    # every dated column so a truncated view can't fool it.
+    months: set[str] = set()
+    years: set[str] = set()
+    for col in list(df.columns)[1:]:
+        m = _MONTH_YEAR_RE.search(str(col).strip())
         if m:
-            years.append(m.group(1))
-    return len(years) >= 2 and len(set(years)) >= 2
+            months.add(m.group(1).lower())
+            years.add(m.group(2))
+    return len(years) >= 2 and len(months) <= 1
 
 
 def _latest_annual(df, label: str) -> float | None:

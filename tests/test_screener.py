@@ -34,6 +34,32 @@ def test_parse_screener_figures():
     assert figs["ebit"] == (105000 + 5100) * CR         # PBT + interest
 
 
+# A quarterly results table (multi-month columns straddling a calendar year) placed BEFORE the
+# annual P&L, sharing its row labels — exactly how Screener lays the page out.
+QUARTERLY_THEN_ANNUAL = """
+<div><ul><li>Stock P/E <span>20.5</span></li></ul></div>
+<table><thead><tr><th></th><th>Dec 2023</th><th>Mar 2024</th><th>Jun 2024</th></tr></thead><tbody>
+<tr><td>Sales +</td><td>230000</td><td>240000</td><td>250000</td></tr>
+<tr><td>Operating Profit</td><td>40000</td><td>41000</td><td>42000</td></tr>
+<tr><td>Net Profit +</td><td>18000</td><td>19000</td><td>20000</td></tr>
+</tbody></table>
+<table><thead><tr><th></th><th>Mar 2023</th><th>Mar 2024</th></tr></thead><tbody>
+<tr><td>Sales +</td><td>900000</td><td>950000</td></tr>
+<tr><td>Operating Profit</td><td>150000</td><td>160000</td></tr>
+<tr><td>Net Profit +</td><td>79000</td><td>80000</td></tr>
+</tbody></table>
+"""
+
+
+def test_quarterly_table_not_misread_as_annual():
+    # WHY (resilience): Screener's quarterly table precedes the annual P&L and shares its labels.
+    # A quarter straddling a calendar year must NOT be picked as annual, or quarterly figures get
+    # cross-checked against yfinance's annual -> silent conflict -> good annual data withheld.
+    figs = parse_screener_figures(QUARTERLY_THEN_ANNUAL)
+    assert figs["net_profit"] == 80000 * CR       # ANNUAL value, not 20000 (a single quarter)
+    assert figs["revenue"] == 950000 * CR          # annual sales, not a quarter
+
+
 def test_parse_empty_html_all_none():
     figs = parse_screener_figures("<html><body>no tables here</body></html>")
     assert all(figs[name] is None for name in FRAMEWORK_FIGURES)
