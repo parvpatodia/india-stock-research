@@ -22,6 +22,7 @@ import plotly.express as px  # noqa: E402
 import streamlit as st  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
 
+from src.analysis.daily_engine import refresh_today_if_stale  # noqa: E402
 from src.analysis.sizing import (  # noqa: E402
     AllocationCandidate,
     Stance,
@@ -778,13 +779,22 @@ with tab_research:
 with tab_invest:
     st.subheader("Invest a lump sum")
 
-    # Today's picks: written each morning by the daily engine (scripts/daily_suggestions.py).
-    try:
-        today_rows = get_gateway().read("Today")
-    except Exception:
-        today_rows = []
+    # Today's picks: refreshed once per day from THIS app (Streamlit Cloud can reach Screener;
+    # a scheduler's datacenter IP can't). First visit each day computes; then it's cached in the
+    # Sheet. Gated on a configured Sheet backend so the smoke test / local dev don't research.
+    if _sheet_configured() and not st.session_state.get("today_done"):
+        with st.spinner("Preparing today's picks (first visit today, ~1-2 min)…"):
+            try:
+                rows, _ = refresh_today_if_stale(
+                    get_gateway(), list(symbols), value_by_symbol, analysis.total_value,
+                    cap_pct, _secret("NTFY_TOPIC", "") or "")
+                st.session_state.today_rows = rows
+            except Exception:
+                st.session_state.today_rows = []
+        st.session_state.today_done = True
+    today_rows = st.session_state.get("today_rows", [])
     if today_rows:
-        st.markdown("**📌 Today's long-term picks** (auto-refreshed daily)")
+        st.markdown("**📌 Today's long-term picks** (refreshed daily when you open the app)")
         for r in today_rows[:6]:
             st.markdown(f"- **{r.get('symbol', '')}** ({r.get('stance', '')}) — "
                         f"{r.get('reason', '')}")

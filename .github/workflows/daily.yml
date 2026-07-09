@@ -1,10 +1,10 @@
 name: daily-suggestions
 
-# Runs the long-term suggestions engine every morning and on demand. Writes a "Today" tab to the
-# Sheet and pushes the top picks to ntfy. Secrets are configured in the repo settings, never here.
+# Manual/backup runner for the suggestions engine. The scheduled cron is DISABLED on purpose:
+# GitHub's datacenter IP is blocked by Screener, so a cron run comes back single-source and thin.
+# In production the APP drives the daily refresh (Streamlit Cloud can reach Screener). This
+# workflow stays for manual dispatch / debugging. Secrets are configured in repo settings.
 on:
-  schedule:
-    - cron: "30 3 * * *"   # 03:30 UTC = 09:00 IST
   workflow_dispatch: {}
 
 jobs:
