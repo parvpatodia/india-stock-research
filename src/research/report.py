@@ -132,3 +132,24 @@ class Report:
         event = ReviewEvent(status=status, reviewer=reviewer.strip(), timestamp=_now(),
                             note=note, corrections=corrections)
         return replace(self, status=status, audit=self.audit + (event,))
+
+
+def most_recent_by_symbol(reports: dict[str, "Report"], symbol: str) -> "Report | None":
+    """From a {key: Report} map keyed like 'SYM (live/label)' (the app's session-state reports
+    dict), return the Report for `symbol` with the LATEST created_at, or None if none match.
+
+    WHY (real money): a plain "last match found while iterating the dict" pick is NOT the most
+    recently researched report. Python dict iteration order tracks INSERTION order; updating an
+    EXISTING key in place does not move it. Re-researching the same symbol under a different key
+    (e.g. toggling an annual-report URL override changes the label, hence the key) inserts a new,
+    later key; going back to the ORIGINAL key afterward updates it in place, so it stays at its
+    earlier dict position. A naive "last one seen in the loop" pick then silently returns the
+    OLDER, differently-keyed report instead of the just-refreshed one. This fed both the Ask tab's
+    grounding and the Invest tab's approved-name resolution (which sums real rupees), so picking by
+    actual timestamp, not iteration position, matters for both.
+    """
+    best: Report | None = None
+    for key, rep in reports.items():
+        if key.split(" ")[0] == symbol and (best is None or rep.created_at > best.created_at):
+            best = rep
+    return best

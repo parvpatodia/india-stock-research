@@ -82,7 +82,7 @@ from src.research.verified_context import (  # noqa: E402
     verified_figures_document,
 )
 from src.research.library import build_library  # noqa: E402
-from src.research.report import ReviewStatus  # noqa: E402
+from src.research.report import ReviewStatus, most_recent_by_symbol  # noqa: E402
 from src.sip import sip_future_value  # noqa: E402
 from src.sources.adapters import HttpDocumentAdapter, ingest_documents  # noqa: E402
 from src.sources.registry import CredibilityTier, Source, SourceRegistry  # noqa: E402
@@ -303,9 +303,20 @@ def _library_fingerprint() -> str:
 @st.cache_resource
 def get_curated_library(fingerprint: str):
     """Build the news-inclusive registry + a store of the owner's curated documents (if any).
-    Registry always includes the live news feeds so news can be ingested as attributed context."""
+    Registry always includes the live news feeds so news can be ingested as attributed context,
+    plus this app's own cross-verified-figures source (see verified_context.py) so Ask can ground
+    financial questions. WHY register it HERE and not in the Ask tab: this function is
+    @st.cache_resource, so Streamlit's cache lock guarantees the body runs exactly once even under
+    concurrent sessions. Registering it as part of that one-time build avoids a real check-then-act
+    race on this process-shared registry (two concurrent first Ask requests could otherwise both
+    pass a "not yet registered" check before either added it, and the second add() would raise on
+    the duplicate id, crashing that user's request)."""
     base = get_base_registry()
     registry = registry_with_news(base)
+    registry.add(Source(
+        VERIFIED_FIGURES_SOURCE_ID, "This app's cross-verified figures", CredibilityTier.PRIMARY,
+        notes="Only figures independently agreed by >=2 public sources (yfinance + Screener); "
+              "see the Research tab for the full evidence."))
     store = DocumentStore(registry=registry)
     skipped: list[str] = []
     failed: list[str] = []
@@ -895,9 +906,15 @@ with tab_invest:
                     pass
     except Exception:
         pass
-    for key, rep in st.session_state.reports.items():
-        if rep.is_trusted and rep.verdict is not None:
-            approved_stance[key.split(" ")[0]] = stance_from_verdict(rep.verdict)
+    # WHY (real money): use the MOST RECENTLY researched report per symbol (see
+    # most_recent_by_symbol), not whichever key a dict-iteration happens to reach last. Re-running
+    # the SAME key in place does not reorder it in the dict, so a naive last-match pick can return
+    # a stale, differently-labeled report -- e.g. showing an approval that a fresh, not-yet-
+    # reviewed re-run should have superseded. Only the CURRENT (latest) report's approval counts.
+    for sym_key in {key.split(" ")[0] for key in st.session_state.reports}:
+        latest = most_recent_by_symbol(st.session_state.reports, sym_key)
+        if latest is not None and latest.is_trusted and latest.verdict is not None:
+            approved_stance[sym_key] = stance_from_verdict(latest.verdict)
 
     if not approved_stance:
         st.info("No approved research yet. Go to **Research a Stock**, review a report, and "
@@ -941,13 +958,6 @@ with tab_ask:
                "when it cannot answer.")
 
     registry, curated_store, skipped, failed = get_curated_library(_library_fingerprint())
-    # WHY: registry is a cached, shared object across reruns; add this source once, not every Ask
-    # click, or SourceRegistry.add raises on the duplicate id.
-    if registry.get(VERIFIED_FIGURES_SOURCE_ID) is None:
-        registry.add(Source(
-            VERIFIED_FIGURES_SOURCE_ID, "This app's cross-verified figures", CredibilityTier.PRIMARY,
-            notes="Only figures independently agreed by >=2 public sources (yfinance + Screener); "
-                  "see the Research tab for the full evidence."))
     grounded = get_grounded_analyst()
     if not grounded.available:
         st.info("Set LLM_MODEL to ask questions. The sources still load below.")
@@ -970,10 +980,9 @@ with tab_ask:
             # Reuse this session's already-researched report (if any) so Ask can ground financial
             # questions in the SAME cross-verified figures the Research tab computed, not just
             # news/curated docs (previously the richest data in the app was invisible to Ask).
-            cached_report = None
-            for key, rep in st.session_state.reports.items():
-                if key.split(" ")[0] == sym_u:
-                    cached_report = rep      # last match wins (most recently researched)
+            # most_recent_by_symbol picks by actual timestamp, not dict-iteration position, so a
+            # stale, differently-labeled report can't be grounded as if it were freshly researched.
+            cached_report = most_recent_by_symbol(st.session_state.reports, sym_u)
             vf_doc = verified_figures_document(sym_u, cached_report)
             if vf_doc is not None:
                 ingest_documents(store, [vf_doc])

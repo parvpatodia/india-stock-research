@@ -9,6 +9,7 @@ from src.research.report import (
     ReviewStatus,
     ValuationTier,
     Verdict,
+    most_recent_by_symbol,
 )
 from src.research.verification import SourcedValue, verify_figure
 
@@ -79,3 +80,33 @@ def test_audit_trail_preserves_order():
     r2 = r.reject(reviewer="expert", note="fix x")
     r3 = r2.approve(reviewer="expert", note="fixed now")
     assert [e.status for e in r3.audit] == [ReviewStatus.REJECTED, ReviewStatus.APPROVED]
+
+
+def test_most_recent_by_symbol_uses_timestamp_not_dict_position():
+    # WHY (regression, real money): reproduces the actual bug -- key A (no AR override) is
+    # inserted first, key B (AR-override run, a different label/key) inserted after. The user
+    # then goes BACK to the no-override flow, updating key A in place with a LATER created_at,
+    # but A keeps its EARLIER dict position (Python dicts don't reorder on update). A naive
+    # "last match seen while iterating" pick would wrongly return B (the stale one).
+    reports = {
+        "RELIANCE (live/yfinance + screener)":
+            Report(company="RELIANCE", created_at="2026-01-03T00:00:00Z"),
+        "RELIANCE (live/yfinance + screener + annual report)":
+            Report(company="RELIANCE", created_at="2026-01-02T00:00:00Z"),
+    }
+    result = most_recent_by_symbol(reports, "RELIANCE")
+    assert result.created_at == "2026-01-03T00:00:00Z"
+
+
+def test_most_recent_by_symbol_filters_by_symbol_prefix():
+    reports = {
+        "RELIANCE (live/x)": Report(company="RELIANCE", created_at="2026-01-01T00:00:00Z"),
+        "TCS (live/x)": Report(company="TCS", created_at="2026-01-05T00:00:00Z"),
+    }
+    result = most_recent_by_symbol(reports, "RELIANCE")
+    assert result is not None and result.company == "RELIANCE"
+
+
+def test_most_recent_by_symbol_none_when_no_match():
+    assert most_recent_by_symbol({}, "RELIANCE") is None
+    assert most_recent_by_symbol({"TCS (live/x)": Report(company="TCS")}, "RELIANCE") is None
