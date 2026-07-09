@@ -971,6 +971,8 @@ with tab_ask:
         if base is not None:
             build_library(base, DOCS_DIR, store=store)
         vf_pin: frozenset[str] = frozenset()
+        vf_doc = None
+        sym_u = ""
         if ask_sym.strip():
             sym_u = ask_sym.strip().upper()
             company = fetch_fundamentals(sym_u).get("name") or ask_sym
@@ -1000,6 +1002,17 @@ with tab_ask:
                                          as_of=datetime.now().strftime("%Y-%m-%d %H:%M"))
             if result.abstained:
                 st.warning(f"No verified answer. {result.abstain_reason}")
+                # WHY (workflow discoverability): Ask only grounds financial-figure questions in
+                # a symbol's cross-verified figures if that stock was already researched this
+                # session (verified_figures_document needs >=2-source-verified figures; a fresh
+                # fetch here would add MORE Screener load to the deployed app's already
+                # rate-limited datacenter IP, on every random Ask query, degrading the Research
+                # tab and daily picks for everyone -- so Ask deliberately reuses, never triggers,
+                # a live fetch). Point the user at the fix instead of leaving a dead end.
+                if sym_u and vf_doc is None:
+                    st.caption(f"Tip: for questions about {sym_u}'s numbers (P/E, debt, profit, "
+                               "dividend...), research it in the 'Research a Stock' tab first — "
+                               "Ask can then ground answers in its cross-verified figures.")
             else:
                 for claim in result.claims:
                     cited = ", ".join(
