@@ -84,7 +84,21 @@ def test_two_clean_quality_signals_reach_strong():
         valuation_vs_history(15, 25),
         [earnings_quality(90, 100), leverage_health(20, 100, 50, 5), promoter_pledge(None)],
     )
-    assert v.quality == QualityTier.STRONG                  # 2 known, 0 concerns -> corroborated
+    assert v.quality == QualityTier.STRONG                  # 2 known incl. leverage -> corroborated
+
+
+def test_two_soft_signals_without_verified_debt_are_not_strong():
+    # WHY (real money): earnings-quality + no-pledge are two signals, but NEITHER is solvency.
+    # STRONG must be unreachable while the critical debt dimension is unverified — otherwise a
+    # cheap name reads "strong balance sheet, favorable" with its debt never checked.
+    v = assemble_verdict(
+        valuation_vs_history(15, 30),                       # cheap
+        [earnings_quality(90, 100),                         # known, clean (non-solvency)
+         leverage_health(None, None, None, None),           # DEBT UNVERIFIED (critical)
+         promoter_pledge(0)],                               # known, clean (non-solvency)
+    )
+    assert v.quality != QualityTier.STRONG                  # not strong: solvency unverified
+    assert v.leaning != Leaning.CONSTRUCTIVE                # so it doesn't drive a FAVORABLE stance
 
 
 def test_valuation_exposes_discount_magnitude():

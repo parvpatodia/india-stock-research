@@ -144,19 +144,23 @@ def assemble_verdict(valuation: MetricResult,
 
     known_quality = [m for m in quality_signals if m.known]
     concerns = [m for m in known_quality if m.concern]
+    # A critical quality dimension (leverage/debt for industrials, ROA for banks) left unverified
+    # blocks STRONG: you cannot call a balance sheet strong without checking its solvency, even if
+    # other, softer signals look clean. This closes the "two non-solvency signals => STRONG" hole.
+    critical_quality_unknown = any(m.critical and not m.known for m in quality_signals)
     if not known_quality:
         quality_tier = QualityTier.UNKNOWN
     elif len(concerns) >= 2:
         quality_tier = QualityTier.WEAK
     elif len(concerns) == 1:
         quality_tier = QualityTier.MIXED
-    elif len(known_quality) >= min_signals_for_strong:
+    elif len(known_quality) >= min_signals_for_strong and not critical_quality_unknown:
         quality_tier = QualityTier.STRONG
     else:
-        # WHY (real money): zero concerns but fewer than min_signals_for_strong verified quality
-        # dimensions (crucially, debt unverified) is not enough to call a balance sheet STRONG.
-        # Requiring corroboration keeps a cheap P/E + one lucky metric from reading FAVORABLE on
-        # thin data. Banks opt into 1 because ROA is their single designated quality lens.
+        # WHY (real money): zero concerns but either fewer than min_signals_for_strong verified
+        # dimensions, or the critical one (debt) unverified, is not enough to call a balance sheet
+        # STRONG. Requiring corroboration incl. solvency keeps a cheap P/E + soft signals from
+        # reading FAVORABLE on thin data. Banks opt into 1 (ROA is their single, critical lens).
         quality_tier = QualityTier.MIXED
 
     if valuation_tier == ValuationTier.UNKNOWN and quality_tier == QualityTier.UNKNOWN:
