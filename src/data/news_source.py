@@ -17,7 +17,7 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Callable
 
@@ -132,11 +132,20 @@ def parse_yahoo_news(raw: list[dict],
     return items
 
 
-def _dedup_sort_cap(items: list[NewsItem], cap: int) -> list[NewsItem]:
-    """Drop duplicate headlines, sort newest first (undated last), cap the count."""
+def _dedup_sort_cap(items: list[NewsItem], cap: int,
+                    max_age_days: int | None = None, today: date | None = None) -> list[NewsItem]:
+    """Drop duplicate headlines, drop stale dated items (older than max_age_days), sort newest
+    first (undated last), cap the count. WHY (honesty): the UI labels this 'Recent news'; a dated
+    item older than the window is not recent and must not read as current context. Undated items
+    are kept (can't prove them stale; they render labeled 'undated', not 'recent')."""
+    cutoff = None
+    if max_age_days is not None:
+        cutoff = ((today or datetime.now().date()) - timedelta(days=max_age_days)).isoformat()
     seen: set[str] = set()
     unique: list[NewsItem] = []
     for it in items:
+        if cutoff and it.published and it.published < cutoff:   # stale, dated -> drop
+            continue
         key = _KEY.sub("", it.title.lower())[:80]
         if key and key not in seen:
             seen.add(key)
@@ -159,10 +168,15 @@ class NewsSource:
     def __init__(self,
                  rss_fetcher: Callable[[str], bytes] | None = None,
                  yahoo_fetcher: Callable[[str], list[dict]] | None = None,
-                 max_items: int = 8):
+                 max_items: int = 8,
+                 max_age_days: int = 365,
+                 today: date | None = None):
         self._rss_fetcher = rss_fetcher or self._http_rss
         self._yahoo_fetcher = yahoo_fetcher or self._yahoo_api
         self.max_items = max_items
+        # WHY: a dated headline older than ~a year is not "recent" context; drop it. Expert-tunable.
+        self.max_age_days = max_age_days
+        self._today = today
 
     @staticmethod
     def _http_rss(query: str) -> bytes:
@@ -189,7 +203,7 @@ class NewsSource:
             items += parse_yahoo_news(self._yahoo_fetcher(symbol))
         except Exception:
             pass
-        return _dedup_sort_cap(items, self.max_items)
+        return _dedup_sort_cap(items, self.max_items, self.max_age_days, self._today)
 
     @staticmethod
     def as_documents(items: list[NewsItem]) -> list[FetchedDocument]:

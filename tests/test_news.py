@@ -1,3 +1,5 @@
+from datetime import date
+
 from src.data.news_source import (
     NEWS_SOURCES,
     NewsSource,
@@ -5,6 +7,8 @@ from src.data.news_source import (
     parse_yahoo_news,
     registry_with_news,
 )
+
+_TODAY = date(2026, 7, 9)   # fixed reference so the recency filter is deterministic in tests
 from src.research.claims import FACT, UNVERIFIED, Citation, Claim, ResearchResult, enforce_citations
 from src.research.grounding import DocumentStore
 from src.sources.adapters import ingest_documents
@@ -78,7 +82,8 @@ def test_newssource_aggregates_dedups_and_sorts_newest_first():
         "pubDate": "2026-07-01T00:00:00Z",
         "provider": {"displayName": "Yahoo"},
         "canonicalUrl": {"url": "https://y/dup.html"}}}] + YAHOO_NEWS
-    ns = NewsSource(rss_fetcher=lambda q: GOOGLE_RSS, yahoo_fetcher=lambda s: yahoo, max_items=8)
+    ns = NewsSource(rss_fetcher=lambda q: GOOGLE_RSS, yahoo_fetcher=lambda s: yahoo, max_items=8,
+                    today=_TODAY)
     items = ns.fetch("RELIANCE", "Reliance Industries")
     assert [i.title for i in items] == [
         "Reliance shares slip after SEBI warning",   # 2026-07-08 (google kept, yahoo dup dropped)
@@ -91,10 +96,37 @@ def test_newssource_aggregates_dedups_and_sorts_newest_first():
 def test_newssource_caps_and_survives_one_feed_failing():
     def boom(_):
         raise RuntimeError("feed down")
-    ns = NewsSource(rss_fetcher=lambda q: GOOGLE_RSS, yahoo_fetcher=boom, max_items=1)
+    ns = NewsSource(rss_fetcher=lambda q: GOOGLE_RSS, yahoo_fetcher=boom, max_items=1, today=_TODAY)
     items = ns.fetch("RELIANCE")
     assert len(items) == 1                       # yahoo failed, google still returned; capped to 1
     assert items[0].published == "2026-07-08"
+
+
+def test_newssource_drops_stale_items_beyond_max_age():
+    # WHY (honesty): news shows under "Recent news". A dated item older than the max-age window is
+    # not recent and must not appear as current context for a real-money decision.
+    stale = [{"id": "old", "content": {
+        "title": "Reliance ancient headline from years ago",
+        "pubDate": "2023-01-01T00:00:00Z",                 # ~3.5 years before _TODAY
+        "provider": {"displayName": "OldWire"},
+        "canonicalUrl": {"url": "https://y/old.html"}}}]
+    ns = NewsSource(rss_fetcher=lambda q: GOOGLE_RSS, yahoo_fetcher=lambda s: stale,
+                    max_items=8, max_age_days=365, today=_TODAY)
+    titles = [i.title for i in ns.fetch("RELIANCE", "Reliance Industries")]
+    assert "Reliance ancient headline from years ago" not in titles       # stale dropped
+    assert "Reliance shares slip after SEBI warning" in titles            # recent kept
+
+
+def test_newssource_keeps_undated_items():
+    # An undated item can't be shown to be stale; keep it (it's labeled 'undated', not 'recent').
+    undated = [{"id": "u", "content": {
+        "title": "Reliance undated note",
+        "provider": {"displayName": "X"},
+        "canonicalUrl": {"url": "https://y/u.html"}}}]                     # no pubDate -> undated
+    ns = NewsSource(rss_fetcher=lambda q: b"<rss></rss>", yahoo_fetcher=lambda s: undated,
+                    max_items=8, max_age_days=365, today=_TODAY)
+    titles = [i.title for i in ns.fetch("X", "X")]
+    assert "Reliance undated note" in titles
 
 
 def test_as_documents_carry_attribution_and_source_id():
