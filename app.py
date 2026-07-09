@@ -793,8 +793,9 @@ with tab_invest:
         for r in today_rows[:6]:
             st.markdown(f"- **{r.get('symbol', '')}** ({r.get('stance', '')}) — "
                         f"{r.get('reason', '')}")
-        st.caption(f"As of {today_rows[0].get('date', '')}. Cross-verified and within your "
-                   "per-stock cap. Not a buy order.")
+        # WHY: Sheets coerces the date string into a datetime on round-trip; show only the date.
+        as_of = str(today_rows[0].get("date", "")).split("T")[0]
+        st.caption(f"As of {as_of}. Cross-verified and within your per-stock cap. Not a buy order.")
     else:
         st.caption("No picks yet — tap Refresh to research your holdings.")
     if _sheet_configured() and st.button("🔄 Refresh today's picks"):
