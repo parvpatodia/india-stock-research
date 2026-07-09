@@ -118,6 +118,29 @@ def max_drawdown(close: pd.Series) -> float:
     return float(drawdown.min())
 
 
+def historical_cagr(close: pd.Series) -> tuple[float, float] | None:
+    """Annualized (CAGR) return from a price series' first close to its last, and the actual
+    span in years the data covers. None if there isn't at least ~3 years of history or the
+    series is unusable (empty, non-positive prices) -- a shorter window is not a meaningful
+    long-term reference.
+
+    WHY: used to show a REAL, live, dated benchmark return (e.g. the Sensex) next to a SIP
+    calculator's assumed-return input, rather than asserting a "typical equity return" figure
+    from memory. The years-of-data actually used is returned alongside the number, so the UI can
+    be honest about how far back it goes rather than implying a universal truth.
+    """
+    if close is None or close.empty or len(close) < 2:
+        return None
+    first, last = close.iloc[0], close.iloc[-1]
+    if first is None or last is None or first <= 0 or last <= 0:
+        return None
+    years = (close.index[-1] - close.index[0]).days / 365.25
+    if years < 3:
+        return None
+    cagr_pct = ((last / first) ** (1 / years) - 1) * 100
+    return float(cagr_pct), float(years)
+
+
 def portfolio_daily_returns(close_by_symbol: dict[str, pd.Series],
                             weights: dict[str, float]) -> pd.Series:
     """Weighted daily return of the book, over dates where all series overlap.

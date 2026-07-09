@@ -6,6 +6,7 @@ from src.portfolio.analysis import (
     annualized_volatility,
     beta,
     enrich_sectors,
+    historical_cagr,
     max_drawdown,
     portfolio_daily_returns,
 )
@@ -77,6 +78,30 @@ def test_volatility_and_empty_guards():
     assert annualized_volatility(pd.Series([0.01, -0.01, 0.02, -0.02, 0.0])) > 0
     assert annualized_volatility(pd.Series(dtype=float)) == 0.0
     assert max_drawdown(pd.Series(dtype=float)) == 0.0
+
+
+def test_historical_cagr_doubles_over_ten_years_is_about_seven_pct():
+    idx = pd.date_range("2016-01-01", "2026-01-01", freq="365D")
+    close = pd.Series([100.0, 200.0], index=[idx[0], idx[-1]])
+    result = historical_cagr(close)
+    assert result is not None
+    cagr_pct, years = result
+    assert abs(years - 10.0) < 0.1
+    assert abs(cagr_pct - 7.18) < 0.1                # 2x over 10y ~ 7.18%/yr
+
+
+def test_historical_cagr_none_when_span_too_short():
+    # WHY: a <3-year window is not a meaningful "long-term" reference point.
+    idx = pd.date_range("2024-01-01", "2026-01-01", freq="365D")
+    close = pd.Series([100.0, 110.0], index=[idx[0], idx[-1]])
+    assert historical_cagr(close) is None
+
+
+def test_historical_cagr_none_on_empty_or_bad_data():
+    assert historical_cagr(pd.Series(dtype=float)) is None
+    assert historical_cagr(pd.Series([100.0])) is None                   # single point
+    idx = pd.date_range("2016-01-01", "2026-01-01", freq="365D")
+    assert historical_cagr(pd.Series([0.0, 100.0], index=[idx[0], idx[-1]])) is None  # bad first
     assert beta(pd.Series(dtype=float), pd.Series(dtype=float)) == 0.0
 
 

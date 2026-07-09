@@ -68,6 +68,7 @@ from src.portfolio.analysis import (  # noqa: E402
     beta,
     daily_returns,
     enrich_sectors,
+    historical_cagr,
     max_drawdown,
     portfolio_daily_returns,
 )
@@ -165,6 +166,16 @@ def fetch_index(symbol: str) -> dict:
 @st.cache_data(ttl=900, show_spinner=False)
 def fetch_history_close(symbol: str) -> pd.Series:
     hist = get_provider().history(symbol, period="1y")
+    if "Close" in hist:
+        return hist["Close"].dropna()
+    return pd.Series(dtype=float)
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def fetch_long_history_close(symbol: str) -> pd.Series:
+    # WHY: a long, slow-changing window for a real historical-CAGR reference (see
+    # historical_cagr); cached for a day since decades of daily bars don't need refetching often.
+    hist = get_provider().history(symbol, period="max")
     if "Close" in hist:
         return hist["Close"].dropna()
     return pd.Series(dtype=float)
@@ -1069,6 +1080,20 @@ with st.expander("Mutual funds & SIP projection"):
     pcols[1].metric(f"Projected at {sip_return:.1f}%", money(proj.projected_value))
     pcols[2].metric("Projected gain", money(proj.gain))
     st.caption("Compound-interest arithmetic on a return YOU assumed. Not a prediction, not advice.")
+    # WHY (honesty): the slider allows up to 30%/40 years, which compounds into an absurd,
+    # misleading corpus if taken literally (a real risk for a non-expert reading a bare number).
+    # Ground the assumption against SENSEX's own real, live-computed long-term price return, not
+    # a "typical equity return" claim from memory, so the reader can judge how aggressive their
+    # assumption is against actual history rather than an arbitrary cap.
+    bench_hist = historical_cagr(fetch_long_history_close(SENSEX_SYMBOL))
+    if bench_hist is not None:
+        bench_cagr, bench_years = bench_hist
+        note = ("well above" if sip_return > bench_cagr + 3 else
+                "well below" if sip_return < bench_cagr - 3 else "in line with")
+        st.caption(f"For context: SENSEX's own price return over the last {bench_years:.0f} "
+                   f"years (live data, price only, excludes dividends) works out to about "
+                   f"{bench_cagr:.1f}%/yr. Your {sip_return:.1f}% assumption is {note} that; "
+                   "real fund returns vary year to year and can be negative.")
 
 with st.expander("Glossary"):
     for term, meaning in GLOSSARY.items():
