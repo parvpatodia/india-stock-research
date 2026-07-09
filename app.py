@@ -22,7 +22,6 @@ import plotly.express as px  # noqa: E402
 import streamlit as st  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
 
-from src.analysis.daily_engine import refresh_today_if_stale  # noqa: E402
 from src.analysis.sizing import (  # noqa: E402
     AllocationCandidate,
     Stance,
@@ -797,16 +796,15 @@ with tab_invest:
         as_of = str(today_rows[0].get("date", "")).split("T")[0]
         st.caption(f"As of {as_of}. Cross-verified and within your per-stock cap. Not a buy order.")
     else:
-        st.caption("No picks yet — tap Refresh to research your holdings.")
-    if _sheet_configured() and st.button("🔄 Refresh today's picks"):
-        with st.spinner("Researching your holdings (~1-2 min)…"):
-            try:
-                rows, _ = refresh_today_if_stale(
-                    get_gateway(), list(symbols), value_by_symbol, analysis.total_value,
-                    cap_pct, _secret("NTFY_TOPIC", "") or "", force=True)
-                st.session_state.today_rows = rows
-            except Exception as exc:
-                st.error(f"Couldn't refresh: {exc}")
+        st.caption("No picks yet. They're prepared automatically each day.")
+    # WHY: display-only reload, NOT a re-research. The batch runs on the owner's Mac (residential
+    # IP, full cross-verification); running it here from the datacenter IP would come back thin and
+    # overwrite the good picks. So the app just pulls the latest the Mac computed.
+    if _sheet_configured() and st.button("🔄 Reload latest picks"):
+        try:
+            st.session_state.today_rows = get_gateway().read("Today")
+        except Exception as exc:
+            st.error(f"Couldn't reload: {exc}")
         st.rerun()
     st.divider()
 
