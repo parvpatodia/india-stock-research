@@ -72,3 +72,24 @@ def test_valuation_expensive_with_computed_median():
 def test_valuation_unknown_without_median():
     r = build_company_report("X", _cur_pe(18.0))  # no median -> unknown
     assert r.verdict.valuation == ValuationTier.UNKNOWN
+
+
+def test_dividend_yield_cross_verifies_with_wider_tolerance():
+    # WHY: live-verified real-world cross-provider variance for dividend yield (2-17% typical,
+    # unlike the 2% default used for cleaner ratios like P/E), so this figure alone gets a wider
+    # band; a genuinely large disagreement still correctly conflicts (see the next test).
+    figs = {"dividend_yield_pct": [SourcedValue(5.0, "yfinance"), SourcedValue(5.8, "screener")]}
+    r = build_company_report("X", figs)  # 16% apart -- would CONFLICT at the 2% default
+    fig = next(f for f in r.figures if f.name == "dividend_yield_pct")
+    assert fig.is_trustworthy
+    assert fig.value == 5.4                          # median of the agreeing cluster
+
+
+def test_dividend_yield_still_conflicts_when_wildly_different():
+    # Real case (TCS, live-verified): yfinance 6.03% vs Screener 3.12%, a 48% gap, likely a
+    # special-dividend timing difference between providers. Even the wider 25% band must not
+    # force this to verify; a genuinely disputed figure stays withheld, not averaged.
+    figs = {"dividend_yield_pct": [SourcedValue(6.03, "yfinance"), SourcedValue(3.12, "screener")]}
+    r = build_company_report("X", figs)
+    fig = next(f for f in r.figures if f.name == "dividend_yield_pct")
+    assert not fig.is_trustworthy

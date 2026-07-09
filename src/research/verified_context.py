@@ -28,9 +28,10 @@ _LABELS = {
     "promoter_pledge_pct": "Promoter pledge",
     "total_assets": "Total assets",
     "revenue": "Revenue",
+    "dividend_yield_pct": "Dividend yield",
 }
 _RATIO_FIGURES = {"current_pe", "median_pe"}      # shown as "18.2x", not rupees
-_PERCENT_FIGURES = {"promoter_pledge_pct"}         # shown as "0.0%"
+_PERCENT_FIGURES = {"promoter_pledge_pct", "dividend_yield_pct"}   # shown as "0.0%"
 
 
 def _format(name: str, value: float) -> str:

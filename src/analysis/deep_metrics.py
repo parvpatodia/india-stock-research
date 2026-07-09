@@ -156,6 +156,22 @@ def plain_points(v: dict, deep: list[MetricResult]) -> list[str]:
             s += f", and operating profit covers its interest bill about {cover:.0f}x over"
         points.append(s + ".")
 
+    dy = v.get("dividend_yield_pct")
+    if dy is not None and dy >= 0:
+        # WHY (honest, non-judgmental): dividend yield is context-dependent, not a clean good/bad
+        # signal. A 0% yield can be a legitimate reinvesting growth company; a high yield can be
+        # generous returns OR a distressed, falling price. Never claim a direction is automatically
+        # better; just report the cross-verified number and leave the weighing to the reader.
+        if dy == 0:
+            points.append("Dividend: it currently pays no dividend; profits are being reinvested "
+                          "rather than distributed, common for growth-focused businesses, not "
+                          "automatically a red flag.")
+        else:
+            band = "high" if dy >= 3.0 else "moderate" if dy >= 1.0 else "modest"
+            points.append(f"Dividend: a {band} {dy:.1f}% dividend yield at the current price. "
+                          "Neither high nor low is automatically good or bad on its own, weigh "
+                          "it against whether the business is reinvesting for growth instead.")
+
     for m in deep:
         if m.known:
             points.append(m.detail)

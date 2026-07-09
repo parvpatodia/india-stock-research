@@ -37,6 +37,12 @@ def test_document_carries_insights_and_readable_labels():
     assert "0.0%" in doc.text or "0%" in doc.text             # pledge formatted as a percentage
 
 
+def test_document_formats_dividend_yield_as_a_percentage():
+    report = Report(company="X", figures=(_verified("dividend_yield_pct", 0.47),))
+    doc = verified_figures_document("RELIANCE", report)
+    assert "Dividend yield" in doc.text and "0.5%" in doc.text  # human label, percent not rupees
+
+
 def test_no_document_when_nothing_verified():
     report = Report(company="X", figures=(_single_source("net_profit", 100.0),))
     assert verified_figures_document("RELIANCE", report) is None

@@ -74,3 +74,27 @@ def test_plain_points_are_simple_sentences_with_numbers():
 def test_plain_points_omit_unknowns():
     v = {"current_pe": None, "median_pe": None, "net_profit": None}    # nothing cross-verified
     assert plain_points(v, compute_deep_metrics(v)) == []
+
+
+def test_plain_points_dividend_zero_is_not_a_red_flag():
+    points = plain_points({"dividend_yield_pct": 0.0}, [])
+    joined = " ".join(points)
+    assert "no dividend" in joined
+    assert "not automatically a red flag" in joined
+
+
+def test_plain_points_dividend_bands_stay_neutral():
+    modest = " ".join(plain_points({"dividend_yield_pct": 0.5}, []))
+    moderate = " ".join(plain_points({"dividend_yield_pct": 1.6}, []))
+    high = " ".join(plain_points({"dividend_yield_pct": 5.1}, []))
+    assert "modest" in modest and "0.5%" in modest
+    assert "moderate" in moderate and "1.6%" in moderate
+    assert "high" in high and "5.1%" in high
+    # WHY (real money): dividend yield is context-dependent, must never claim a direction is
+    # automatically good or bad -- the same neutral framing applies at every band.
+    for joined in (modest, moderate, high):
+        assert "automatically good or bad" in joined
+
+
+def test_plain_points_no_dividend_point_when_unknown():
+    assert plain_points({}, []) == []

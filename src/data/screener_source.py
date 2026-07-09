@@ -19,6 +19,7 @@ from .figure_sources import FRAMEWORK_FIGURES, FigureSource
 
 _CRORE = 1e7
 _PE_RE = re.compile(r"Stock P/E.*?([\d,]+\.?\d+)", re.IGNORECASE | re.DOTALL)
+_DIV_YIELD_RE = re.compile(r"Dividend Yield.*?([\d,]+\.?\d+)", re.IGNORECASE | re.DOTALL)
 _YEAR_RE = re.compile(r"(\d{4})\s*$")
 _MONTH_YEAR_RE = re.compile(r"([A-Za-z]{3})\s+(\d{4})\s*$")
 
@@ -196,6 +197,9 @@ def parse_screener_figures(html: str) -> dict[str, float | None]:
     m = _PE_RE.search(html)
     if m:
         out["current_pe"] = _num(m.group(1))
+    m = _DIV_YIELD_RE.search(html)
+    if m:
+        out["dividend_yield_pct"] = _num(m.group(1))
     return out
 
 

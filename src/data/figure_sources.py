@@ -15,16 +15,20 @@ from abc import ABC, abstractmethod
 from .yfinance_provider import to_yahoo_symbol
 
 # The figure names the analysis framework (src/analysis/framework.py) consumes.
+# WHY: "promoter_pledge_pct" is declared here but NOT populated by either real source below
+# (YFinanceFigureSource or screener_source.parse_screener_figures) — see the note on
+# analysis/framework.py:promoter_pledge for the live investigation confirming this. It always
+# reads unavailable in production today; do not assume it works without checking that first.
 FRAMEWORK_FIGURES = (
     "current_pe", "median_pe", "operating_cash_flow", "net_profit",
     "total_debt", "equity", "ebit", "interest_expense", "promoter_pledge_pct",
-    "total_assets", "revenue",
+    "total_assets", "revenue", "dividend_yield_pct",
 )
 # Figures that come from an annual fiscal-year statement (align by year across sources).
 YEAR_FIGURES = ("net_profit", "operating_cash_flow", "total_debt", "equity", "ebit",
                 "interest_expense", "total_assets", "revenue")
 # Figures that are point-in-time (current), not tied to a fiscal year.
-POINT_FIGURES = ("current_pe", "median_pe", "promoter_pledge_pct")
+POINT_FIGURES = ("current_pe", "median_pe", "promoter_pledge_pct", "dividend_yield_pct")
 
 _YEAR = re.compile(r"(\d{4})")
 
@@ -135,6 +139,11 @@ class YFinanceFigureSource(FigureSource):
         out["total_assets"] = ta if ta is not None else _num(info.get("totalAssets"))
         out["revenue"] = _latest(income, ["Total Revenue", "Operating Revenue",
                                           "Total Revenue As Reported"])
+        # WHY: yfinance's "dividendYield" is already a percentage number (e.g. 0.47 meaning
+        # 0.47%), matching Screener's displayed "Dividend Yield X%" directly -- confirmed live
+        # across several stocks. Do NOT use "trailingAnnualDividendYield", which is a FRACTION
+        # (0.0047) and would silently create a 100x scale mismatch against Screener's parse.
+        out["dividend_yield_pct"] = _num(info.get("dividendYield"))
         return out
 
     def figures_by_year(self, symbol: str) -> dict[str, dict[int, float]]:

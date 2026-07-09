@@ -113,6 +113,17 @@ def leverage_health(total_debt: float | None, equity: float | None,
 
 
 def promoter_pledge(pledge_pct: float | None) -> MetricResult:
+    # WHY (known gap, live-verified 2026-07-09): promoter_pledge_pct is declared in
+    # FRAMEWORK_FIGURES but is NOT currently populated by any real source — neither
+    # YFinanceFigureSource nor parse_screener_figures sets it, and the annual-report LLM
+    # extractor (annual_report_source.py _TARGETS) does not target it either. Checked Screener's
+    # free page live across 9 stocks (incl. names with historically high pledge: SUZLON, ZEEL,
+    # RPOWER, SADBHAV, JPASSOCIAT, GVKPIL, YESBANK) and found zero "pledge"/"encumbrance"
+    # mentions in the fetched HTML, so this metric always reads UNAVAILABLE in production today.
+    # A genuinely high, dangerous pledge would not be flagged. Documented rather than silently
+    # "someday works", so this is not re-discovered as a mystery in a future session; see the
+    # annual report's Corporate Governance Report (SEBI LODR requires pledge disclosure there)
+    # for a real value until this is wired to an actual source.
     name = "Promoter pledge"
     if pledge_pct is None:
         return _unknown(name, "promoter pledge percentage unavailable.")

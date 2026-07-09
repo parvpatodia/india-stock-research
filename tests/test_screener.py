@@ -7,7 +7,8 @@ from src.data.screener_source import (
 )
 
 FIXTURE = """
-<div><ul><li>Stock P/E <span>20.5</span></li></ul></div>
+<div><ul><li>Stock P/E <span>20.5</span></li>
+<li>Dividend Yield <span class="number">0.47</span>%</li></ul></div>
 <table><thead><tr><th></th><th>Mar 2023</th><th>Mar 2024</th></tr></thead><tbody>
 <tr><td>Sales +</td><td>900000</td><td>950000</td></tr>
 <tr><td>Operating Profit</td><td>150000</td><td>160000</td></tr>
@@ -37,6 +38,7 @@ def test_parse_screener_figures():
     assert figs["equity"] == (6500 + 200000) * CR       # equity capital + reserves
     assert figs["interest_expense"] == 5100 * CR
     assert figs["ebit"] == (105000 + 5100) * CR         # PBT + interest
+    assert figs["dividend_yield_pct"] == 0.47           # percent as displayed, no crore scaling
 
 
 # A quarterly results table (multi-month columns straddling a calendar year) placed BEFORE the

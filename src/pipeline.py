@@ -30,7 +30,14 @@ def build_company_report(company: str,
                          is_bank: bool = False,
                          trend_insights: tuple[str, ...] = (),
                          trend_improving: bool = False) -> Report:
-    verified = {name: verify_figure(name, values) for name, values in figures.items()}
+    # WHY: dividend_yield_pct gets a wider cross-verification tolerance than the 2% default.
+    # Live-verified across 6 real stocks: yfinance vs Screener typically differ 2-17% (different
+    # trailing-dividend windows/methodology), not the parsing/scale errors the tight default
+    # guards against elsewhere; a stock with a large recent special dividend (confirmed on TCS,
+    # a 48% gap) still correctly stays a CONFLICT even at this wider band.
+    _TOLERANCE = {"dividend_yield_pct": 0.25}
+    verified = {name: verify_figure(name, values, rel_tolerance=_TOLERANCE.get(name, 0.02))
+               for name, values in figures.items()}
 
     def tv(name: str):
         return value_if_trustworthy(verified.get(name))
@@ -56,7 +63,8 @@ def build_company_report(company: str,
     from .analysis.deep_metrics import compute_deep_metrics, plain_points
     tvals = {name: tv(name) for name in (
         "current_pe", "operating_cash_flow", "net_profit", "total_debt",
-        "equity", "ebit", "interest_expense", "total_assets", "revenue")}
+        "equity", "ebit", "interest_expense", "total_assets", "revenue",
+        "dividend_yield_pct")}
     # WHY: use the computed median actually used for the valuation tier, not the (unfetched)
     # median_pe figure, so the price/valuation reason renders whenever valuation was assessed.
     tvals["median_pe"] = median
