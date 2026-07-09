@@ -574,6 +574,16 @@ with tab_portfolio:
                         width="stretch")
 
     with st.expander("Concentration"):
+        # WHY (honesty): weights/HHI are normalized ONLY over the priced positions
+        # (analyze_portfolio's `usable` filter); a missing-price name is silently excluded, not
+        # treated as zero. If several holdings fail to price (e.g. a temporary data-source issue),
+        # the concentration reading becomes an artifact of whichever subset happened to price, not
+        # the real full portfolio, and could over- or under-state concentration risk with no
+        # caveat at the point of the warning below. Surface that explicitly when it applies.
+        if holdings and len(analysis.positions) < len(holdings):
+            st.caption(f"Based on the {len(analysis.positions)} of {len(holdings)} holdings that "
+                       f"priced; {len(holdings) - len(analysis.positions)} missing name(s) are "
+                       "excluded, so this does not reflect your full portfolio.")
         cc = st.columns(3)
         cc[0].metric("Largest holding", f"{analysis.top_holding_weight * 100:.1f}%")
         cc[1].metric("HHI", f"{analysis.hhi:.3f}", help=explain("Concentration (HHI)"))
