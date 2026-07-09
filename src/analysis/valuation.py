@@ -13,10 +13,25 @@ import statistics
 import pandas as pd
 
 
+def median_pe_from_eps(price_by_year: dict[int, float],
+                       eps_by_year: dict[int, float]) -> float | None:
+    """Median of (year-end price / period EPS). Uses each year's own EPS, so it is correct for
+    companies that issued shares over time (unlike dividing by today's share count)."""
+    pes: list[float] = []
+    for year, eps in eps_by_year.items():
+        price = price_by_year.get(year)
+        if price is None or eps is None or eps <= 0 or price <= 0:
+            continue
+        pes.append(price / eps)
+    return statistics.median(pes) if len(pes) >= 2 else None
+
+
 def median_pe_from_annuals(net_profit_by_year: dict[int, float],
                            price_by_year: dict[int, float],
                            shares: float | None) -> float | None:
-    """Median of (year-end price / EPS) across years. Needs >= 2 years and positive earnings."""
+    """Fallback when per-year EPS isn't available: EPS = net profit / CURRENT shares. WHY caveat:
+    using today's share count understates past EPS for a company that diluted, so the median P/E
+    reads a bit high (stock looks cheaper). Only used when the income statement has no EPS row."""
     if not shares or shares <= 0:
         return None
     pes: list[float] = []
@@ -59,10 +74,15 @@ def compute_median_pe(symbol: str) -> float | None:
         return None
     income = _safe(lambda: ticker.income_stmt)
     net_profit = _series_from_statement(income, ["Net Income", "Net Income Common Stockholders"])
-    if not net_profit:
+    eps_series = _series_from_statement(income, ["Diluted EPS", "Basic EPS"])
+    if not net_profit and not eps_series:
         return None
-    info = _safe(lambda: ticker.info) or {}
-    shares = _num(info.get("sharesOutstanding"))
     history = _safe(lambda: ticker.history(period="6y"))
-    prices = _price_by_fiscal_year(history, list(net_profit))
-    return median_pe_from_annuals(net_profit, prices, shares)
+    prices = _price_by_fiscal_year(history, list(eps_series) or list(net_profit))
+    # Prefer period-correct EPS (no dilution error); fall back to net profit / current shares.
+    if eps_series:
+        m = median_pe_from_eps(prices, eps_series)
+        if m is not None:
+            return m
+    info = _safe(lambda: ticker.info) or {}
+    return median_pe_from_annuals(net_profit, prices, _num(info.get("sharesOutstanding")))

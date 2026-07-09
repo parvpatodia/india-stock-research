@@ -110,7 +110,12 @@ def parse_extraction(payload: dict, source_text: str) -> dict[str, float | None]
     """
     result: dict[str, float | None] = {}
     norm_source = _norm(source_text)
-    digits_source = re.sub(r"\D", "", source_text)  # all digits, comma/space-insensitive
+    # WHY: the reported value must equal a real NUMBER TOKEN in the report, not just appear as a
+    # substring of the report's concatenated digits. The old substring check was spoofable, e.g.
+    # a hallucinated "26248" matches inside "...1,262...48..." -> "1262"+"48" = "...126248...".
+    # Matching whole tokens (grouping commas + decimal point stripped to digits) closes that hole.
+    report_num_digits = {re.sub(r"\D", "", tok) for tok in _REPORT_NUM.findall(source_text)}
+    report_num_digits.discard("")
     if not isinstance(payload, dict):
         return {name: None for name in _EXTRACT_ITEMS}
     for name in _EXTRACT_ITEMS:
@@ -127,12 +132,16 @@ def parse_extraction(payload: dict, source_text: str) -> dict[str, float | None]
             continue
         quote_grounded = bool(quote) and _norm(quote) in norm_source
         value_digits = re.sub(r"\D", "", str(obj.get("value")))
-        numeric_grounded = len(value_digits) >= 3 and value_digits in digits_source
+        numeric_grounded = len(value_digits) >= 3 and value_digits in report_num_digits
         if not (quote_grounded or numeric_grounded):
             result[name] = None
             continue
         result[name] = value * scale
     return result
+
+
+# A number as written in a report: leading digit, optional grouping, optional decimals.
+_REPORT_NUM = re.compile(r"\d[\d,]*(?:\.\d+)?")
 
 
 _FY_PATTERNS = [

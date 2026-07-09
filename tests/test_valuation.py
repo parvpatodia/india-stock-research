@@ -1,4 +1,4 @@
-from src.analysis.valuation import median_pe_from_annuals
+from src.analysis.valuation import median_pe_from_annuals, median_pe_from_eps
 from src.pipeline import build_company_report
 from src.research.report import ValuationTier
 from src.research.verification import SourcedValue
@@ -20,6 +20,15 @@ def test_median_pe_no_shares_is_none():
 def test_median_pe_skips_loss_years():
     # 2023 loss -> skipped, only 2024 remains -> < 2 usable -> None
     assert median_pe_from_annuals({2024: 100, 2023: -50}, {2024: 2000, 2023: 1800}, 10) is None
+
+
+def test_median_pe_from_eps_uses_period_eps():
+    # price/eps per year: 10, 12, 15 -> median 12. Uses each year's own EPS (no dilution error).
+    assert median_pe_from_eps({2022: 100, 2023: 120, 2024: 150},
+                              {2022: 10, 2023: 10, 2024: 10}) == 12
+    assert median_pe_from_eps({2022: 100}, {2022: 10}) is None           # <2 years
+    assert median_pe_from_eps({2022: 100, 2023: 120},
+                              {2022: -5, 2023: 10}) is None               # only 1 positive-EPS yr
 
 
 def _cur_pe(value):

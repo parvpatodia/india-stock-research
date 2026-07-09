@@ -379,7 +379,9 @@ def build_pdf_report(title: str, report, stance: Stance, guidance=None) -> bytes
     for f in report.figures:
         val = f"{f.value:,.2f}" if f.value is not None else "withheld (not cross-verified)"
         srcs = ", ".join(sorted({sv.source_id for sv in f.sources}))
-        line(f"- {f.name}: {val}  [{f.status.value}; {srcs}]", size=10, h=5)
+        period = next((str(sv.locator) for sv in f.sources
+                       if str(getattr(sv, "locator", "") or "").upper().startswith("FY")), "current")
+        line(f"- {f.name}: {val}  [{period}; {f.status.value}; {srcs}]", size=10, h=5)
 
     if v is not None:
         pdf.ln(2)
@@ -665,10 +667,20 @@ with tab_research:
                     st.markdown("**Why (each from cross-verified figures):**")
                     for reason in report.verdict.reasons:
                         st.markdown(f"- {reason}")
+            def _period(fig):
+                # WHY: surface the fiscal year the figure is for (in the source locators, e.g.
+                # "FY2024"), so a prior-year figure isn't read as current. Point figures = current.
+                for sv in fig.sources:
+                    loc = str(getattr(sv, "locator", "") or "")
+                    if loc.upper().startswith("FY"):
+                        return loc
+                return "current"
+
             fig_rows = [{
                 "Figure": f.name, "Status": f.status.value,
                 # WHY: all-string column; a mixed float/"withheld" column crashes st.dataframe.
                 "Value": (f"{f.value:,.2f}" if f.value is not None else "withheld"),
+                "Period": _period(f),
                 "Sources": ", ".join(sorted({sv.source_id for sv in f.sources})),
             } for f in report.figures]
             st.dataframe(pd.DataFrame(fig_rows), width="stretch", hide_index=True)
@@ -761,10 +773,17 @@ with tab_research:
             gt_fig = st.selectbox("Figure", [f.name for f in report.figures], key=f"gtf_{active}")
             gt_val = st.number_input("Correct value (absolute rupees)", value=0.0, step=1.0,
                                      format="%.0f", key=f"gtv_{active}")
-            if st.button("Save correction", key=f"gts_{active}") and reviewer.strip():
-                EvalStore(EVAL_STORE).add(ground_truth_from_report(
-                    report, gt_fig, gt_val, note=note, reviewer=reviewer.strip()))
-                st.success(f"Recorded ground truth for {gt_fig}. Checked on every run.")
+            if st.button("Save correction", key=f"gts_{active}"):
+                # WHY: guard the default 0.0 — an accidental save would record a bogus correct
+                # value and create a permanent spurious 'trusted-wrong' in the must-be-0 metric.
+                if not reviewer.strip():
+                    st.error("Enter your reviewer name first.")
+                elif gt_val == 0:
+                    st.error("Enter the correct value (not 0) before saving.")
+                else:
+                    EvalStore(EVAL_STORE).add(ground_truth_from_report(
+                        report, gt_fig, gt_val, note=note, reviewer=reviewer.strip()))
+                    st.success(f"Recorded ground truth for {gt_fig}. Checked on every run.")
 
     cases = EvalStore(EVAL_STORE).load()
     if cases:
@@ -907,7 +926,16 @@ with tab_ask:
                     elif claim.kind == ESTIMATE:
                         st.info(f"Estimate (derived, not a primary figure): {claim.text}")
                     else:
-                        st.error(f"⚠ Unverified: {claim.text}")
+                        # A claimed 'fact' downgraded for lacking a primary source. If it's from
+                        # news/analyst, it's reporting/context (honest, not alarming); only a
+                        # missing-primary genuine fact gets the hard warning.
+                        from_primary_only_source = all(
+                            registry.get(c.source_id) and registry.get(c.source_id).citable_as_fact
+                            for c in claim.citations)
+                        if from_primary_only_source:
+                            st.error(f"⚠ Unverified: {claim.text}")
+                        else:
+                            st.info(f"Reported, not independently verified: {claim.text}")
                     st.caption(f"Source: {cited}")
 
 

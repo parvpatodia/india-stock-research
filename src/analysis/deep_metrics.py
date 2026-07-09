@@ -53,12 +53,15 @@ def return_on_capital(ebit: float | None, equity: float | None,
                         f"(ROCE {roce:.0f}%) — {v}.", concern)
 
 
-def return_on_assets(net_profit: float | None, total_assets: float | None) -> MetricResult:
+def return_on_assets(net_profit: float | None, total_assets: float | None,
+                     good: float = _ROA_GOOD, weak: float = _ROA_WEAK) -> MetricResult:
     name = "Return on assets (ROA)"
     if net_profit is None or total_assets is None or total_assets <= 0:
         return _unknown(name, "net profit or (positive) total assets unavailable.")
     roa = net_profit / total_assets * 100
-    v, concern = _rate(roa, _ROA_GOOD, _ROA_WEAK)
+    v, concern = _rate(roa, good, weak)
+    # WHY: banks run on ~1% ROA by nature, so the caller passes bank bands; otherwise a healthy
+    # bank would read "weak" here and contradict the (correct) bank verdict.
     return MetricResult(name, True, v,
                         f"For every ₹100 of everything it owns, it earns about ₹{roa:.1f} "
                         f"(ROA {roa:.1f}%) — {v}.", concern)
@@ -100,10 +103,11 @@ def asset_turnover(revenue: float | None, total_assets: float | None) -> MetricR
 def compute_deep_metrics(v: dict, is_bank: bool = False) -> list[MetricResult]:
     """Compute the ratio suite from a dict of cross-verified values (missing -> None). For banks,
     margins and asset turnover are skipped (bank P&L is interest income, not sales)."""
-    metrics = [
-        return_on_equity(v.get("net_profit"), v.get("equity")),
-        return_on_assets(v.get("net_profit"), v.get("total_assets")),
-    ]
+    from .bank_framework import _ROA_STRONG, _ROA_WEAK as _BANK_ROA_WEAK
+    roa = (return_on_assets(v.get("net_profit"), v.get("total_assets"),
+                            good=_ROA_STRONG, weak=_BANK_ROA_WEAK) if is_bank
+           else return_on_assets(v.get("net_profit"), v.get("total_assets")))
+    metrics = [return_on_equity(v.get("net_profit"), v.get("equity")), roa]
     if not is_bank:
         metrics += [
             return_on_capital(v.get("ebit"), v.get("equity"), v.get("total_debt")),

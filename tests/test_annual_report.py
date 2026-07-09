@@ -94,6 +94,16 @@ def test_numeric_grounding_rejects_absent_number():
     assert parse_extraction(payload, AR_TEXT)["net_profit"] is None
 
 
+def test_numeric_grounding_rejects_concatenated_digit_spoof():
+    # WHY (regression): "26248" appears inside the report's concatenated digits ("1,262" + "48"
+    # -> "...126248..."), but is NOT a real number token in the report -> must be rejected.
+    text = "Revenue grew to 1,262 crore across 48 branches."
+    spoof = {"net_profit": {"value": 26248, "unit": "crore", "quote": "not verbatim"}}
+    assert parse_extraction(spoof, text)["net_profit"] is None
+    real = {"net_profit": {"value": 1262, "unit": "crore", "quote": "not verbatim"}}
+    assert parse_extraction(real, text)["net_profit"] == 1262 * 1e7   # a real token is accepted
+
+
 # --- source behavior ---
 
 def test_ar_source_no_llm_returns_all_none():

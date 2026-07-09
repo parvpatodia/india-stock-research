@@ -70,12 +70,27 @@ def test_allocation_excludes_unfavorable_and_insufficient():
 
 
 def test_allocation_reports_uninvested_when_caps_bind():
-    # one favorable name, base 200, cap 25% => 50 ceiling; 100 asked -> only 50 placeable.
+    # One favorable name, book 100, add 100, cap 25%. Capped against the REALIZED book:
+    # base = 100 + placed, placed = 0.25*base  ->  base = 100/0.75 = 133.33, placed = 33.33.
     cands = [AllocationCandidate("A", Stance.FAVORABLE, 0.0)]
     plan = suggest_allocation(100.0, cands, portfolio_value=100.0, cap_pct=0.25)
-    assert plan.invested == 50.0
-    assert plan.uninvested == 50.0
+    assert abs(plan.invested - 100.0 / 3) < 1.0        # ~33.33, not 50
+    assert abs(plan.uninvested - 200.0 / 3) < 1.0      # ~66.67
     assert any("per-stock cap" in n for n in plan.notes)
+
+
+def test_allocation_never_exceeds_cap_of_the_realized_book():
+    # WHY (regression): the old code capped against pv+amount, so when caps bound the placed
+    # positions exceeded cap% of the smaller realized book. Each name must stay <= cap% of the
+    # book it actually ends up in (current holdings + what was placed).
+    cands = [AllocationCandidate("A", Stance.FAVORABLE, 0.0),
+             AllocationCandidate("B", Stance.FAVORABLE, 0.0)]
+    for pv, amount in [(0.0, 100.0), (100.0, 100.0), (50.0, 500.0)]:
+        plan = suggest_allocation(amount, cands, portfolio_value=pv, cap_pct=0.25)
+        realized = pv + plan.invested
+        for a in plan.allocations:
+            held = next(c.current_value for c in cands if c.symbol == a.symbol)
+            assert held + a.amount <= 0.25 * realized + 1.0   # within cap of the realized book
 
 
 def test_allocation_over_cap_name_gets_nothing():

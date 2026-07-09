@@ -131,39 +131,52 @@ def suggest_allocation(amount: float,
         return AllocationPlan(amount=max(amount, 0.0), allocations=(), uninvested=0.0,
                               notes=("Enter an amount to invest.",))
 
-    # WHY: cap against the eventual book size after the cash is deployed, not today's smaller book.
-    base = portfolio_value + amount
     eligible = [c for c in candidates if c.stance in _STANCE_ORDER]
 
-    def room(candidate: AllocationCandidate) -> float:
-        return max(cap_pct * base - candidate.current_value, 0.0)
+    def allocate(base: float) -> list[Allocation]:
+        """Greedy fill: each name's addition capped so its final value <= cap_pct * base."""
+        def room(candidate: AllocationCandidate) -> float:
+            return max(cap_pct * base - candidate.current_value, 0.0)
+        ordered = sorted(eligible, key=lambda c: (_STANCE_ORDER[c.stance], -room(c)))
+        remaining = amount
+        placed: list[Allocation] = []
+        for candidate in ordered:
+            take = min(remaining, room(candidate))
+            if take > 0:
+                placed.append(Allocation(
+                    candidate.symbol, take, candidate.stance,
+                    f"{candidate.stance.label.lower()}; kept under your {cap_pct:.0%} per-stock cap"))
+                remaining -= take
+            if remaining <= 0:
+                break
+        return placed
 
-    # FAVORABLE before NEUTRAL; within a tier, most headroom first (deploys cash, keeps balance).
-    eligible.sort(key=lambda c: (_STANCE_ORDER[c.stance], -room(c)))
-
-    remaining = amount
+    # WHY: cap against the REALIZED book (current holdings + what actually gets placed), not the
+    # optimistic full-deploy book. If the caps bind, less is placed and the book is smaller, so
+    # re-solve until the base is self-consistent -> no name can exceed cap_pct of the book it ends
+    # up in (the same holdings basis the Concentration tab uses). Converges monotonically.
+    base = portfolio_value + amount
     allocations: list[Allocation] = []
-    for candidate in eligible:
-        placeable = min(remaining, room(candidate))
-        if placeable > 0:
-            reason = (f"{candidate.stance.label.lower()}; room "
-                      f"under a {cap_pct:.0%} per-stock cap")
-            allocations.append(Allocation(candidate.symbol, placeable, candidate.stance, reason))
-            remaining -= placeable
-        if remaining <= 0:
+    for _ in range(40):
+        allocations = allocate(base)
+        placed_total = sum(a.amount for a in allocations)
+        new_base = portfolio_value + placed_total
+        if abs(new_base - base) < 1.0:
             break
+        base = new_base
+    remaining = amount - sum(a.amount for a in allocations)
 
     notes: list[str] = []
     if not eligible:
         notes.append("No approved name is favorable or neutral, so nothing is suggested. Approve "
                      "more research, or the evidence simply does not support adding right now.")
-    elif remaining > 0:
-        notes.append(f"₹{remaining:,.0f} could not be placed without breaching your "
-                     f"{cap_pct:.0%} per-stock cap on the eligible names. Add more approved names "
-                     "or raise the cap; do not force it into one stock.")
+    elif remaining > 1.0:
+        notes.append(f"₹{remaining:,.0f} could not be placed without pushing a name past your "
+                     f"{cap_pct:.0%} per-stock cap of the resulting book. Add more approved names, "
+                     "raise the cap, or leave the rest as cash; do not force it into one stock.")
 
     return AllocationPlan(amount=amount, allocations=tuple(allocations),
-                          uninvested=remaining, notes=tuple(notes))
+                          uninvested=max(remaining, 0.0), notes=tuple(notes))
 
 
 @dataclass(frozen=True)

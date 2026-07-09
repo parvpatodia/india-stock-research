@@ -125,10 +125,14 @@ class YFinanceFigureSource(FigureSource):
             out["ebit"] = _latest(income, ["EBIT", "Operating Income"])
         out["operating_cash_flow"] = _latest(
             cash, ["Operating Cash Flow", "Total Cash From Operating Activities"])
-        out["total_debt"] = _latest(balance, ["Total Debt"]) or _num(info.get("totalDebt"))
+        # WHY: explicit None check, not `or`. A debt-free company's 0.0 is falsy and would wrongly
+        # fall through to info's (possibly missing/stale) value, hiding a legitimate "no debt".
+        td = _latest(balance, ["Total Debt"])
+        out["total_debt"] = td if td is not None else _num(info.get("totalDebt"))
         out["equity"] = _latest(
             balance, ["Stockholders Equity", "Total Stockholder Equity", "Common Stock Equity"])
-        out["total_assets"] = _latest(balance, ["Total Assets"]) or _num(info.get("totalAssets"))
+        ta = _latest(balance, ["Total Assets"])
+        out["total_assets"] = ta if ta is not None else _num(info.get("totalAssets"))
         out["revenue"] = _latest(income, ["Total Revenue", "Operating Revenue",
                                           "Total Revenue As Reported"])
         return out

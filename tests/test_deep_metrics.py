@@ -38,6 +38,16 @@ def test_roce_and_roa_and_margins_values():
     assert om.verdict == "weak" and om.concern is True
 
 
+def test_bank_roa_uses_bank_bands_not_industrial():
+    # WHY (regression): a healthy bank (~1.2% ROA) must not read "weak" in the plain reasons.
+    v = {"net_profit": 12 * CR, "total_assets": 1000 * CR, "equity": 100 * CR}
+    ind = {m.name: m for m in compute_deep_metrics(v, is_bank=False)}["Return on assets (ROA)"]
+    bank = {m.name: m for m in compute_deep_metrics(v, is_bank=True)}["Return on assets (ROA)"]
+    assert ind.verdict == "weak"          # 1.2% < 2% industrial floor
+    assert bank.verdict == "strong"       # 1.2% >= 1.0% bank floor
+    assert bank.concern is False
+
+
 def test_compute_deep_metrics_bank_skips_margins():
     v = {"net_profit": 10 * CR, "equity": 100 * CR, "total_assets": 1000 * CR,
          "ebit": 30 * CR, "total_debt": 50 * CR, "revenue": 80 * CR}
