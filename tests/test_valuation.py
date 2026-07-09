@@ -1,7 +1,31 @@
-from src.analysis.valuation import median_pe_from_annuals, median_pe_from_eps
+import pandas as pd
+
+from src.analysis.valuation import (
+    _price_by_fiscal_year,
+    median_pe_from_annuals,
+    median_pe_from_eps,
+)
 from src.pipeline import build_company_report
 from src.research.report import ValuationTier
 from src.research.verification import SourcedValue
+
+
+def test_price_by_fiscal_year_uses_actual_period_end_not_hardcoded_march():
+    # WHY (rigor): a Dec-FY-end company's December EPS must be priced at December, not a hardcoded
+    # 31 March, or its median P/E (which now feeds the margin-of-safety ranking) is distorted.
+    idx = pd.to_datetime(["2023-11-30", "2023-12-31", "2024-02-29", "2024-03-31", "2024-06-30"])
+    hist = pd.DataFrame({"Close": [100.0, 110.0, 120.0, 130.0, 140.0]}, index=idx)
+    year_ends = {2023: pd.Timestamp("2023-12-31"), 2024: pd.Timestamp("2024-03-31")}
+    prices = _price_by_fiscal_year(hist, year_ends)
+    assert prices[2023] == 110.0        # close on the Dec period-end, not a March price
+    assert prices[2024] == 130.0        # close on 31 Mar 2024
+
+
+def test_price_by_fiscal_year_takes_last_close_on_or_before_end():
+    idx = pd.to_datetime(["2024-03-15", "2024-03-28"])   # no close exactly on 31 Mar
+    hist = pd.DataFrame({"Close": [200.0, 210.0]}, index=idx)
+    prices = _price_by_fiscal_year(hist, {2024: pd.Timestamp("2024-03-31")})
+    assert prices[2024] == 210.0        # most recent close on/before the period-end
 
 
 def test_median_pe_from_annuals():

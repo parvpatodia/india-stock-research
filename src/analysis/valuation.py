@@ -46,8 +46,10 @@ def median_pe_from_annuals(net_profit_by_year: dict[int, float],
     return statistics.median(pes) if len(pes) >= 2 else None
 
 
-def _price_by_fiscal_year(history, years: list[int]) -> dict[int, float]:
-    """Close on/just before 31 March of each fiscal year (Indian FY end)."""
+def _price_by_fiscal_year(history, year_ends: dict[int, "pd.Timestamp"]) -> dict[int, float]:
+    """Close on/just before each fiscal year's ACTUAL statement period-end date. WHY: pricing
+    every company at a hardcoded 31 March mis-pairs a Dec-FY-end company's December EPS with a
+    March price (~9 months off), distorting its median P/E; use the real period-end per year."""
     out: dict[int, float] = {}
     if history is None or getattr(history, "empty", True) or "Close" not in history:
         return out
@@ -56,8 +58,14 @@ def _price_by_fiscal_year(history, years: list[int]) -> dict[int, float]:
         close.index = close.index.tz_localize(None)
     except (TypeError, AttributeError):
         pass
-    for year in years:
-        upto = close[close.index <= pd.Timestamp(f"{year}-03-31")]
+    for year, end in year_ends.items():
+        try:
+            cutoff = pd.Timestamp(end)
+            if cutoff.tz is not None:
+                cutoff = cutoff.tz_localize(None)
+        except (TypeError, ValueError):
+            continue
+        upto = close[close.index <= cutoff]
         if not upto.empty:
             out[year] = float(upto.iloc[-1])
     return out
@@ -67,7 +75,7 @@ def compute_median_pe(symbol: str) -> float | None:
     """Best-effort historical median P/E from yfinance (income statement + price history)."""
     import yfinance as yf
 
-    from ..data.figure_sources import _num, _safe, _series_from_statement
+    from ..data.figure_sources import _num, _safe, _series_from_statement, _year_of
     from ..data.yfinance_provider import to_yahoo_symbol
     ticker = _safe(lambda: yf.Ticker(to_yahoo_symbol(symbol)))
     if ticker is None:
@@ -77,8 +85,21 @@ def compute_median_pe(symbol: str) -> float | None:
     eps_series = _series_from_statement(income, ["Diluted EPS", "Basic EPS"])
     if not net_profit and not eps_series:
         return None
+    # Map each fiscal year to its actual statement period-end date (yfinance columns are period
+    # ends), so prices are paired at the right time for a March- OR December-FY-end company.
+    year_ends: dict[int, pd.Timestamp] = {}
+    if income is not None and not getattr(income, "empty", True):
+        for col in income.columns:
+            y = _year_of(col)
+            if y is not None and y not in year_ends:
+                try:
+                    year_ends[y] = pd.Timestamp(col)
+                except (TypeError, ValueError):
+                    pass
+    target_years = list(eps_series) or list(net_profit)
     history = _safe(lambda: ticker.history(period="6y"))
-    prices = _price_by_fiscal_year(history, list(eps_series) or list(net_profit))
+    prices = _price_by_fiscal_year(history, {y: year_ends[y] for y in target_years
+                                             if y in year_ends})
     # Prefer period-correct EPS (no dilution error); fall back to net profit / current shares.
     if eps_series:
         m = median_pe_from_eps(prices, eps_series)
