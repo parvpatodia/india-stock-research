@@ -77,11 +77,15 @@ from src.research.claims import ESTIMATE, FACT, OPINION  # noqa: E402
 from src.research.annual_report_reader import read_filing  # noqa: E402
 from src.research.grounded_analyst import GroundedAnalyst  # noqa: E402
 from src.research.grounding import DocumentStore  # noqa: E402
+from src.research.verified_context import (  # noqa: E402
+    VERIFIED_FIGURES_SOURCE_ID,
+    verified_figures_document,
+)
 from src.research.library import build_library  # noqa: E402
 from src.research.report import ReviewStatus  # noqa: E402
 from src.sip import sip_future_value  # noqa: E402
 from src.sources.adapters import HttpDocumentAdapter, ingest_documents  # noqa: E402
-from src.sources.registry import SourceRegistry  # noqa: E402
+from src.sources.registry import CredibilityTier, Source, SourceRegistry  # noqa: E402
 from src.data.amfi_provider import AMFIProvider  # noqa: E402
 
 load_dotenv(Path(__file__).resolve().parent / ".env")  # load the app's own .env regardless of cwd
@@ -909,11 +913,19 @@ with tab_invest:
 
 with tab_ask:
     st.subheader("Ask about a stock")
-    st.caption("Answered from recent news (attributed, dated context) and any curated sources. "
+    st.caption("Answered from recent news (attributed, dated context), any curated sources, and "
+               "this app's own cross-verified figures for a stock you've researched this session. "
                "It cites where each answer came from, never gives buy/sell advice, and says so "
                "when it cannot answer.")
 
     registry, curated_store, skipped, failed = get_curated_library(_library_fingerprint())
+    # WHY: registry is a cached, shared object across reruns; add this source once, not every Ask
+    # click, or SourceRegistry.add raises on the duplicate id.
+    if registry.get(VERIFIED_FIGURES_SOURCE_ID) is None:
+        registry.add(Source(
+            VERIFIED_FIGURES_SOURCE_ID, "This app's cross-verified figures", CredibilityTier.PRIMARY,
+            notes="Only figures independently agreed by >=2 public sources (yfinance + Screener); "
+                  "see the Research tab for the full evidence."))
     grounded = get_grounded_analyst()
     if not grounded.available:
         st.info("Set LLM_MODEL to ask questions. The sources still load below.")
@@ -927,10 +939,21 @@ with tab_ask:
         if base is not None:
             build_library(base, DOCS_DIR, store=store)
         if ask_sym.strip():
-            company = fetch_fundamentals(ask_sym.strip().upper()).get("name") or ask_sym
+            sym_u = ask_sym.strip().upper()
+            company = fetch_fundamentals(sym_u).get("name") or ask_sym
             with st.spinner("Reading recent news..."):
-                items = fetch_news(ask_sym.strip().upper(), company)
+                items = fetch_news(sym_u, company)
                 ingest_documents(store, NewsSource.as_documents(items))
+            # Reuse this session's already-researched report (if any) so Ask can ground financial
+            # questions in the SAME cross-verified figures the Research tab computed, not just
+            # news/curated docs (previously the richest data in the app was invisible to Ask).
+            cached_report = None
+            for key, rep in st.session_state.reports.items():
+                if key.split(" ")[0] == sym_u:
+                    cached_report = rep      # last match wins (most recently researched)
+            vf_doc = verified_figures_document(sym_u, cached_report)
+            if vf_doc is not None:
+                ingest_documents(store, [vf_doc])
         if len(store) == 0:
             st.warning("No sources to answer from. Enter a stock symbol so recent news can load.")
         else:
