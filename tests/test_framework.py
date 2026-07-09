@@ -87,6 +87,26 @@ def test_two_clean_quality_signals_reach_strong():
     assert v.quality == QualityTier.STRONG                  # 2 known, 0 concerns -> corroborated
 
 
+def test_confidence_capped_when_debt_unverified():
+    # WHY (real money): leverage is the solvency dimension. You cannot be HIGH-confidence about a
+    # business whose debt you have not verified, even when everything else checks out.
+    v = assemble_verdict(
+        valuation_vs_history(15, 25),                       # known (cheap)
+        [earnings_quality(90, 100),                         # known
+         leverage_health(None, None, None, None),           # DEBT UNVERIFIED (critical)
+         promoter_pledge(0)],                               # known
+    )
+    assert v.confidence == Confidence.MEDIUM                # 3/4 known would be HIGH, but debt caps it
+
+
+def test_confidence_high_when_debt_verified_and_most_known():
+    v = assemble_verdict(
+        valuation_vs_history(15, 25),
+        [earnings_quality(90, 100), leverage_health(20, 100, 50, 5), promoter_pledge(0)],
+    )
+    assert v.confidence == Confidence.HIGH                  # leverage known + 4/4 -> uncapped
+
+
 def test_assemble_verdict_cautious_on_concerns():
     v = assemble_verdict(
         valuation_vs_history(40, 25),  # expensive (concern)

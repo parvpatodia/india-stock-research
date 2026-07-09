@@ -25,8 +25,10 @@ _BANK_CAVEAT = ("Bank: asset quality (GNPA/NNPA), CASA mix, and capital adequacy
 def return_on_assets(net_profit: float | None,
                      total_assets: float | None) -> MetricResult:
     name = "Return on assets (ROA)"
+    # WHY: ROA is a bank's core quality dimension (critical); unknown -> confidence can't be HIGH.
     if net_profit is None or total_assets is None or total_assets <= 0:
-        return MetricResult(name, False, "unknown", "net profit or total assets unavailable.")
+        return MetricResult(name, False, "unknown", "net profit or total assets unavailable.",
+                            critical=True)
     roa = net_profit / total_assets * 100.0
     if roa >= _ROA_STRONG:
         verdict, concern = "strong", False
@@ -34,7 +36,8 @@ def return_on_assets(net_profit: float | None,
         verdict, concern = "weak", True
     else:
         verdict, concern = "mixed", False
-    return MetricResult(name, True, verdict, f"ROA {roa:.2f}% ({verdict} for a bank).", concern)
+    return MetricResult(name, True, verdict, f"ROA {roa:.2f}% ({verdict} for a bank).", concern,
+                        critical=True)
 
 
 def is_bank(symbol: str) -> bool:

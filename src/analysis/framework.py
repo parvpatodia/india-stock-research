@@ -40,7 +40,8 @@ class MetricResult:
     known: bool
     verdict: str        # short human label, e.g. "cheap" / "strong" / "concern" / "unknown"
     detail: str         # plain-English reason including the numbers used
-    concern: bool = False  # True = a negative signal, used to aggregate quality
+    concern: bool = False   # True = a negative signal, used to aggregate quality
+    critical: bool = False  # a solvency/core dimension (e.g. leverage); if unknown, cap confidence
 
 
 def value_if_trustworthy(figure: VerifiedFigure | None) -> float | None:
@@ -50,8 +51,8 @@ def value_if_trustworthy(figure: VerifiedFigure | None) -> float | None:
     return figure.value
 
 
-def _unknown(name: str, why: str) -> MetricResult:
-    return MetricResult(name, known=False, verdict="unknown", detail=why)
+def _unknown(name: str, why: str, critical: bool = False) -> MetricResult:
+    return MetricResult(name, known=False, verdict="unknown", detail=why, critical=critical)
 
 
 def valuation_vs_history(current_pe: float | None,
@@ -93,8 +94,10 @@ def earnings_quality(operating_cash_flow: float | None,
 def leverage_health(total_debt: float | None, equity: float | None,
                     ebit: float | None, interest: float | None) -> MetricResult:
     name = "Leverage and interest cover"
+    # WHY: leverage is critical (solvency). Marked so even when unknown, so a verdict can never be
+    # HIGH-confidence with the company's debt unverified.
     if total_debt is None or equity is None or equity <= 0:
-        return _unknown(name, "debt or (positive) equity unavailable.")
+        return _unknown(name, "debt or (positive) equity unavailable.", critical=True)
     de = total_debt / equity
     coverage = None
     if ebit is not None and interest is not None and interest > 0:
@@ -104,7 +107,8 @@ def leverage_health(total_debt: float | None, equity: float | None,
     v = "stretched" if stretched else ("healthy" if healthy else "moderate")
     cov_txt = f", interest cover {coverage:.1f}x" if coverage is not None else ""
     return MetricResult(name, True, v,
-                        f"debt/equity {de:.2f}{cov_txt} reads {v}.", concern=stretched)
+                        f"debt/equity {de:.2f}{cov_txt} reads {v}.", concern=stretched,
+                        critical=True)
 
 
 def promoter_pledge(pledge_pct: float | None) -> MetricResult:
@@ -168,6 +172,11 @@ def assemble_verdict(valuation: MetricResult,
     known_frac = sum(1 for m in all_metrics if m.known) / max(len(all_metrics), 1)
     confidence = (Confidence.HIGH if known_frac >= 0.75
                   else Confidence.MEDIUM if known_frac >= 0.5 else Confidence.LOW)
+    # WHY (real money): a critical dimension (leverage/debt) left unverified caps confidence at
+    # MEDIUM. Otherwise a name with everything else known would read HIGH-confidence while its
+    # solvency is unchecked, the exact over-confidence this app must avoid.
+    if confidence == Confidence.HIGH and any(m.critical and not m.known for m in all_metrics):
+        confidence = Confidence.MEDIUM
 
     reasons = tuple(m.detail for m in all_metrics if m.known)
     return Verdict(valuation=valuation_tier, quality=quality_tier, leaning=leaning,
