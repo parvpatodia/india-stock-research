@@ -154,14 +154,17 @@ def build_report_for_symbol(symbol: str, sources: list[FigureSource],
     """Real-data entry point: gather fiscal-year-aligned figures across sources, compute the
     historical median P/E for the valuation baseline, add cross-verified multi-year trends, then
     run the pipeline. A single source stays single-source (low confidence); agreeing sources verify."""
-    from .analysis.bank_framework import is_bank
+    from .analysis.bank_framework import is_bank, is_nbfc
     from .analysis.trends import trend_improving, trend_points, verified_series
     from .analysis.valuation import compute_median_pe
     series = gather_series(symbol, sources)
     rev_series = verified_series(series.get("revenue", {}))
     prof_series = verified_series(series.get("net_profit", {}))
+    # WHY (sector-aware analysis): an NBFC borrows to lend, just like a bank, so its leverage is
+    # the business model, not a risk signal, penalizing it under the industrial D/E lens is a
+    # real analytical error. Route it through the same ROA-based framework as a bank.
     return build_company_report(symbol, gather_aligned_figures(symbol, sources),
                                 claims=claims, median_pe=compute_median_pe(symbol),
-                                is_bank=is_bank(symbol),
+                                is_bank=is_bank(symbol) or is_nbfc(symbol),
                                 trend_insights=tuple(trend_points(rev_series, prof_series)),
                                 trend_improving=trend_improving(rev_series, prof_series))

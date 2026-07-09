@@ -1,4 +1,4 @@
-from src.analysis.bank_framework import assemble_bank_verdict, return_on_assets
+from src.analysis.bank_framework import _industry_category, assemble_bank_verdict, return_on_assets
 from src.analysis.framework import valuation_vs_history
 from src.pipeline import build_company_report
 from src.research.report import QualityTier
@@ -28,6 +28,29 @@ def test_build_report_bank_uses_roa_not_leverage():
     r = build_company_report("SBIN", figs, is_bank=True)
     assert r.verdict.quality == QualityTier.STRONG          # ROA 1.2% -> strong
     assert any("GNPA" in x for x in r.verdict.reasons)
+
+
+def test_industry_category_detects_banks():
+    assert _industry_category("Banks - Regional") == "bank"
+    assert _industry_category("Banks - Diversified") == "bank"
+
+
+def test_industry_category_detects_nbfc_lenders():
+    # WHY (sector-aware analysis): NBFCs (Bajaj Finance, Cholamandalam, housing-finance cos) borrow
+    # to lend, just like a bank, so debt/equity is a feature of the business model, not a risk
+    # signal. yfinance tags these industries 'Credit Services' / 'Financial - Mortgages'.
+    assert _industry_category("Credit Services") == "nbfc"
+    assert _industry_category("Financial - Credit Services") == "nbfc"
+    assert _industry_category("Financial - Mortgages") == "nbfc"
+
+
+def test_industry_category_other_financials_stay_industrial():
+    # Insurance, asset management, capital markets/exchanges do NOT run a borrow-to-lend model;
+    # they must stay on the industrial D/E lens, not be swept into the ROA-only framework.
+    assert _industry_category("Insurance - Life") == "other"
+    assert _industry_category("Asset Management") == "other"
+    assert _industry_category("Capital Markets") == "other"
+    assert _industry_category("") == "other"
 
 
 def test_non_bank_still_uses_industrial_framework():
