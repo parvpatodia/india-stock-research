@@ -1,5 +1,10 @@
 from src.data.figure_sources import FRAMEWORK_FIGURES
-from src.data.screener_source import ScreenerFigureSource, parse_screener_figures
+from src.data.screener_source import (
+    ScreenerFigureSource,
+    parse_promoter_holding_series,
+    parse_screener_figures,
+    promoter_holding_trend_point,
+)
 
 FIXTURE = """
 <div><ul><li>Stock P/E <span>20.5</span></li></ul></div>
@@ -77,6 +82,75 @@ def test_bare_year_headers_are_recognized_as_annual():
     figs = parse_screener_figures(BARE_YEAR_ANNUAL)
     assert figs["net_profit"] == 65000 * CR
     assert figs["revenue"] == 550000 * CR
+
+
+# Real structure verified live against screener.in/company/RELIANCE/consolidated/: a quarterly
+# "Shareholding Pattern" table with Promoters/FIIs/DIIs/Government/Public rows (each label carries
+# a Screener "+" suffix like the P&L/balance rows), percentages as "50.39%" strings, columns
+# oldest -> newest. This table sits alongside, not instead of, the P&L/balance/cash tables above.
+SHAREHOLDING_FIXTURE = FIXTURE + """
+<table><thead><tr><th></th><th>Jun 2023</th><th>Sep 2023</th><th>Dec 2023</th></tr></thead><tbody>
+<tr><td>Promoters +</td><td>50.39%</td><td>50.27%</td><td>50.30%</td></tr>
+<tr><td>FIIs +</td><td>22.55%</td><td>22.60%</td><td>22.13%</td></tr>
+<tr><td>DIIs +</td><td>16.13%</td><td>15.99%</td><td>16.59%</td></tr>
+<tr><td>Government +</td><td>0.17%</td><td>0.17%</td><td>0.18%</td></tr>
+<tr><td>Public +</td><td>10.76%</td><td>10.98%</td><td>10.80%</td></tr>
+<tr><td>No. of Shareholders</td><td>3506867</td><td>3698648</td><td>3613814</td></tr>
+</tbody></table>
+"""
+
+
+def test_parse_promoter_holding_series_extracts_percentages_in_order():
+    series = parse_promoter_holding_series(SHAREHOLDING_FIXTURE)
+    assert series == {"Jun 2023": 50.39, "Sep 2023": 50.27, "Dec 2023": 50.30}
+
+
+def test_parse_promoter_holding_does_not_confuse_the_pnl_borrowings_rows():
+    # WHY: the P&L/balance tables in the same page must not be mistaken for the shareholding
+    # table (neither has both a 'promoters' and a 'public' row).
+    assert parse_promoter_holding_series(FIXTURE) == {}
+
+
+def test_promoter_holding_trend_point_increasing():
+    point = promoter_holding_trend_point({"Mar 2017": 46.32, "Mar 2026": 50.00})
+    assert point is not None
+    assert "increased" in point
+    assert "46.3%" in point and "50.0%" in point
+    assert "not cross-verified" in point.lower() or "screener only" in point.lower()
+
+
+def test_promoter_holding_trend_point_decreasing():
+    point = promoter_holding_trend_point({"Mar 2020": 55.0, "Mar 2024": 48.0})
+    assert point is not None and "decreased" in point
+
+
+def test_promoter_holding_trend_point_decrease_wording_does_not_presume_alarm():
+    # WHY (real money, honesty): live-verified against HDFC Bank's real Screener data, promoter
+    # holding steps from 25.59% to EXACTLY 0.00% at Mar 2024 -- not a parsing bug, this matches
+    # the actual HDFC Ltd-HDFC Bank merger (Jul 2023), after which HDFC Bank has no designated
+    # promoter. Alarmist wording ("worth watching") on a decrease would mislabel a benign,
+    # well-known structural event as a red flag. The wording must stay neutral and name a
+    # merger/reclassification as a real possibility, not presuppose concern.
+    point = promoter_holding_trend_point({"Mar 2023": 25.59, "Mar 2024": 0.0})
+    assert point is not None
+    assert "worth watching" not in point.lower()
+    assert "merger" in point.lower() or "reclassification" in point.lower()
+
+
+def test_promoter_holding_trend_point_roughly_steady_below_threshold():
+    point = promoter_holding_trend_point({"Mar 2020": 50.0, "Mar 2024": 50.2})
+    assert point is not None and "steady" in point.lower()
+
+
+def test_promoter_holding_trend_point_none_when_insufficient_data():
+    assert promoter_holding_trend_point({}) is None
+    assert promoter_holding_trend_point({"Mar 2024": 50.0}) is None   # need >=2 points
+
+
+def test_screener_source_exposes_promoter_holding_trend():
+    src = ScreenerFigureSource(fetcher=lambda symbol: SHAREHOLDING_FIXTURE)
+    point = src.promoter_holding_trend("ANYTHING")
+    assert point is not None and ("increased" in point or "decreased" in point or "steady" in point)
 
 
 def test_parse_empty_html_all_none():

@@ -185,6 +185,16 @@ def fetch_ar_text(symbol: str, url: str = ""):
     return fetch_annual_report_text(symbol, url)
 
 
+@st.cache_resource
+def get_screener_source() -> ScreenerFigureSource:
+    return ScreenerFigureSource()
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_promoter_trend(symbol: str):
+    return get_screener_source().promoter_holding_trend(symbol)
+
+
 @st.cache_data(ttl=300, show_spinner="Loading holdings from your Sheet…")
 def fetch_published_holdings(url: str):
     """Read holdings from a Google Sheet 'Publish to web -> CSV' link. Keyless: the link is
@@ -725,6 +735,18 @@ with tab_research:
                             f"{it.published or 'undated'}_")
             st.caption("News is reporting, attributed and dated. It is NOT cross-verified like a "
                        "figure and does not move the verdict above.")
+
+        # promoter shareholding trend (Screener only, single-source by nature; a well-known
+        # Indian-investor signal, kept clearly separate from the cross-verified figures above)
+        with st.expander("Promoter shareholding trend (context, not cross-verified)"):
+            trend = fetch_promoter_trend(sym)
+            if trend:
+                st.markdown(f"- {trend}")
+            else:
+                st.caption("No shareholding-pattern data found (or the page was unreachable).")
+            st.caption("Shareholding data is published only by Screener (not yfinance), so it "
+                       "cannot cross-verify the way the figures above do. Context, not a fact, "
+                       "and never a buy/sell signal on its own.")
 
         # grounded annual-report reading (cited to the filing; abstains if it can't read it)
         with st.expander("What the annual report says (read by AI, cited to the filing)"):

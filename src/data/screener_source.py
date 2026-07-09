@@ -102,6 +102,24 @@ def _find_tables(html: str):
     return pnl, balance, cash
 
 
+def _find_shareholding_table(html: str):
+    """The 'Shareholding Pattern' table (Promoters/FIIs/DIIs/Public %, quarterly), verified live
+    against screener.in/company/RELIANCE/consolidated/. Two such tables exist on a real page
+    (quarterly and a longer yearly view); this returns the FIRST match (the quarterly one, as
+    Screener renders it first), giving the more granular recent trend."""
+    try:
+        tables = pd.read_html(io.StringIO(html))
+    except Exception:
+        tables = []
+    for df in tables:
+        if df.shape[1] < 2:
+            continue
+        labels = {_clean_label(v) for v in df.iloc[:, 0]}
+        if any(l.startswith("promoters") for l in labels) and any(l.startswith("public") for l in labels):
+            return df
+    return None
+
+
 def _annual_series(df, label: str) -> dict[int, float]:
     """{fiscal_year: value} across every year column for the first matching row."""
     out: dict[int, float] = {}
@@ -181,6 +199,62 @@ def parse_screener_figures(html: str) -> dict[str, float | None]:
     return out
 
 
+# Below the promoter-holding threshold a move reads as "roughly steady" rather than overclaiming
+# direction from ordinary quarter-to-quarter noise.
+_HOLDING_STEADY_BAND = 0.5
+
+
+def parse_promoter_holding_series(html: str) -> dict[str, float]:
+    """{period_label: promoter_holding_pct} from the Shareholding Pattern table, in the SAME
+    left-to-right (oldest -> newest) column order Screener renders. Percent as given (e.g. 50.39),
+    not crore-scaled, this is a shareholding percentage, not a rupee figure. SINGLE-SOURCE by
+    nature: yfinance does not carry historical Indian promoter-holding data, so this can never
+    cross-verify the way the framework's financial figures do. Callers must disclose that (see
+    promoter_holding_trend_point), never present it as a cross-verified fact."""
+    df = _find_shareholding_table(html)
+    out: dict[str, float] = {}
+    if df is None:
+        return out
+    for _, row in df.iterrows():
+        label = _clean_label(row.iloc[0])
+        if label.startswith("promoters"):
+            for col in list(df.columns)[1:]:
+                n = _num(row[col])
+                if n is not None:
+                    out[str(col).strip()] = n
+            break
+    return out
+
+
+def promoter_holding_trend_point(series: dict[str, float]) -> str | None:
+    """A single, self-disclosing plain-language sentence on how promoter holding has moved across
+    the available periods (oldest vs. latest), or None if there are fewer than 2 data points.
+    Explicitly states 'not cross-verified, Screener only' inline so the caveat travels with the
+    text wherever it is shown, this is context for the reader, never a buy/sell signal and never
+    mixed into the app's cross-verified 'insights' without that disclosure attached."""
+    if len(series) < 2:
+        return None
+    periods = list(series.items())
+    (first_label, first_val), (last_label, last_val) = periods[0], periods[-1]
+    delta = last_val - first_val
+    if abs(delta) < _HOLDING_STEADY_BAND:
+        return (f"Promoter holding has stayed roughly steady near {last_val:.1f}% "
+                f"({first_label} to {last_label}; not cross-verified, Screener only).")
+    if delta > 0:
+        read = ("promoters adding to their stake is often read as a positive signal, though it "
+                "can also follow a preferential issue or warrant conversion")
+    else:
+        # WHY (live-verified against HDFC Bank's real data): a decrease can be an ordinary
+        # stake sale, but can equally be a merger/reclassification (e.g. HDFC Ltd merging into
+        # HDFC Bank left it with no designated promoter) -- neutral wording naming BOTH, not an
+        # alarmist "worth watching" that would mislabel a benign structural event as a red flag.
+        read = ("a falling promoter stake can reflect a stake sale, a merger/reclassification, "
+                "or dilution; check exchange filings or recent news for the actual reason")
+    direction = "increased" if delta > 0 else "decreased"
+    return (f"Promoter holding has {direction} from {first_val:.1f}% ({first_label}) to "
+            f"{last_val:.1f}% ({last_label}); {read} (not cross-verified, Screener only).")
+
+
 class ScreenerFigureSource(FigureSource):
     source_id = "screener"
 
@@ -241,3 +315,12 @@ class ScreenerFigureSource(FigureSource):
         if not html:
             return {}
         return parse_screener_series(html)
+
+    def promoter_holding_trend(self, symbol: str) -> str | None:
+        """A single-source (Screener only), self-disclosing promoter-holding trend sentence for
+        `symbol`, or None if unavailable. Not part of the FigureSource interface (it is not a
+        cross-verifiable numeric figure); callers opt in explicitly."""
+        html = self._fetch_cached(symbol)
+        if not html:
+            return None
+        return promoter_holding_trend_point(parse_promoter_holding_series(html))
