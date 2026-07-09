@@ -8,14 +8,21 @@ _APP = os.path.join(os.path.dirname(os.path.dirname(__file__)), "app.py")
 
 
 def _run(app_password=None, url_key=None):
-    for k in ("LLM_MODEL", "LLM_API_KEY", "LLM_API_BASE", "GROQ_API_KEY"):
-        os.environ.pop(k, None)
-    at = AppTest.from_file(_APP)
-    if app_password is not None:
-        at.secrets["app_password"] = app_password
-    if url_key is not None:
-        at.query_params["key"] = url_key
-    return at.run(timeout=120)
+    # WHY: app.py's load_dotenv sets LLM_MODEL etc. into the process env; snapshot + restore so
+    # running the full app here doesn't leak env into other tests (e.g. test_llm's no-model case).
+    saved = dict(os.environ)
+    try:
+        for k in ("LLM_MODEL", "LLM_API_KEY", "LLM_API_BASE", "GROQ_API_KEY"):
+            os.environ.pop(k, None)
+        at = AppTest.from_file(_APP)
+        if app_password is not None:
+            at.secrets["app_password"] = app_password
+        if url_key is not None:
+            at.query_params["key"] = url_key
+        return at.run(timeout=120)
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
 
 
 def test_matching_url_key_auto_authenticates():
