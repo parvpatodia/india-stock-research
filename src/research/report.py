@@ -89,6 +89,10 @@ class Report:
     # Plain-language "why" points (deterministic, from cross-verified figures). Presentation
     # only; kept as strings so this module needs no import from the analysis layer.
     insights: tuple[str, ...] = ()
+    # Structured multi-year signal for the ranker (sales/profit growing or margins improving),
+    # computed from cross-verified series — NOT parsed from the prose above, so a wording change
+    # can never flip a scoring input. Plain bool: no analysis-layer import needed.
+    trend_improving: bool = False
 
     @property
     def is_trusted(self) -> bool:

@@ -58,16 +58,26 @@ def test_refresh_force_recomputes_even_when_fresh():
 
 def test_candidate_from_report_maps_signals():
     v = Verdict(ValuationTier.CHEAP, QualityTier.STRONG, Leaning.CONSTRUCTIVE, Confidence.MEDIUM)
-    rep = Report(company="BLS", verdict=v,
+    rep = Report(company="BLS", verdict=v, trend_improving=True,
                  insights=("Price: cheaper than usual.",
                            "Track record: sales have been growing 26% a year."))
     c = candidate_from_report("BLS", rep, held_value=0.0, total_value=100.0, cap_pct=0.25)
     assert c.stance == Stance.FAVORABLE
     assert c.quality_strong and c.valuation_cheap
     assert c.has_room is True                              # holds 0, cap 25 of 100 -> room
-    assert c.trend_improving is True                       # 'growing' in insights
+    assert c.trend_improving is True                       # from report.trend_improving (structured)
     assert c.reason.startswith("Price:")
     assert 0.0 < c.strength <= 1.0                          # conviction populated from the verdict
+
+
+def test_candidate_trend_reads_structured_flag_not_prose():
+    # WHY (regression): the scoring flag must come from report.trend_improving, so a name whose
+    # prose happens to say "growing" but whose structured signal is False is NOT counted.
+    v = Verdict(ValuationTier.CHEAP, QualityTier.STRONG, Leaning.CONSTRUCTIVE, Confidence.MEDIUM)
+    rep = Report(company="X", verdict=v, trend_improving=False,
+                 insights=("Track record: sales have been growing 26% a year.",))
+    c = candidate_from_report("X", rep, held_value=0.0, total_value=100.0, cap_pct=0.25)
+    assert c.trend_improving is False
 
 
 def test_picks_to_rows_floors_the_conviction_fraction():

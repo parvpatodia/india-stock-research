@@ -28,7 +28,8 @@ def build_company_report(company: str,
                          claims: tuple[Claim, ...] = (),
                          median_pe: float | None = None,
                          is_bank: bool = False,
-                         trend_insights: tuple[str, ...] = ()) -> Report:
+                         trend_insights: tuple[str, ...] = (),
+                         trend_improving: bool = False) -> Report:
     verified = {name: verify_figure(name, values) for name, values in figures.items()}
 
     def tv(name: str):
@@ -68,6 +69,7 @@ def build_company_report(company: str,
         verdict=verdict,
         status=ReviewStatus.DRAFT,
         insights=tuple(insights) + tuple(trend_insights),
+        trend_improving=trend_improving,
     )
 
 
@@ -153,11 +155,13 @@ def build_report_for_symbol(symbol: str, sources: list[FigureSource],
     historical median P/E for the valuation baseline, add cross-verified multi-year trends, then
     run the pipeline. A single source stays single-source (low confidence); agreeing sources verify."""
     from .analysis.bank_framework import is_bank
-    from .analysis.trends import trend_points, verified_series
+    from .analysis.trends import trend_improving, trend_points, verified_series
     from .analysis.valuation import compute_median_pe
     series = gather_series(symbol, sources)
-    trend_insights = tuple(trend_points(verified_series(series.get("revenue", {})),
-                                        verified_series(series.get("net_profit", {}))))
+    rev_series = verified_series(series.get("revenue", {}))
+    prof_series = verified_series(series.get("net_profit", {}))
     return build_company_report(symbol, gather_aligned_figures(symbol, sources),
                                 claims=claims, median_pe=compute_median_pe(symbol),
-                                is_bank=is_bank(symbol), trend_insights=trend_insights)
+                                is_bank=is_bank(symbol),
+                                trend_insights=tuple(trend_points(rev_series, prof_series)),
+                                trend_improving=trend_improving(rev_series, prof_series))

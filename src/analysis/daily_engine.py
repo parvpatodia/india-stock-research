@@ -21,14 +21,13 @@ def candidate_from_report(symbol: str, report, held_value: float, total_value: f
     from ..research.report import QualityTier, ValuationTier
     v = report.verdict
     sizing = position_sizing(held_value, total_value or 1.0, cap_pct)
-    trend_improving = any(("growing" in i or "improving" in i) for i in report.insights)
     return Candidate(
         symbol=symbol,
         stance=stance_from_verdict(v),
         quality_strong=(v is not None and v.quality == QualityTier.STRONG),
         valuation_cheap=(v is not None and v.valuation == ValuationTier.CHEAP),
         has_room=sizing.headroom > 0,
-        trend_improving=trend_improving,
+        trend_improving=report.trend_improving,   # structured signal, not parsed from prose
         strength=verdict_strength(v),   # orders names within the same flag band by conviction
         reason=(report.insights[0] if report.insights else ""),
     )

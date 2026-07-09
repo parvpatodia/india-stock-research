@@ -1,4 +1,4 @@
-from src.analysis.trends import cagr, trend_points, verified_series
+from src.analysis.trends import cagr, trend_improving, trend_points, verified_series
 
 CR = 1e7
 
@@ -38,3 +38,29 @@ def test_trend_points_growth_and_margin_direction():
 
 def test_trend_points_empty_when_insufficient_history():
     assert trend_points({2022: 100}, {2022: 10}) == []           # too few years
+
+
+# --- structured trend_improving signal (decoupled from the UI prose) ---
+
+def test_trend_improving_true_on_growing_sales():
+    rev = {2020: 100 * CR, 2021: 110 * CR, 2022: 121 * CR}       # ~10%/yr > 3% floor
+    flat = {2020: 10 * CR, 2021: 10 * CR, 2022: 10 * CR}
+    assert trend_improving(rev, flat) is True
+
+
+def test_trend_improving_true_on_improving_margins_even_if_sales_flat():
+    rev = {2020: 100 * CR, 2021: 101 * CR, 2022: 102 * CR}       # ~1%/yr (below growth floor)
+    prof = {2020: 10 * CR, 2021: 12 * CR, 2022: 15 * CR}         # profit faster -> margins up
+    assert trend_improving(rev, prof) is True
+
+
+def test_trend_improving_false_on_flat_and_on_thin_history():
+    flat = {2020: 100 * CR, 2021: 100 * CR, 2022: 100 * CR}
+    assert trend_improving(flat, flat) is False
+    assert trend_improving({2022: 100 * CR}, {2022: 10 * CR}) is False   # <3 yrs -> no signal
+
+
+def test_trend_improving_false_when_shrinking():
+    rev = {2020: 121 * CR, 2021: 110 * CR, 2022: 100 * CR}       # declining
+    prof = {2020: 15 * CR, 2021: 12 * CR, 2022: 10 * CR}
+    assert trend_improving(rev, prof) is False

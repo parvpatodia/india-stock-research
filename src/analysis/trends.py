@@ -50,8 +50,29 @@ def cagr(series: dict[int, float]) -> tuple[float, int] | None:
     return rate, span
 
 
+# Single source of truth for the trend thresholds (%/yr), shared by the prose and the structured
+# signal so the scoring flag can never drift from the words shown on the page.
+_GROWTH_MIN = 3.0   # CAGR above this reads as "growing" / counts as improving
+_MARGIN_MIN = 2.0   # profit CAGR exceeding sales CAGR by this reads as margins improving
+
+
 def _word(rate: float) -> str:
-    return "growing" if rate > 3 else "shrinking" if rate < -3 else "roughly flat"
+    return "growing" if rate > _GROWTH_MIN else "shrinking" if rate < -_GROWTH_MIN else "roughly flat"
+
+
+def trend_improving(revenue_series: dict[int, float],
+                    profit_series: dict[int, float]) -> bool:
+    """Structured multi-year signal for the ranker: True iff sales OR profit have compounded above
+    the growth floor, or margins have been improving. WHY (real money): the suggestion score must
+    read this from the numbers, not by substring-matching the plain-language insight prose, so a
+    wording change can never silently flip a scoring input. Shares the thresholds with trend_points
+    so the flag and the words always agree. Needs >=3 cross-verified years (see cagr) or returns
+    False — no history, no claimed trend."""
+    rev = cagr(revenue_series)
+    prof = cagr(profit_series)
+    growing = (rev is not None and rev[0] > _GROWTH_MIN) or (prof is not None and prof[0] > _GROWTH_MIN)
+    margins_up = rev is not None and prof is not None and prof[0] > rev[0] + _MARGIN_MIN
+    return bool(growing or margins_up)
 
 
 def trend_points(revenue_series: dict[int, float],
@@ -69,8 +90,8 @@ def trend_points(revenue_series: dict[int, float],
         points.append(f"Track record: profit has been {_word(rate)} about {rate:.0f}% a year over "
                       f"the last {span} years.")
     if rev and prof:
-        if prof[0] > rev[0] + 2:
+        if prof[0] > rev[0] + _MARGIN_MIN:
             points.append("Profit has grown faster than sales, so margins have been improving.")
-        elif prof[0] < rev[0] - 2:
+        elif prof[0] < rev[0] - _MARGIN_MIN:
             points.append("Profit has grown slower than sales, so margins have been under pressure.")
     return points
