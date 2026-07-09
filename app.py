@@ -491,8 +491,10 @@ value_by_symbol = {p.symbol: p.market_value for p in analysis.positions}
 if "reports" not in st.session_state:
     st.session_state.reports = {}
 
+# WHY: short labels so all four tabs fit on an iPhone (375px) without horizontal scroll —
+# a parent must see Invest/Ask exist, not have them clipped off-screen.
 tab_portfolio, tab_research, tab_invest, tab_ask = st.tabs(
-    ["📁 My Portfolio", "🔎 Research a Stock", "💰 Invest a Lump Sum", "💬 Ask"])
+    ["📁 Portfolio", "🔎 Research", "💰 Invest", "💬 Ask"])
 
 
 # ==================== TAB 1: MY PORTFOLIO ====================
