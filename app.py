@@ -788,8 +788,8 @@ with tab_invest:
             st.session_state.today_rows = []
     today_rows = st.session_state.today_rows
     if today_rows:
-        st.markdown("**📌 Today's long-term picks**")
-        for r in today_rows[:6]:
+        st.markdown(f"**📌 Today's long-term picks** ({len(today_rows)})")
+        for r in today_rows:
             st.markdown(f"- **{r.get('symbol', '')}** ({r.get('stance', '')}) — "
                         f"{r.get('reason', '')}")
         # WHY: Sheets coerces the date string into a datetime on round-trip; show only the date.
