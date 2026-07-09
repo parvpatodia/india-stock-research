@@ -208,3 +208,28 @@ def test_allocation_spreads_across_two_favorable_names():
     plan = suggest_allocation(100.0, cands, portfolio_value=100.0, cap_pct=0.25)
     assert sorted(a.amount for a in plan.allocations) == [50.0, 50.0]
     assert plan.uninvested == 0.0
+
+
+def test_allocation_diversifies_when_the_cap_is_loose():
+    # WHY (diversification): with a large book the per-stock cap is loose, so a greedy fill would
+    # pour the whole lump into ONE name. "Spread it across your approved names" must actually
+    # spread it, not concentrate — poor, unsafe advice for a non-expert investing real money.
+    cands = [AllocationCandidate("A", Stance.FAVORABLE, 0.0),
+             AllocationCandidate("B", Stance.FAVORABLE, 0.0),
+             AllocationCandidate("C", Stance.FAVORABLE, 0.0)]
+    plan = suggest_allocation(90.0, cands, portfolio_value=1000.0, cap_pct=0.25)
+    amounts = sorted(a.amount for a in plan.allocations)
+    assert len(plan.allocations) == 3                      # all three funded, not one
+    assert all(abs(x - 30.0) < 1.0 for x in amounts)       # ~even split (cap of ~₹272 is loose)
+    assert plan.uninvested == 0.0
+
+
+def test_allocation_even_spread_still_prefers_favorable_over_neutral():
+    # Favorable names are filled evenly first; neutral only absorbs the remainder.
+    cands = [AllocationCandidate("F1", Stance.FAVORABLE, 0.0),
+             AllocationCandidate("F2", Stance.FAVORABLE, 0.0),
+             AllocationCandidate("N1", Stance.NEUTRAL, 0.0)]
+    plan = suggest_allocation(60.0, cands, portfolio_value=1000.0, cap_pct=0.25)
+    by = {a.symbol: a.amount for a in plan.allocations}
+    assert abs(by["F1"] - 30.0) < 1.0 and abs(by["F2"] - 30.0) < 1.0   # favorable split evenly
+    assert "N1" not in by                                              # neutral untouched (fav absorbed all)

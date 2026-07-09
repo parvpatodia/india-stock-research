@@ -173,22 +173,36 @@ def suggest_allocation(amount: float,
     eligible = [c for c in candidates if c.stance in _STANCE_ORDER]
 
     def allocate(base: float) -> list[Allocation]:
-        """Greedy fill: each name's addition capped so its final value <= cap_pct * base."""
-        def room(candidate: AllocationCandidate) -> float:
-            return max(cap_pct * base - candidate.current_value, 0.0)
-        ordered = sorted(eligible, key=lambda c: (_STANCE_ORDER[c.stance], -room(c)))
+        """Even (water-filling) spread, favorable tier first then neutral: hand out the amount in
+        equal shares across a tier's names, capping each at its room (cap_pct*base - current) and
+        redistributing any overflow to the others, so the lump DIVERSIFIES instead of pouring into
+        one name whenever the per-stock cap is loose. Whatever a tier can't absorb flows to the next."""
+        cap_value = cap_pct * base
+        placed: dict[str, float] = {}
         remaining = amount
-        placed: list[Allocation] = []
-        for candidate in ordered:
-            take = min(remaining, room(candidate))
-            if take > 0:
-                placed.append(Allocation(
-                    candidate.symbol, take, candidate.stance,
-                    f"{candidate.stance.label.lower()}; kept under your {cap_pct:.0%} per-stock cap"))
-                remaining -= take
-            if remaining <= 0:
-                break
-        return placed
+        for tier in (0, 1):
+            names = [c for c in eligible if _STANCE_ORDER[c.stance] == tier]
+            rooms = {c.symbol: max(cap_value - c.current_value, 0.0) for c in names}
+            takes = {c.symbol: 0.0 for c in names}
+            active = [c for c in names if rooms[c.symbol] > 1e-9]
+            while remaining > 1e-6 and active:
+                share = remaining / len(active)
+                still = []
+                for c in active:
+                    give = min(share, rooms[c.symbol] - takes[c.symbol])
+                    takes[c.symbol] += give
+                    remaining -= give
+                    if rooms[c.symbol] - takes[c.symbol] > 1e-6:
+                        still.append(c)
+                if len(still) == len(active):    # no name hit its cap this round -> fully spread
+                    break
+                active = still
+            placed.update({s: t for s, t in takes.items() if t > 1e-9})
+        return [Allocation(c.symbol, placed[c.symbol], c.stance,
+                           f"{c.stance.label.lower()}; spread evenly, kept under your "
+                           f"{cap_pct:.0%} per-stock cap")
+                for c in sorted(eligible, key=lambda c: (_STANCE_ORDER[c.stance], c.symbol))
+                if c.symbol in placed]
 
     # WHY: cap against the REALIZED book (current holdings + what actually gets placed), not the
     # optimistic full-deploy book. If the caps bind, less is placed and the book is smaller, so
