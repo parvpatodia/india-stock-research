@@ -85,6 +85,72 @@ def test_empty_store_retrieves_nothing():
     assert DocumentStore().retrieve("anything") == []
 
 
+def _news_and_figures_store():
+    """Reproduces a demonstrated bug (live-verified against the real Ask-tab shape: 8 dated,
+    attributed news chunks via NewsItem.as_text + the real multi-line verified_figures_document
+    text): several news chunks, each repeating the company name, out-score the ONE chunk that
+    actually answers a direct financial question via raw TF-IDF cosine, since keyword overlap
+    (e.g. '52-week high' matching 'debt high') beats real relevance in a small corpus."""
+    store = DocumentStore()
+    news = [
+        "[Moneycontrol, 2026-07-08] Reliance shares slip after SEBI warning on compliance issues "
+        "affecting the stock price today.",
+        "[India Infoline, 2026-07-07] Reliance Q1 earnings preview: analysts expect strong retail "
+        "and Jio segment growth this quarter.",
+        "[Economic Times, 2026-07-06] Reliance Industries stock hits 52-week high on strong Jio "
+        "subscriber additions.",
+        "[Business Standard, 2026-07-05] Reliance Retail expands into new cities, stock reacts "
+        "positively to expansion news.",
+        "[LiveMint, 2026-07-04] Reliance announces new green energy investment plan for the "
+        "coming decade.",
+        "[CNBC-TV18, 2026-07-03] Reliance Jio price hike expected to boost ARPU and profit "
+        "margins going forward.",
+        "[Reuters, 2026-07-02] Reliance Industries in talks for a new petrochemical joint "
+        "venture deal.",
+        "[Bloomberg, 2026-07-01] Reliance stock outlook: brokerages raise target price after "
+        "strong quarter.",
+    ]
+    for text in news:
+        store.add_document("news_google", text)
+    store.add_document("verified_figures",
+                       "Cross-verified research on RELIANCE (each figure independently agreed "
+                       "by >=2 public sources):\nCurrent P/E: 22.2x (cross-verified: 2 "
+                       "independent sources agree).\nNet profit: Rs 958,000,000,000 "
+                       "(cross-verified: 2 independent sources agree).\nTotal debt: "
+                       "Rs 302,000,000,000 (cross-verified: 2 independent sources agree).")
+    return store
+
+
+def test_retrieve_without_pin_can_miss_the_authoritative_chunk():
+    # WHY: documents the bug this fix closes. Without pinning, a direct debt question can fail to
+    # surface the one chunk that states total debt at all, crowded out by news keyword overlap.
+    store = _news_and_figures_store()
+    hits = store.retrieve("Is Reliance's debt high?", k=5)
+    assert not any(rc.chunk.source_id == "verified_figures" for rc in hits)
+
+
+def test_retrieve_pins_the_authoritative_source_regardless_of_score():
+    # Same store, same query; pinning verified_figures guarantees it is surfaced to the model.
+    store = _news_and_figures_store()
+    hits = store.retrieve("Is Reliance's debt high?", k=5, pin_source_ids=frozenset({"verified_figures"}))
+    assert any(rc.chunk.source_id == "verified_figures" for rc in hits)
+
+
+def test_retrieve_pin_does_not_duplicate_a_naturally_high_scoring_chunk():
+    store = DocumentStore()
+    store.add_document("amfi", "A mutual fund SIP invests a fixed amount every month.")
+    hits = store.retrieve("SIP mutual fund", k=3, pin_source_ids=frozenset({"amfi"}))
+    assert len(hits) == 1                                   # not duplicated
+
+
+def test_retrieve_pin_source_absent_from_query_is_a_noop():
+    # Pinning a source id that has no chunks in the store changes nothing (no crash, no phantom).
+    store = DocumentStore()
+    store.add_document("amfi", "A mutual fund SIP invests a fixed amount every month.")
+    assert store.retrieve("SIP", k=3, pin_source_ids=frozenset({"nonexistent"})) == \
+           store.retrieve("SIP", k=3)
+
+
 # --- G3 claims contract ---
 
 def test_enforce_downgrades_unsourced_fact():

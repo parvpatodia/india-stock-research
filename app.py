@@ -938,6 +938,7 @@ with tab_ask:
         base = get_base_registry()
         if base is not None:
             build_library(base, DOCS_DIR, store=store)
+        vf_pin: frozenset[str] = frozenset()
         if ask_sym.strip():
             sym_u = ask_sym.strip().upper()
             company = fetch_fundamentals(sym_u).get("name") or ask_sym
@@ -954,11 +955,17 @@ with tab_ask:
             vf_doc = verified_figures_document(sym_u, cached_report)
             if vf_doc is not None:
                 ingest_documents(store, [vf_doc])
+                # WHY: without pinning, a handful of authoritative figures can be crowded out of
+                # retrieval by a larger volume of news chunks that share more surface keywords
+                # with the question (demonstrated: a direct debt question failed to retrieve the
+                # exact chunk stating total debt). Pinning guarantees the model sees it; it still
+                # must be cited, and citation-tier + numeric-grounding checks still apply.
+                vf_pin = frozenset({VERIFIED_FIGURES_SOURCE_ID})
         if len(store) == 0:
             st.warning("No sources to answer from. Enter a stock symbol so recent news can load.")
         else:
             with st.spinner("Reading the sources..."):
-                result = grounded.answer(question, store, registry,
+                result = grounded.answer(question, store, registry, pin_source_ids=vf_pin,
                                          as_of=datetime.now().strftime("%Y-%m-%d %H:%M"))
             if result.abstained:
                 st.warning(f"No verified answer. {result.abstain_reason}")

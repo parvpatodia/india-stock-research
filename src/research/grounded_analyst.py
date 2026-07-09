@@ -98,8 +98,9 @@ class GroundedAnalyst:
         return self.client.available
 
     def answer(self, question: str, store: DocumentStore, registry: SourceRegistry,
-               k: int = 5, as_of: str | None = None) -> ResearchResult:
-        retrieved = store.retrieve(question, k=k)
+               k: int = 5, as_of: str | None = None,
+               pin_source_ids: frozenset[str] = frozenset()) -> ResearchResult:
+        retrieved = store.retrieve(question, k=k, pin_source_ids=pin_source_ids)
         if not retrieved:
             return ResearchResult.abstain(
                 question,

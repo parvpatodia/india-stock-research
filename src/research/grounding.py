@@ -107,18 +107,34 @@ class DocumentStore:
             return 0.0
         return dot / (na * nb)
 
-    def retrieve(self, query: str, k: int = 5, min_score: float = 0.10) -> list[RetrievedChunk]:
+    def retrieve(self, query: str, k: int = 5, min_score: float = 0.10,
+                pin_source_ids: frozenset[str] = frozenset()) -> list[RetrievedChunk]:
         # WHY: a higher cosine floor than a token-overlap minimum reduces the chance a barely
         # related chunk (one shared common word) gets retrieved and then cited as fact.
         # Over-abstaining is the safe failure here; tune up if it abstains too often.
+        #
+        # pin_source_ids: chunks from a pinned source are ALWAYS included, bypassing min_score and
+        # the k cutoff. Demonstrated bug this closes: a handful of authoritative chunks (e.g. this
+        # app's own cross-verified figures for the asked stock) can be crowded out of a mixed-
+        # source context by a larger volume of lower-value chunks (news items) that happen to
+        # share more surface keywords with the query on raw TF-IDF cosine, even for a question the
+        # authoritative chunk directly answers. Pinning guarantees it reaches the model; it still
+        # has to be cited to matter, and the numeric-grounding + citation-tier checks still apply.
         if not self._chunks:
             return []
         idf = self._idf()
         q_vec = self._tfidf_vec(_tokenize(query), idf)
         scored: list[RetrievedChunk] = []
+        pinned: list[RetrievedChunk] = []
         for chunk, tokens in zip(self._chunks, self._tokens):
             score = self._cosine(q_vec, self._tfidf_vec(tokens, idf))
-            if score >= min_score:
-                scored.append(RetrievedChunk(chunk=chunk, score=score))
+            rc = RetrievedChunk(chunk=chunk, score=score)
+            if chunk.source_id in pin_source_ids:
+                pinned.append(rc)
+            elif score >= min_score:
+                scored.append(rc)
         scored.sort(key=lambda rc: rc.score, reverse=True)
-        return scored[:k]
+        pinned.sort(key=lambda rc: rc.score, reverse=True)
+        pinned_ids = {rc.chunk.chunk_id for rc in pinned}
+        rest = [rc for rc in scored if rc.chunk.chunk_id not in pinned_ids][:k]
+        return pinned + rest
