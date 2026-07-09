@@ -45,6 +45,24 @@ def test_source_with_injected_fetcher():
     assert figs["net_profit"] == 80000 * CR
 
 
+def test_screener_fetches_page_once_per_symbol():
+    # WHY (regression): the batch called figures()+figures_by_year() repeatedly, hitting Screener
+    # ~3x per stock and tripping its rate limit. The page must be memoized per symbol.
+    calls = []
+
+    def counting_fetcher(symbol):
+        calls.append(symbol)
+        return FIXTURE
+
+    src = ScreenerFigureSource(fetcher=counting_fetcher)
+    src.figures("BLS")
+    src.figures_by_year("BLS")
+    src.figures("BLS")
+    assert calls == ["BLS"]                       # one fetch despite three calls
+    src.figures("TCS")
+    assert calls == ["BLS", "TCS"]                # a different symbol fetches once more
+
+
 def test_source_fetch_failure_returns_all_none():
     src = ScreenerFigureSource(fetcher=lambda symbol: None)
     assert all(v is None for v in src.figures("X").values())

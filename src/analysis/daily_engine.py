@@ -40,13 +40,25 @@ def _default_sources():
 
 
 def research_and_rank(symbols: list[str], value_by_symbol: dict[str, float], total_value: float,
-                      cap_pct: float, sources_factory=_default_sources):
-    """Research each symbol, build candidates, rank. One failure per symbol is skipped."""
+                      cap_pct: float, sources_factory=_default_sources,
+                      throttle_seconds: float = 1.5):
+    """Research each symbol, build candidates, rank. One failure per symbol is skipped.
+
+    WHY (throttle + shared sources): Screener throttles a rapid burst of requests from a datacenter
+    IP. Build the sources ONCE and reuse them so the Screener source memoizes each page per symbol
+    (was ~3 fetches/symbol), and pace the loop so the batch isn't a burst. throttle_seconds=0 in
+    tests to avoid sleeping.
+    """
+    import time
+
     from ..pipeline import build_report_for_symbol
+    sources = sources_factory()
     candidates = []
-    for symbol in dict.fromkeys(symbols):
+    for i, symbol in enumerate(dict.fromkeys(symbols)):
+        if i and throttle_seconds:
+            time.sleep(throttle_seconds)
         try:
-            report = build_report_for_symbol(symbol, sources_factory())
+            report = build_report_for_symbol(symbol, sources)
         except Exception:
             continue
         candidates.append(candidate_from_report(

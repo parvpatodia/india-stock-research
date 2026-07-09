@@ -171,12 +171,26 @@ class ScreenerFigureSource(FigureSource):
 
     def __init__(self, fetcher: Callable[[str], str | None] | None = None):
         self._fetcher = fetcher or self._http_fetch
+        # WHY: memoize the page per symbol. build_company_report calls figures() AND
+        # figures_by_year() (and the series gather calls it again) for the same symbol, so without
+        # this each stock hit Screener ~3x -> a 32-stock batch made ~96 requests and tripped
+        # Cloudflare's rate limit. One fetch per symbol keeps the batch to ~32.
+        self._cache: dict[str, str | None] = {}
+
+    def _fetch_cached(self, symbol: str) -> str | None:
+        key = symbol.strip().upper()
+        if key not in self._cache:
+            self._cache[key] = self._fetcher(key)
+        return self._cache[key]
 
     @staticmethod
     def _http_fetch(symbol: str) -> str | None:
-        # WHY: full browser-like headers + a session. Screener sits behind Cloudflare, which
-        # blocks bare user-agents from datacenter IPs (Streamlit Cloud), starving cross-
-        # verification to a single source. This is best-effort, not guaranteed past a JS challenge.
+        # WHY: browser-like headers + retry-with-backoff. Screener sits behind Cloudflare, which
+        # rate-limits bursts from datacenter IPs (Streamlit Cloud), starving cross-verification to
+        # a single source. Backoff gives a transient rate-limit time to clear; best-effort, not
+        # guaranteed past a hard JS challenge.
+        import time
+
         import requests
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -188,24 +202,27 @@ class ScreenerFigureSource(FigureSource):
             "Connection": "keep-alive",
         }
         session = requests.Session()
-        for path in (f"https://www.screener.in/company/{symbol}/consolidated/",
-                     f"https://www.screener.in/company/{symbol}/"):
-            try:
-                resp = session.get(path, headers=headers, timeout=30)
-                if resp.status_code == 200 and resp.text:
-                    return resp.text
-            except Exception:
-                continue
+        for attempt in range(3):
+            for path in (f"https://www.screener.in/company/{symbol}/consolidated/",
+                         f"https://www.screener.in/company/{symbol}/"):
+                try:
+                    resp = session.get(path, headers=headers, timeout=30)
+                    if resp.status_code == 200 and resp.text:
+                        return resp.text
+                except Exception:
+                    continue
+            if attempt < 2:
+                time.sleep(2 * (attempt + 1))   # 2s, 4s backoff before retrying
         return None
 
     def figures(self, symbol: str) -> dict[str, float | None]:
-        html = self._fetcher(symbol.strip().upper())
+        html = self._fetch_cached(symbol)
         if not html:
             return {name: None for name in FRAMEWORK_FIGURES}
         return parse_screener_figures(html)
 
     def figures_by_year(self, symbol: str) -> dict[str, dict[int, float]]:
-        html = self._fetcher(symbol.strip().upper())
+        html = self._fetch_cached(symbol)
         if not html:
             return {}
         return parse_screener_series(html)
