@@ -66,6 +66,9 @@ class Verdict:
     confidence: Confidence
     reasons: tuple[str, ...] = ()   # each reason should reference cited/verified figures
     caveat: str = VERDICT_CAVEAT    # always present; the verdict is never shown as certainty
+    # current P/E as a fraction of its own historical median (margin-of-safety magnitude); None
+    # when the median is unavailable. Lets the ranker weigh HOW cheap, not just the CHEAP tier.
+    valuation_ratio: float | None = None
 
 
 @dataclass(frozen=True)

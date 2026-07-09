@@ -87,6 +87,18 @@ def test_two_clean_quality_signals_reach_strong():
     assert v.quality == QualityTier.STRONG                  # 2 known, 0 concerns -> corroborated
 
 
+def test_valuation_exposes_discount_magnitude():
+    # margin of safety: current P/E vs its own median, as a ratio the ranker can weigh by depth.
+    m = valuation_vs_history(15, 25)                       # 0.60x
+    assert m.magnitude is not None and abs(m.magnitude - 0.6) < 1e-9
+
+
+def test_assemble_carries_valuation_ratio_onto_verdict():
+    v = assemble_verdict(valuation_vs_history(12, 24),     # 0.50x
+                         [earnings_quality(90, 100), leverage_health(20, 100, 50, 5)])
+    assert v.valuation_ratio is not None and abs(v.valuation_ratio - 0.5) < 1e-9
+
+
 def test_confidence_capped_when_debt_unverified():
     # WHY (real money): leverage is the solvency dimension. You cannot be HIGH-confidence about a
     # business whose debt you have not verified, even when everything else checks out.

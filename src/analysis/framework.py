@@ -42,6 +42,7 @@ class MetricResult:
     detail: str         # plain-English reason including the numbers used
     concern: bool = False   # True = a negative signal, used to aggregate quality
     critical: bool = False  # a solvency/core dimension (e.g. leverage); if unknown, cap confidence
+    magnitude: float | None = None  # optional continuous value (e.g. P/E-vs-median ratio) for ranking
 
 
 def value_if_trustworthy(figure: VerifiedFigure | None) -> float | None:
@@ -70,7 +71,7 @@ def valuation_vs_history(current_pe: float | None,
         v, concern = "fair", False
     return MetricResult(name, True, v,
                         f"P/E {current_pe:.1f} vs its own median {median_pe:.1f} "
-                        f"({ratio:.0%} of history) reads {v}.", concern)
+                        f"({ratio:.0%} of history) reads {v}.", concern, magnitude=ratio)
 
 
 def earnings_quality(operating_cash_flow: float | None,
@@ -180,4 +181,4 @@ def assemble_verdict(valuation: MetricResult,
 
     reasons = tuple(m.detail for m in all_metrics if m.known)
     return Verdict(valuation=valuation_tier, quality=quality_tier, leaning=leaning,
-                   confidence=confidence, reasons=reasons)
+                   confidence=confidence, reasons=reasons, valuation_ratio=valuation.magnitude)

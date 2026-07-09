@@ -69,18 +69,31 @@ _VALUATION_DEGREE = {ValuationTier.CHEAP: 1.0, ValuationTier.FAIR: 0.5,
                      ValuationTier.EXPENSIVE: 0.0, ValuationTier.UNKNOWN: 0.0}
 _CONFIDENCE_DEGREE = {Confidence.HIGH: 1.0, Confidence.MEDIUM: 0.6, Confidence.LOW: 0.2}
 _STRENGTH_WEIGHTS = (0.40, 0.35, 0.25)  # (quality, valuation, confidence); sum to 1 -> result in [0,1]
+# Margin-of-safety mapping: current P/E as a fraction of its own history median -> [0,1] degree.
+# At/above _MOS_RICH (its median-plus) there is no margin of safety; at _MOS_DEEP (deeply below its
+# own history) it is full. Continuous, so a deeper discount ranks above a barely-cheap name.
+_MOS_RICH = 1.20   # P/E >= 120% of history -> degree 0
+_MOS_DEEP = 0.40   # P/E <= 40% of history -> degree 1
+
+
+def _valuation_degree(verdict: Verdict) -> float:
+    ratio = verdict.valuation_ratio
+    if ratio is None:                       # median unavailable -> fall back to the coarse tier
+        return _VALUATION_DEGREE.get(verdict.valuation, 0.0)
+    return max(0.0, min(1.0, (_MOS_RICH - ratio) / (_MOS_RICH - _MOS_DEEP)))
 
 
 def verdict_strength(verdict: Verdict | None) -> float:
     """A [0,1] conviction score used ONLY to order names that already tie on the coarse signals
     (stance + strong/cheap/room/trend flags). It captures DEGREE the binary flags throw away: a
-    CHEAP+STRONG+HIGH-confidence name outranks a FAIR+MIXED+MEDIUM one. Never crosses a whole-point
-    flag band (the ranker caps it below 1), so it refines ties without ever promoting a
-    weaker-evidenced name. Deterministic, explainable, no forecasting."""
+    deeply-cheap, STRONG, HIGH-confidence name outranks a barely-cheap FAIR/MIXED/MEDIUM one. The
+    valuation term weighs the actual margin of safety (P/E vs its own median) when known, not just
+    the CHEAP tier. Never crosses a whole-point flag band (the ranker caps it below 1), so it
+    refines ties without ever promoting a weaker-evidenced name. Deterministic, no forecasting."""
     if verdict is None:
         return 0.0
     q = _QUALITY_DEGREE.get(verdict.quality, 0.0)
-    v = _VALUATION_DEGREE.get(verdict.valuation, 0.0)
+    v = _valuation_degree(verdict)
     c = _CONFIDENCE_DEGREE.get(verdict.confidence, 0.0)
     wq, wv, wc = _STRENGTH_WEIGHTS
     return wq * q + wv * v + wc * c

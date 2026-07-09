@@ -36,6 +36,23 @@ def test_verdict_strength_is_bounded_0_to_1():
     assert verdict_strength(None) == 0.0
 
 
+def test_verdict_strength_rewards_deeper_margin_of_safety():
+    # WHY: two names both CHEAP on the tier, but one trades far below its history. The deeper
+    # discount (bigger margin of safety) must rank higher — the tier alone can't see that.
+    deep = Verdict(ValuationTier.CHEAP, QualityTier.STRONG, Leaning.CONSTRUCTIVE,
+                   Confidence.HIGH, valuation_ratio=0.40)      # ~60% below its own median
+    shallow = Verdict(ValuationTier.CHEAP, QualityTier.STRONG, Leaning.CONSTRUCTIVE,
+                      Confidence.HIGH, valuation_ratio=0.78)   # barely cheap
+    assert verdict_strength(deep) > verdict_strength(shallow)
+
+
+def test_verdict_strength_falls_back_to_tier_without_a_ratio():
+    # No ratio (median unavailable) -> tier degree, unchanged behavior.
+    cheap = Verdict(ValuationTier.CHEAP, QualityTier.STRONG, Leaning.CONSTRUCTIVE, Confidence.HIGH)
+    fair = Verdict(ValuationTier.FAIR, QualityTier.STRONG, Leaning.CONSTRUCTIVE, Confidence.HIGH)
+    assert verdict_strength(cheap) > verdict_strength(fair)
+
+
 def test_verdict_strength_rewards_cheaper_stronger_more_confident():
     cheap = _full(ValuationTier.CHEAP, QualityTier.STRONG, Confidence.HIGH)
     fair = _full(ValuationTier.FAIR, QualityTier.STRONG, Confidence.HIGH)
