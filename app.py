@@ -746,11 +746,17 @@ with tab_research:
                             st.caption("Nothing citable found in the filing for this.")
                         else:
                             for claim in fr.result.claims:
-                                mark = "✓" if claim.is_verified_fact else "•"
+                                # WHY: a filing point is the company's OWN statement, grounded in
+                                # the text but self-reported. Use a document marker, NOT the ✓ this
+                                # app reserves for cross-verified figures, so parents don't read a
+                                # management assertion as independently verified.
+                                mark = "📄" if claim.is_verified_fact else "•"
                                 st.markdown(f"- {mark} {claim.text}")
                     if readings:
-                        st.caption("Each point is drawn from and cited to the annual report; "
-                                   "anything not found in the filing is left out, not guessed.")
+                        st.caption("📄 = the company's own statement in its filing (a primary "
+                                   "source), quoted and cited, but self-reported, NOT independently "
+                                   "cross-verified like the figures above. Anything not in the "
+                                   "filing is left out, not guessed.")
 
         # expert review panel (the safety gate) + learning loop
         with st.expander("Expert review panel", expanded=not report.is_trusted):
