@@ -192,6 +192,37 @@ def test_guidance_unfavorable_strong_business_hold_dont_add_and_trim():
     assert any("Revisit if" in p for p in g.points)
 
 
+def test_guidance_unfavorable_does_not_call_unverified_quality_solid():
+    # WHY (real money, over-confidence): expensive valuation can co-occur with UNKNOWN quality
+    # (e.g. price data cross-verifies but no quality signal does) -- assemble_verdict's leaning
+    # logic reaches CAUTIOUS/UNFAVORABLE via EXPENSIVE valuation alone, regardless of quality.
+    # The guidance must not claim "solid business" when quality was never actually verified.
+    v = _v(ValuationTier.EXPENSIVE, QualityTier.UNKNOWN, Leaning.CAUTIOUS)
+    g = long_term_guidance(Stance.UNFAVORABLE, position_sizing(0, 100, 0.25), v, held=False)
+    joined = " ".join(g.points)
+    assert "solid business" not in joined.lower()
+    assert "quality" in joined.lower() and ("unverified" in joined.lower()
+                                            or "not verified" in joined.lower()
+                                            or "couldn't be verified" in joined.lower())
+
+
+def test_guidance_unfavorable_mixed_quality_is_hedged_not_solid():
+    # A MIXED quality (some concern, not weak enough to be WEAK) is also not "solid" -- must be
+    # described honestly, distinct from both the WEAK case and the genuinely STRONG case.
+    v = _v(ValuationTier.EXPENSIVE, QualityTier.MIXED, Leaning.CAUTIOUS)
+    g = long_term_guidance(Stance.UNFAVORABLE, position_sizing(0, 100, 0.25), v, held=False)
+    joined = " ".join(g.points)
+    assert "solid business" not in joined.lower()
+
+
+def test_guidance_unfavorable_strong_quality_still_says_solid():
+    # Regression: the genuinely-earned "solid business" phrasing must still appear when quality
+    # really is STRONG (this is the existing, correct case; must not be lost by the fix above).
+    v = _v(ValuationTier.EXPENSIVE, QualityTier.STRONG, Leaning.CAUTIOUS)
+    g = long_term_guidance(Stance.UNFAVORABLE, position_sizing(0, 100, 0.25), v, held=False)
+    assert any("solid business" in p.lower() for p in g.points)
+
+
 def test_guidance_weak_quality_reviews_thesis():
     v = _v(ValuationTier.CHEAP, QualityTier.WEAK, Leaning.CAUTIOUS)
     g = long_term_guidance(Stance.UNFAVORABLE, position_sizing(0, 100, 0.25), v, held=True)

@@ -274,9 +274,28 @@ def long_term_guidance(stance: Stance, sizing: SizingAdvice, verdict: Verdict | 
              "weak fundamentals matter more than a cheap price.",
              "Decide if the reasons you own it still apply. " + revisit))
 
-    if stance == Stance.UNFAVORABLE:  # strong business but expensive
-        pts = ["It looks like a solid business, but it's priced above its own history, so new "
-               "money would buy in expensive, not a spot to add."]
+    if stance == Stance.UNFAVORABLE:
+        # WHY (real money, over-confidence): reached here WITHOUT weak quality (handled above),
+        # via expensive valuation alone -- assemble_verdict's leaning logic flags CAUTIOUS on
+        # EXPENSIVE valuation regardless of quality, so quality here can be STRONG, MIXED, or
+        # completely UNKNOWN (e.g. price data cross-verified but no quality signal did). Only
+        # claim "solid business" when quality was actually verified as strong; never overstate
+        # confidence in a business whose quality is merely unflagged-as-weak, or unverified.
+        if verdict.quality == QualityTier.STRONG:
+            opening = ("It looks like a solid business, but it's priced above its own history, "
+                      "so new money would buy in expensive, not a spot to add.")
+            headline = "Long-term: hold a quality business, but don't add here."
+        elif verdict.quality == QualityTier.MIXED:
+            opening = ("Business quality is mixed, not a red flag but not fully clean either, "
+                      "and it's priced above its own history, so new money would buy in "
+                      "expensive on top of that.")
+            headline = "Long-term: mixed quality and priced expensive; don't add here."
+        else:  # UNKNOWN -- never claim quality either way when it was never verified
+            opening = ("Business quality couldn't be verified from public sources, and it's "
+                      "priced above its own history, so there isn't a strong enough basis to "
+                      "call this solid, or to buy in at this price.")
+            headline = "Long-term: quality unverified and priced expensive; don't add here."
+        pts = [opening]
         if held and sizing.over_cap:
             pts.append(f"You hold {_money(sizing.current_value)}, already over your "
                        f"{sizing.cap_pct:.0%} cap ({_money(sizing.cap_value)}); trimming toward "
@@ -284,7 +303,7 @@ def long_term_guidance(stance: Stance, sizing: SizingAdvice, verdict: Verdict | 
         elif held:
             pts.append("Holding for the long term is reasonable; just don't add at this price.")
         pts.append(revisit)
-        return Guidance("Long-term: hold a quality business, but don't add here.", tuple(pts))
+        return Guidance(headline, tuple(pts))
 
     if stance == Stance.FAVORABLE and cheap_or_fair:
         if sizing.over_cap:
