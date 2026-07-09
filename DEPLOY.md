@@ -54,6 +54,24 @@ long-term-fit names (favorable/neutral, within your per-stock cap, improving tre
 Note: GitHub's runners are datacenter IPs; if Screener is blocked there (single-source →
 nothing cross-verifies → no picks), switch the second source to an API (e.g. a free FMP key).
 
+## 4c. Daily engine on a Mac (launchd) — the free, full-quality path
+Screener rate-limits the 32-stock batch from datacenter IPs (Streamlit Cloud, GitHub → thin
+results), but not from a residential IP. So run the batch on the Mac; the app just displays the
+`Today` tab. This gives the full ~12 picks for free.
+1. Put the engine's config in the gitignored `.env`: `APPS_SCRIPT_URL`, `APPS_SCRIPT_TOKEN`,
+   `NTFY_TOPIC`, `POSITION_CAP` (the script `load_dotenv`s it; the daily batch uses only
+   yfinance + Screener, no LLM). Test it: `./.venv/bin/python scripts/daily_suggestions.py`.
+2. Create `~/Library/LaunchAgents/com.parvpatodia.stockdaily.plist` running the venv python on
+   `scripts/daily_suggestions.py`, `StartCalendarInterval` at 09:00, `RunAtLoad` true, logging to
+   `data/daily_suggestions.log`. (Change the `Hour` to a time your Mac is usually awake; if it's
+   asleep at that time, launchd runs it on the next wake.)
+3. Load / reload / pause:
+   - load:   `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.parvpatodia.stockdaily.plist`
+   - run now: `launchctl kickstart -k gui/$(id -u)/com.parvpatodia.stockdaily`
+   - pause:  `launchctl bootout gui/$(id -u)/com.parvpatodia.stockdaily`
+Tradeoff: the Mac must be awake for it to run; it's daily-when-on, not truly 24/7. For real
+overnight autonomy, use a paid datacenter-reachable data source instead.
+
 ## 5. Verify after deploy
 - Password gate appears and only the shared password gets in.
 - Portfolio loads (from the Sheet if configured, else an uploaded CSV).

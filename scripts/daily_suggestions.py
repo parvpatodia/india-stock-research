@@ -12,7 +12,10 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_ROOT))
+
+from dotenv import load_dotenv  # noqa: E402
 
 from src.analysis.daily_engine import (  # noqa: E402
     TODAY_HEADER,
@@ -21,6 +24,8 @@ from src.analysis.daily_engine import (  # noqa: E402
     research_and_rank,
 )
 
+# WHY: launchd does not inherit the shell env, so load the gitignored .env for the secrets.
+load_dotenv(_ROOT / ".env")
 CAP = float(os.environ.get("POSITION_CAP", "0.25"))
 
 
