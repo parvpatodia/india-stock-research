@@ -34,7 +34,11 @@ def test_non_bank_still_uses_industrial_framework():
     figs = {
         "total_debt": [SourcedValue(20, "a"), SourcedValue(20, "b")],
         "equity": [SourcedValue(100, "a"), SourcedValue(100, "b")],
+        # WHY: two corroborating industrial quality signals (leverage + earnings quality) are
+        # needed for STRONG now; one alone reads MIXED (see framework over-confidence fix).
+        "operating_cash_flow": [SourcedValue(90, "a"), SourcedValue(90, "b")],
+        "net_profit": [SourcedValue(100, "a"), SourcedValue(100, "b")],
     }
-    r = build_company_report("X", figs, is_bank=False)   # D/E 0.2 -> healthy -> strong
+    r = build_company_report("X", figs, is_bank=False)   # D/E 0.2 healthy + OCF 90% -> strong
     assert r.verdict.quality == QualityTier.STRONG
     assert not any("GNPA" in x for x in r.verdict.reasons)

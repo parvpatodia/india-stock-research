@@ -65,6 +65,28 @@ def test_assemble_verdict_constructive_high_confidence():
     assert len(v.reasons) == 4
 
 
+def test_single_clean_quality_signal_is_not_strong():
+    # WHY (real money): one verified clean signal, with debt (leverage) and pledge UNKNOWN, is not
+    # a "strong" balance sheet. STRONG must require >=2 corroborating verified dimensions, else a
+    # cheap P/E + one lucky-verified metric would read FAVORABLE on thin evidence.
+    v = assemble_verdict(
+        valuation_vs_history(15, 25),                       # cheap
+        [earnings_quality(90, 100),                         # known, clean
+         leverage_health(None, None, None, None),           # debt UNVERIFIED
+         promoter_pledge(None)],                            # UNVERIFIED
+    )
+    assert v.quality == QualityTier.MIXED                   # not STRONG (was over-confident)
+    assert v.leaning != Leaning.CONSTRUCTIVE                # cheap + non-strong -> not constructive
+
+
+def test_two_clean_quality_signals_reach_strong():
+    v = assemble_verdict(
+        valuation_vs_history(15, 25),
+        [earnings_quality(90, 100), leverage_health(20, 100, 50, 5), promoter_pledge(None)],
+    )
+    assert v.quality == QualityTier.STRONG                  # 2 known, 0 concerns -> corroborated
+
+
 def test_assemble_verdict_cautious_on_concerns():
     v = assemble_verdict(
         valuation_vs_history(40, 25),  # expensive (concern)

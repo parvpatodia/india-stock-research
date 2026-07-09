@@ -31,6 +31,7 @@ _DE_HEALTHY = 0.50      # debt/equity below this is comfortable
 _DE_STRETCHED = 1.00    # above this is stretched
 _COVERAGE_MIN = 3.0     # interest coverage (EBIT/interest) below this is a concern
 _PLEDGE_HIGH = 25.0     # promoter pledge above 25% is a serious red flag
+_MIN_SIGNALS_FOR_STRONG = 2  # "strong" needs >=2 verified quality dimensions, not one lucky one
 
 
 @dataclass(frozen=True)
@@ -122,9 +123,15 @@ def promoter_pledge(pledge_pct: float | None) -> MetricResult:
 
 
 def assemble_verdict(valuation: MetricResult,
-                     quality_signals: list[MetricResult]) -> Verdict:
+                     quality_signals: list[MetricResult],
+                     min_signals_for_strong: int = _MIN_SIGNALS_FOR_STRONG) -> Verdict:
     """Turn the metrics into a caveated Verdict. Confidence reflects how much was actually
-    known; a thinly-evidenced verdict is low confidence, not a confident guess."""
+    known; a thinly-evidenced verdict is low confidence, not a confident guess.
+
+    min_signals_for_strong: how many verified, concern-free quality dimensions are needed to read
+    STRONG. Default 2 for the industrial framework (don't call a balance sheet strong on one lucky
+    metric with debt unverified); banks pass 1 because ROA is their single designated quality lens.
+    """
     valuation_tier = {
         "cheap": ValuationTier.CHEAP, "fair": ValuationTier.FAIR,
         "expensive": ValuationTier.EXPENSIVE,
@@ -138,8 +145,14 @@ def assemble_verdict(valuation: MetricResult,
         quality_tier = QualityTier.WEAK
     elif len(concerns) == 1:
         quality_tier = QualityTier.MIXED
-    else:
+    elif len(known_quality) >= min_signals_for_strong:
         quality_tier = QualityTier.STRONG
+    else:
+        # WHY (real money): zero concerns but fewer than min_signals_for_strong verified quality
+        # dimensions (crucially, debt unverified) is not enough to call a balance sheet STRONG.
+        # Requiring corroboration keeps a cheap P/E + one lucky metric from reading FAVORABLE on
+        # thin data. Banks opt into 1 because ROA is their single designated quality lens.
+        quality_tier = QualityTier.MIXED
 
     if valuation_tier == ValuationTier.UNKNOWN and quality_tier == QualityTier.UNKNOWN:
         leaning = Leaning.UNKNOWN

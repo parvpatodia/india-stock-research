@@ -52,5 +52,7 @@ def is_bank(symbol: str) -> bool:
 
 def assemble_bank_verdict(valuation: MetricResult, roa: MetricResult) -> Verdict:
     """Bank verdict from ROA + valuation, always carrying the 'check the filing' caveat."""
-    verdict = assemble_verdict(valuation, [roa])
+    # min_signals_for_strong=1: ROA is a bank's single designated quality lens (the industrial
+    # leverage/coverage metrics do not apply), so one verified strong ROA is the intended STRONG.
+    verdict = assemble_verdict(valuation, [roa], min_signals_for_strong=1)
     return replace(verdict, reasons=verdict.reasons + (_BANK_CAVEAT,))
