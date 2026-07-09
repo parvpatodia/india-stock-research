@@ -5,6 +5,7 @@ from src.analysis.sizing import (
     position_sizing,
     stance_from_verdict,
     suggest_allocation,
+    verdict_strength,
 )
 from src.research.report import (
     Confidence,
@@ -18,6 +19,33 @@ from src.research.report import (
 def _verdict(leaning: Leaning, confidence: Confidence) -> Verdict:
     return Verdict(valuation=ValuationTier.FAIR, quality=QualityTier.STRONG,
                    leaning=leaning, confidence=confidence)
+
+
+# --- verdict_strength (fine-grained ranking refinement) ---
+
+def _full(valuation, quality, confidence):
+    return Verdict(valuation=valuation, quality=quality,
+                   leaning=Leaning.CONSTRUCTIVE, confidence=confidence)
+
+
+def test_verdict_strength_is_bounded_0_to_1():
+    top = _full(ValuationTier.CHEAP, QualityTier.STRONG, Confidence.HIGH)
+    bottom = _full(ValuationTier.EXPENSIVE, QualityTier.WEAK, Confidence.LOW)
+    assert verdict_strength(top) == 1.0
+    assert 0.0 <= verdict_strength(bottom) < 0.3        # low-confidence floor, not zero
+    assert verdict_strength(None) == 0.0
+
+
+def test_verdict_strength_rewards_cheaper_stronger_more_confident():
+    cheap = _full(ValuationTier.CHEAP, QualityTier.STRONG, Confidence.HIGH)
+    fair = _full(ValuationTier.FAIR, QualityTier.STRONG, Confidence.HIGH)
+    assert verdict_strength(cheap) > verdict_strength(fair)          # margin of safety counts
+    strong = _full(ValuationTier.CHEAP, QualityTier.STRONG, Confidence.HIGH)
+    mixed = _full(ValuationTier.CHEAP, QualityTier.MIXED, Confidence.HIGH)
+    assert verdict_strength(strong) > verdict_strength(mixed)        # business quality counts
+    hi = _full(ValuationTier.CHEAP, QualityTier.STRONG, Confidence.HIGH)
+    med = _full(ValuationTier.CHEAP, QualityTier.STRONG, Confidence.MEDIUM)
+    assert verdict_strength(hi) > verdict_strength(med)              # how sure we are counts
 
 
 # --- stance_from_verdict ---

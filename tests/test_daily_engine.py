@@ -1,4 +1,4 @@
-from src.analysis.daily_engine import candidate_from_report, refresh_today_if_stale
+from src.analysis.daily_engine import candidate_from_report, picks_to_rows, refresh_today_if_stale
 from src.analysis.sizing import Stance
 from src.analysis.suggestions import RankedPick
 from src.data.sheets_backend import InMemoryGateway
@@ -67,3 +67,10 @@ def test_candidate_from_report_maps_signals():
     assert c.has_room is True                              # holds 0, cap 25 of 100 -> room
     assert c.trend_improving is True                       # 'growing' in insights
     assert c.reason.startswith("Price:")
+    assert 0.0 < c.strength <= 1.0                          # conviction populated from the verdict
+
+
+def test_picks_to_rows_floors_the_conviction_fraction():
+    # WHY: the ordering fraction must not inflate the shown integer (6.9 -> "6", never "7").
+    rows = picks_to_rows([RankedPick("BLS", Stance.FAVORABLE, 6.9, "x")], "2026-07-09")
+    assert rows[0]["score"] == "6"

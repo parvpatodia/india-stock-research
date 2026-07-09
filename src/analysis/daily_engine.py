@@ -10,7 +10,7 @@ from __future__ import annotations
 import datetime
 import urllib.request
 
-from .sizing import position_sizing, stance_from_verdict
+from .sizing import position_sizing, stance_from_verdict, verdict_strength
 from .suggestions import Candidate, rank_picks
 
 TODAY_HEADER = ["date", "symbol", "stance", "score", "reason"]
@@ -29,6 +29,7 @@ def candidate_from_report(symbol: str, report, held_value: float, total_value: f
         valuation_cheap=(v is not None and v.valuation == ValuationTier.CHEAP),
         has_room=sizing.headroom > 0,
         trend_improving=trend_improving,
+        strength=verdict_strength(v),   # orders names within the same flag band by conviction
         reason=(report.insights[0] if report.insights else ""),
     )
 
@@ -81,8 +82,11 @@ def push_ntfy(topic: str, picks) -> None:
 
 
 def picks_to_rows(picks, today: str) -> list[dict]:
+    # WHY: floor, don't round. The score carries a sub-1 conviction fraction used only to order
+    # ties; rounding a 6.9 to "7" would show a count above the real max of 6 flags. int() = floor
+    # for the non-negative score, so the displayed integer stays the true signal count.
     return [{"date": today, "symbol": p.symbol, "stance": p.stance.value,
-             "score": f"{p.score:.0f}", "reason": p.reason} for p in picks]
+             "score": f"{int(p.score)}", "reason": p.reason} for p in picks]
 
 
 def refresh_today_if_stale(gateway, symbols: list[str], value_by_symbol: dict[str, float],

@@ -26,6 +26,27 @@ def test_rank_excludes_unfavorable_insufficient_and_no_room():
     assert syms == ["FAV"]                                    # others excluded
 
 
+def test_strength_refines_ties_without_crossing_a_flag_band():
+    # WHY: strength must only break ties WITHIN a whole-point band, never promote a
+    # weaker-flagged name above a stronger-flagged one (real-money ranking integrity).
+    four_flags = Candidate("FOUR", Stance.FAVORABLE, quality_strong=True, valuation_cheap=True,
+                           has_room=True, trend_improving=True, strength=0.0)      # 6.0
+    three_flags_max_strength = Candidate("THREE", Stance.FAVORABLE, quality_strong=True,
+                                         valuation_cheap=True, has_room=True,
+                                         trend_improving=False, strength=0.999)     # 5.999
+    assert score_candidate(four_flags) > score_candidate(three_flags_max_strength)
+    assert score_candidate(three_flags_max_strength) < 6.0
+
+
+def test_rank_uses_strength_not_alphabet_to_break_ties():
+    # Same flags, different conviction -> the stronger one ranks first (was alphabetical).
+    weak = Candidate("AAA", Stance.FAVORABLE, quality_strong=True, valuation_cheap=True,
+                     has_room=True, trend_improving=True, strength=0.2)
+    strong = Candidate("ZZZ", Stance.FAVORABLE, quality_strong=True, valuation_cheap=True,
+                       has_room=True, trend_improving=True, strength=0.9)
+    assert [p.symbol for p in rank_picks([weak, strong])] == ["ZZZ", "AAA"]
+
+
 def test_rank_orders_best_first_then_symbol():
     cands = [                                                 # all have room (default) -> +1 each
         _c("MID", Stance.NEUTRAL, strong=True),               # 1 + strong + room = 3

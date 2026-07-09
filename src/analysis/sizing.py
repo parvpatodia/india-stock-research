@@ -60,6 +60,32 @@ def stance_from_verdict(verdict: Verdict | None) -> Stance:
     return Stance.NEUTRAL
 
 
+# Expert-tunable degree weights for ranking refinement. Business quality and margin of safety
+# (cheapness) are the substance of a long-term value pick; confidence modulates how much to lean
+# on it. Kept here beside stance_from_verdict because both derive plain signals from a Verdict.
+_QUALITY_DEGREE = {QualityTier.STRONG: 1.0, QualityTier.MIXED: 0.5,
+                   QualityTier.WEAK: 0.0, QualityTier.UNKNOWN: 0.0}
+_VALUATION_DEGREE = {ValuationTier.CHEAP: 1.0, ValuationTier.FAIR: 0.5,
+                     ValuationTier.EXPENSIVE: 0.0, ValuationTier.UNKNOWN: 0.0}
+_CONFIDENCE_DEGREE = {Confidence.HIGH: 1.0, Confidence.MEDIUM: 0.6, Confidence.LOW: 0.2}
+_STRENGTH_WEIGHTS = (0.40, 0.35, 0.25)  # (quality, valuation, confidence); sum to 1 -> result in [0,1]
+
+
+def verdict_strength(verdict: Verdict | None) -> float:
+    """A [0,1] conviction score used ONLY to order names that already tie on the coarse signals
+    (stance + strong/cheap/room/trend flags). It captures DEGREE the binary flags throw away: a
+    CHEAP+STRONG+HIGH-confidence name outranks a FAIR+MIXED+MEDIUM one. Never crosses a whole-point
+    flag band (the ranker caps it below 1), so it refines ties without ever promoting a
+    weaker-evidenced name. Deterministic, explainable, no forecasting."""
+    if verdict is None:
+        return 0.0
+    q = _QUALITY_DEGREE.get(verdict.quality, 0.0)
+    v = _VALUATION_DEGREE.get(verdict.valuation, 0.0)
+    c = _CONFIDENCE_DEGREE.get(verdict.confidence, 0.0)
+    wq, wv, wc = _STRENGTH_WEIGHTS
+    return wq * q + wv * v + wc * c
+
+
 @dataclass(frozen=True)
 class SizingAdvice:
     cap_pct: float          # per-stock ceiling as a fraction of the book (e.g. 0.25)
