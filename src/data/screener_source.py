@@ -47,10 +47,17 @@ def _is_annual(df) -> bool:
     months: set[str] = set()
     years: set[str] = set()
     for col in list(df.columns)[1:]:
-        m = _MONTH_YEAR_RE.search(str(col).strip())
-        if m:
-            months.add(m.group(1).lower())
-            years.add(m.group(2))
+        s = str(col).strip()
+        my = _MONTH_YEAR_RE.search(s)
+        if my:
+            months.add(my.group(1).lower())
+            years.add(my.group(2))
+        else:
+            y = _YEAR_RE.search(s)          # bare "YYYY" / "FY2024": still a yearly period column
+            if y:
+                years.add(y.group(1))
+    # >=2 distinct years across the columns, and at most one fiscal-year-end month. Quarterly
+    # tables always cycle through months (>1), so they stay excluded; year-only headers pass.
     return len(years) >= 2 and len(months) <= 1
 
 

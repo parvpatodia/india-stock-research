@@ -60,6 +60,25 @@ def test_quarterly_table_not_misread_as_annual():
     assert figs["revenue"] == 950000 * CR          # annual sales, not a quarter
 
 
+BARE_YEAR_ANNUAL = """
+<div><ul><li>Stock P/E <span>18.0</span></li></ul></div>
+<table><thead><tr><th></th><th>2023</th><th>2024</th></tr></thead><tbody>
+<tr><td>Sales +</td><td>500000</td><td>550000</td></tr>
+<tr><td>Operating Profit</td><td>90000</td><td>95000</td></tr>
+<tr><td>Net Profit +</td><td>60000</td><td>65000</td></tr>
+</tbody></table>
+"""
+
+
+def test_bare_year_headers_are_recognized_as_annual():
+    # WHY (resilience): if Screener ever renders year-only headers (no 'Mon'), the month-consistency
+    # check must still treat them as annual, or the entire second source is silently lost and every
+    # figure drops to single-source. Quarterly tables always carry months, so this stays safe.
+    figs = parse_screener_figures(BARE_YEAR_ANNUAL)
+    assert figs["net_profit"] == 65000 * CR
+    assert figs["revenue"] == 550000 * CR
+
+
 def test_parse_empty_html_all_none():
     figs = parse_screener_figures("<html><body>no tables here</body></html>")
     assert all(figs[name] is None for name in FRAMEWORK_FIGURES)
