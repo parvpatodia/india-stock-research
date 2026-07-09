@@ -559,16 +559,23 @@ with tab_portfolio:
                                    for p in analysis.positions}
                 weights = {p.symbol: p.weight for p in analysis.positions}
                 port_returns = portfolio_daily_returns(close_by_symbol, weights)
-            risk_cols = st.columns(3)
-            risk_cols[0].metric("Annualized volatility",
-                                f"{annualized_volatility(port_returns) * 100:.1f}%",
-                                help=explain("Volatility"))
-            risk_cols[1].metric(f"Beta vs {INDEX_DISPLAY_NAMES[DEFAULT_BENCHMARK]}",
-                                f"{beta(port_returns, bench_returns):.2f}", help=explain("Beta"))
-            worst = min((max_drawdown(c) for c in close_by_symbol.values() if not c.empty),
-                        default=0.0)
-            risk_cols[2].metric("Worst single-name drawdown", f"{worst * 100:.1f}%",
-                                help=explain("Maximum drawdown"))
+            # WHY: on a cloud IP yfinance history can come back empty; the risk fns then return
+            # 0.0, which would read as a real "0.00 beta / 0.0% volatility". Say "no history"
+            # instead of showing a fabricated zero (real-money display guardrail).
+            if port_returns.empty or not any(not c.empty for c in close_by_symbol.values()):
+                st.warning("Couldn't fetch enough 1-year price history to compute risk right now. "
+                           "Try again later.")
+            else:
+                risk_cols = st.columns(3)
+                risk_cols[0].metric("Annualized volatility",
+                                    f"{annualized_volatility(port_returns) * 100:.1f}%",
+                                    help=explain("Volatility"))
+                risk_cols[1].metric(f"Beta vs {INDEX_DISPLAY_NAMES[DEFAULT_BENCHMARK]}",
+                                    f"{beta(port_returns, bench_returns):.2f}", help=explain("Beta"))
+                worst = min((max_drawdown(c) for c in close_by_symbol.values() if not c.empty),
+                            default=0.0)
+                risk_cols[2].metric("Worst single-name drawdown", f"{worst * 100:.1f}%",
+                                    help=explain("Maximum drawdown"))
 
     with st.expander("Market context"):
         ctx_cols = st.columns(2)
@@ -828,11 +835,13 @@ with tab_invest:
     # IP, full cross-verification); running it here from the datacenter IP would come back thin and
     # overwrite the good picks. So the app just pulls the latest the Mac computed.
     if _sheet_configured() and st.button("🔄 Reload latest picks"):
+        # WHY: only rerun on success; an unconditional st.rerun() after st.error() immediately
+        # wipes the error, so a failed reload would look like the button did nothing.
         try:
             st.session_state.today_rows = get_gateway().read("Today")
+            st.rerun()
         except Exception as exc:
-            st.error(f"Couldn't reload: {exc}")
-        st.rerun()
+            st.error(f"Couldn't reload right now: {exc}")
     st.divider()
 
     st.caption("Given an amount, this spreads it across your APPROVED names that the evidence "

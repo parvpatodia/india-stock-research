@@ -9,6 +9,7 @@ downgrades any "fact" that lacks a primary source. _assemble_result is pure and 
 from __future__ import annotations
 
 import json
+import re
 
 from ..llm.client import LLMClient, LiteLLMClient
 from ..sources.registry import SourceRegistry
@@ -16,6 +17,7 @@ from .claims import (
     ESTIMATE,
     FACT,
     OPINION,
+    UNVERIFIED,
     Claim,
     ResearchResult,
     build_citation,
@@ -24,6 +26,27 @@ from .claims import (
 from .grounding import DocumentStore, RetrievedChunk
 
 _ALLOWED_KINDS = {FACT, OPINION, ESTIMATE}
+
+_NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
+
+
+def numbers_grounded(text: str, source_texts: list[str]) -> bool:
+    """True unless the claim states a material number that does not appear, digit-for-digit, in
+    any cited source. WHY (real money): the model can cite the right chunk yet misquote the
+    figure, and citation-tier alone can't catch that; a 'fact' whose number is absent from its
+    sources must not render with a verified tick — that wrong-figure-stated-confidently case is
+    the exact failure this app exists to prevent. The bias is deliberately conservative: a
+    wrongly-flagged true fact merely shows as 'reported, not independently verified' (safe),
+    never a false green tick. Numbers under 3 digits (years, small counts, '5%') are skipped:
+    too common to ground meaningfully and not the high-stakes misquote case. Digit-normalized
+    exact match (not substring), so '957' does not spuriously ground against '9575'."""
+    def digits(token: str) -> str:
+        return re.sub(r"\D", "", token)
+    material = [d for d in (digits(m) for m in _NUMBER.findall(text)) if len(d) >= 3]
+    if not material:
+        return True
+    source_digits = {digits(m) for t in source_texts for m in _NUMBER.findall(t or "")}
+    return all(d in source_digits for d in material)
 
 _SYSTEM = """You answer questions about Indian investments for a non-expert reader, using \
 ONLY the SOURCES provided. The reader uses your answer with real money, so accuracy and \
@@ -124,6 +147,7 @@ def _assemble_result(question: str, payload: dict, retrieved: list[RetrievedChun
         if not isinstance(cids, list):
             cids = []
         citations = []
+        cited_texts: list[str] = []
         for cid in cids:
             chunk = chunk_by_id.get(cid)
             if chunk is None:
@@ -131,6 +155,7 @@ def _assemble_result(question: str, payload: dict, retrieved: list[RetrievedChun
             citation = build_citation(chunk.source_id, chunk.chunk_id, registry, as_of)
             if citation is not None:
                 citations.append(citation)
+                cited_texts.append(chunk.text)
         # WHY: no chunk, no claim. A claim with no resolved citation is unsourced and must
         # never display (not even as opinion), so it is dropped entirely.
         if not citations:
@@ -138,6 +163,10 @@ def _assemble_result(question: str, payload: dict, retrieved: list[RetrievedChun
         kind = str(raw_claim.get("kind", OPINION)).lower()
         if kind not in _ALLOWED_KINDS:
             kind = OPINION
+        # WHY: a fact whose number is not actually in its cited source is a misquote; downgrade
+        # it so it can never show as a verified fact (real-money guardrail, not just tier).
+        if kind == FACT and not numbers_grounded(text, cited_texts):
+            kind = UNVERIFIED
         claims.append(Claim(text=text, citations=tuple(citations), kind=kind))
 
     if not claims:

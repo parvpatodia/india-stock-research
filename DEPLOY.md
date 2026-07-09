@@ -38,7 +38,20 @@ Alternatives (only if you skip the Apps Script bridge):
 2. Advanced settings → Python 3.12.
 3. Paste secrets (see `.streamlit/secrets.toml.example`): `app_password`, `LLM_MODEL`,
    `LLM_API_KEY`, and the `[gcp_service_account]` block + `sheet_key`.
-4. Deploy. Open on the iPhone in Safari → Share → **Add to Home Screen** for an app icon.
+4. **Set sharing to Public.** Manage app → Settings → Sharing → "Anyone with the link can view".
+   REQUIRED for the parents: a Private app forces a Streamlit/Google login wall (`/-/auth/app`)
+   BEFORE our own gate, and the parents' Google accounts aren't authorized viewers. "Public" here
+   only removes that Streamlit login wall — the app is still protected by our `app_password` and
+   the `?key=` token below, so a stranger with just the base URL still can't get in.
+5. Deploy. Open on the iPhone in Safari → Share → **Add to Home Screen** for an app icon.
+
+### 4a. The parents' one-tap link (no password typing)
+Give the parents this URL (not the bare one) so tapping their Home-Screen icon auto-signs-in:
+`https://<your-app>.streamlit.app/?key=<APP_PASSWORD>` — replace `<APP_PASSWORD>` with the exact
+`app_password` you set in secrets. The `?key=` is checked in `_check_password()` (app.py): a match
+signs them in with no prompt; the bare URL (no key) still shows the password box, so the base link
+alone is useless to a stranger. Have them Add-to-Home-Screen from the `?key=` URL so the token is
+baked into the bookmark.
 
 ## 4b. Daily suggestions engine (24/7, free)
 A GitHub Actions cron (`.github/workflows/daily.yml`) runs the research every morning, ranks

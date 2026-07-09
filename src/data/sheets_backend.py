@@ -186,37 +186,60 @@ class AppsScriptGateway(SheetGateway):
     published CSV). getter/poster are injectable so the mapping is tested offline; the defaults use
     `requests` (installed via gspread) which follows the Apps Script 302 redirect transparently."""
 
-    def __init__(self, url: str, token: str, getter=None, poster=None):
+    def __init__(self, url: str, token: str, getter=None, poster=None,
+                 attempts: int = 3, backoff: float = 2.0, sleeper=None):
         self._url = url
         self._token = token
         self._getter = getter or self._http_get
         self._poster = poster or self._http_post
+        # WHY (regression 2026-07-09): Apps Script web apps cold-start slowly and the daily 09:49
+        # run died on one 20s ReadTimeout. This same bridge serves the parents' picks read, so a
+        # transient blip must retry with backoff, not be fatal. connect 10s / read 45s covers a
+        # cold start that also does Sheet I/O.
+        self._attempts = max(1, attempts)
+        self._backoff = backoff
+        import time
+        self._sleep = sleeper or time.sleep
 
     def _http_get(self, params: dict):
         import requests
-        resp = requests.get(self._url, params=params, timeout=20)  # token already in params
+        resp = requests.get(self._url, params=params, timeout=(10, 45))  # token already in params
         resp.raise_for_status()
         return resp.json()
 
     def _http_post(self, payload: dict):
         import requests
-        resp = requests.post(self._url, json=payload, timeout=20)  # token already in payload
+        resp = requests.post(self._url, json=payload, timeout=(10, 45))  # token already in payload
         resp.raise_for_status()
         return resp.json()
 
+    def _retry(self, fn, arg):
+        # WHY: reads and our writes are idempotent (write clears+overwrites a whole tab; save_report
+        # upserts). The only non-idempotent op is the append-only Log, where a rare duplicate audit
+        # line on a retried-after-success timeout is harmless and preferable to losing the entry.
+        last: Exception | None = None
+        for i in range(self._attempts):
+            try:
+                return fn(arg)
+            except Exception as exc:  # transport-level: timeout, connection reset, 5xx, cold start
+                last = exc
+                if i < self._attempts - 1:
+                    self._sleep(self._backoff * (i + 1))
+        raise last  # type: ignore[misc]
+
     def read(self, tab: str) -> list[dict]:
-        out = self._getter({"action": "read", "tab": tab, "token": self._token})
+        out = self._retry(self._getter, {"action": "read", "tab": tab, "token": self._token})
         if isinstance(out, list):
             return out
         return out.get("rows", []) if isinstance(out, dict) else []
 
     def write(self, tab: str, header: list[str], rows: list[dict]) -> None:
-        self._poster({"action": "write", "tab": tab, "header": header, "rows": rows,
-                      "token": self._token})
+        self._retry(self._poster, {"action": "write", "tab": tab, "header": header, "rows": rows,
+                                   "token": self._token})
 
     def append(self, tab: str, header: list[str], row: dict) -> None:
-        self._poster({"action": "append", "tab": tab, "header": header, "row": row,
-                      "token": self._token})
+        self._retry(self._poster, {"action": "append", "tab": tab, "header": header, "row": row,
+                                   "token": self._token})
 
 
 def build_gateway(creds_dict: dict | None, sheet_key: str | None,

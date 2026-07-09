@@ -111,6 +111,16 @@ def test_ar_source_no_llm_returns_all_none():
     assert all(v is None for v in src.figures("X").values())
 
 
+def test_ar_source_abstains_when_text_provider_raises():
+    # WHY (regression 2026-07-09): a report PDF that times out / 403s / won't parse must abstain,
+    # not crash the primary "Research" button with a page-wide stack trace.
+    def boom(_symbol):
+        raise TimeoutError("PDF download timed out")
+    src = AnnualReportFigureSource(boom, client=FakeClient("{}", available=True))
+    assert all(v is None for v in src.figures("X").values())   # no exception, no figures
+    assert src.figures_by_year("X") == {}
+
+
 def test_ar_source_extracts_and_converts():
     resp = json.dumps({"net_profit": {"value": 80775, "unit": "crore",
                                       "quote": "Profit for the year was 80,775 crore"}})

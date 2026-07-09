@@ -105,6 +105,36 @@ def test_apps_script_gateway_maps_actions_to_transport():
     assert set(tokens_seen) == {"sekret"}          # every call carried the shared token
 
 
+def test_apps_script_retries_transient_failure_then_succeeds():
+    # WHY (regression 2026-07-09): Apps Script web apps cold-start slowly; the 09:49 daily run
+    # died on a single 20s ReadTimeout. A transient blip must be retried, not fatal.
+    calls = {"n": 0}
+    slept = []
+
+    def flaky_getter(params):
+        calls["n"] += 1
+        if calls["n"] < 3:                       # fail twice, succeed on the 3rd
+            raise TimeoutError("cold start")
+        return [{"symbol": "BLS"}]
+
+    gw = AppsScriptGateway("https://script/exec", "sekret", getter=flaky_getter,
+                           attempts=3, backoff=0.0, sleeper=slept.append)
+    assert gw.read("Today") == [{"symbol": "BLS"}]
+    assert calls["n"] == 3
+    assert len(slept) == 2                        # backed off before each retry, not after success
+
+
+def test_apps_script_gives_up_after_attempts_and_raises():
+    def always_fails(params):
+        raise TimeoutError("still cold")
+
+    gw = AppsScriptGateway("https://script/exec", "sekret", getter=always_fails,
+                           attempts=3, backoff=0.0, sleeper=lambda s: None)
+    import pytest
+    with pytest.raises(TimeoutError):
+        gw.read("Today")
+
+
 def test_local_json_gateway_persists_across_instances(tmp_path):
     path = tmp_path / "store.json"
     gw1 = LocalJsonGateway(path)

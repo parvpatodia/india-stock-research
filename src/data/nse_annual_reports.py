@@ -101,5 +101,11 @@ def fetch_annual_report_text(symbol: str, url: str = "",
         target = resolver.latest_report_url(symbol.strip().upper()) or ""
     if not target:
         return None
-    docs = adapter.fetch(target)
+    # WHY (real money): the docstring promises None on failure so the caller abstains, but the
+    # fetch (urlopen + pypdf) can raise on a timeout / 403 / unparseable PDF. Honor the contract
+    # so the "Read the annual report" button degrades to "couldn't fetch", never a stack trace.
+    try:
+        docs = adapter.fetch(target)
+    except Exception:
+        return None
     return docs[0].text if docs else None

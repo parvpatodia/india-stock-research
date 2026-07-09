@@ -194,7 +194,13 @@ class AnnualReportFigureSource(FigureSource):
         if symbol in self._cache:
             return self._cache[symbol]
         result: tuple[dict, int | None] = ({}, None)
-        text = self.text_provider(symbol)
+        # WHY (real money): a report PDF that times out, 403s, or won't parse must make this source
+        # ABSTAIN (return no figures), never crash the caller. This is the primary "Research"
+        # action; an unguarded fetch here surfaced a full-page stack trace to the parents.
+        try:
+            text = self.text_provider(symbol)
+        except Exception:
+            text = None
         if text and text.strip() and self.client.available:
             store = DocumentStore(words_per_chunk=180, overlap=30)
             store.add_document("annual_report", text)
