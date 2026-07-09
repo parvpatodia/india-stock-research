@@ -75,14 +75,16 @@ def picks_to_rows(picks, today: str) -> list[dict]:
 
 def refresh_today_if_stale(gateway, symbols: list[str], value_by_symbol: dict[str, float],
                            total_value: float, cap_pct: float, ntfy_topic: str = "",
-                           today: str | None = None, researcher=research_and_rank,
+                           force: bool = False, today: str | None = None,
+                           researcher=research_and_rank,
                            pusher=push_ntfy) -> tuple[list[dict], bool]:
-    """Return (today_rows, refreshed). If the Sheet's Today tab is already dated today, return it
-    unchanged (fast). Otherwise research, write the Today tab, push ntfy, and return the new rows.
+    """Return (today_rows, refreshed). If the Sheet's Today tab is already dated today (and not
+    force), return it unchanged (fast). Otherwise research, write the Today tab, push ntfy, and
+    return the new rows. force=True always recomputes (the manual 'Refresh' button).
     researcher/pusher are injectable so this is tested without network."""
     today = today or datetime.date.today().isoformat()
     existing = gateway.read("Today")
-    if existing and str(existing[0].get("date")) == today:
+    if not force and existing and str(existing[0].get("date")) == today:
         return existing, False
     picks = researcher(symbols, value_by_symbol, total_value, cap_pct)
     rows = picks_to_rows(picks, today)

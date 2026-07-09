@@ -42,6 +42,20 @@ def test_refresh_researches_writes_and_pushes_when_stale():
     assert pushed == [("mytopic", ["BLS"])]                # pushed
 
 
+def test_refresh_force_recomputes_even_when_fresh():
+    gw = InMemoryGateway({"Today": [
+        {"date": "2026-07-08", "symbol": "OLD", "stance": "neutral", "score": "1", "reason": "x"}]})
+
+    def fake_researcher(symbols, value_by, total, cap):
+        return [RankedPick("NEW", Stance.FAVORABLE, 6.0, "fresh")]
+
+    rows, refreshed = refresh_today_if_stale(gw, ["NEW"], {}, 100.0, 0.25, today="2026-07-08",
+                                             force=True, researcher=fake_researcher,
+                                             pusher=lambda t, p: None)
+    assert refreshed is True                                   # force overrides the freshness check
+    assert rows[0]["symbol"] == "NEW"
+
+
 def test_candidate_from_report_maps_signals():
     v = Verdict(ValuationTier.CHEAP, QualityTier.STRONG, Leaning.CONSTRUCTIVE, Confidence.MEDIUM)
     rep = Report(company="BLS", verdict=v,

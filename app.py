@@ -779,28 +779,35 @@ with tab_research:
 with tab_invest:
     st.subheader("Invest a lump sum")
 
-    # Today's picks: refreshed once per day from THIS app (Streamlit Cloud can reach Screener;
-    # a scheduler's datacenter IP can't). First visit each day computes; then it's cached in the
-    # Sheet. Gated on a configured Sheet backend so the smoke test / local dev don't research.
-    if _sheet_configured() and not st.session_state.get("today_done"):
-        with st.spinner("Preparing today's picks (first visit today, ~1-2 min)…"):
-            try:
-                rows, _ = refresh_today_if_stale(
-                    get_gateway(), list(symbols), value_by_symbol, analysis.total_value,
-                    cap_pct, _secret("NTFY_TOPIC", "") or "")
-                st.session_state.today_rows = rows
-            except Exception:
-                st.session_state.today_rows = []
-        st.session_state.today_done = True
-    today_rows = st.session_state.get("today_rows", [])
+    # Today's picks: shown instantly from the Sheet; refreshed on demand by the button below.
+    # The refresh runs from THIS app (Streamlit Cloud can reach Screener; a scheduler's datacenter
+    # IP can't), so it's full cross-verification. Reading the tab is one fast call.
+    if "today_rows" not in st.session_state:
+        try:
+            st.session_state.today_rows = get_gateway().read("Today")
+        except Exception:
+            st.session_state.today_rows = []
+    today_rows = st.session_state.today_rows
     if today_rows:
-        st.markdown("**📌 Today's long-term picks** (refreshed daily when you open the app)")
+        st.markdown("**📌 Today's long-term picks**")
         for r in today_rows[:6]:
             st.markdown(f"- **{r.get('symbol', '')}** ({r.get('stance', '')}) — "
                         f"{r.get('reason', '')}")
-        st.caption(f"As of {today_rows[0].get('date', '')}. Researched, cross-verified, and within "
-                   "your per-stock cap. Not a buy order.")
-        st.divider()
+        st.caption(f"As of {today_rows[0].get('date', '')}. Cross-verified and within your "
+                   "per-stock cap. Not a buy order.")
+    else:
+        st.caption("No picks yet — tap Refresh to research your holdings.")
+    if _sheet_configured() and st.button("🔄 Refresh today's picks"):
+        with st.spinner("Researching your holdings (~1-2 min)…"):
+            try:
+                rows, _ = refresh_today_if_stale(
+                    get_gateway(), list(symbols), value_by_symbol, analysis.total_value,
+                    cap_pct, _secret("NTFY_TOPIC", "") or "", force=True)
+                st.session_state.today_rows = rows
+            except Exception as exc:
+                st.error(f"Couldn't refresh: {exc}")
+        st.rerun()
+    st.divider()
 
     st.caption("Given an amount, this spreads it across your APPROVED names that the evidence "
                "supports, each kept under your per-stock cap. Not a buy order, you decide.")
