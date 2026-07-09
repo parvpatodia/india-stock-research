@@ -247,11 +247,19 @@ def _bridge_secrets_to_env() -> None:
 
 def _check_password() -> bool:
     """Shared-password gate. Open when no password is configured (local dev); required once a
-    password is set in secrets (deployed). Data is only fetched after this returns True."""
+    password is set in secrets (deployed). Data is only fetched after this returns True.
+
+    Two ways in so non-technical users never retype the password: a `?key=<password>` in the URL
+    (their Home-Screen bookmark carries it -> tapping the icon auto-signs-in), or typing it once.
+    The bare URL (no key) still shows the prompt, so a stranger with only the base link is blocked.
+    """
     expected = _secret("app_password")
     if not expected:
         return True
     if st.session_state.get("_authed"):
+        return True
+    if str(st.query_params.get("key", "")) == str(expected):   # bookmarked magic-link auto-login
+        st.session_state["_authed"] = True
         return True
     st.title("🔒 India Equity Research")
     st.caption("Enter the password to continue.")
