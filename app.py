@@ -243,6 +243,11 @@ def fetch_cash_conversion_trend(symbol: str):
     return get_screener_source().cash_conversion_cycle_trend(symbol)
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_other_income_share(symbol: str):
+    return get_screener_source().other_income_share(symbol)
+
+
 @st.cache_data(ttl=300, show_spinner="Loading holdings from your Sheet…")
 def fetch_published_holdings(url: str):
     """Read holdings from a Google Sheet 'Publish to web -> CSV' link. Keyless: the link is
@@ -879,6 +884,19 @@ with tab_research:
             st.caption("This ratio is published only by Screener (not yfinance), so it cannot "
                        "cross-verify the way the figures above do. Context, not a fact, and "
                        "never a buy/sell signal on its own.")
+
+        # other income share of profit before tax (Screener only, single-source; a quality-of-
+        # earnings signal -- profit propped up by non-operating income is less repeatable than
+        # profit driven by the core business)
+        with st.expander("Other income share of profit (context, not cross-verified)"):
+            oi_share = fetch_other_income_share(sym)
+            if oi_share:
+                st.markdown(f"- {oi_share}")
+            else:
+                st.caption("No other-income data found (or the page was unreachable).")
+            st.caption("This ratio is computed from Screener's own P&L (not yfinance), so it "
+                       "cannot cross-verify the way the figures above do. Context, not a fact, "
+                       "and never a buy/sell signal on its own.")
 
         # grounded annual-report reading (cited to the filing; abstains if it can't read it)
         with st.expander("What the annual report says (read by AI, cited to the filing)"):

@@ -36,3 +36,10 @@ def test_screener_source_and_cash_conversion_trend_ttls_stay_coupled():
     # bug if its ttl is ever changed without updating get_screener_source's to match.
     app = _import_app_with_clean_env()
     assert app.get_screener_source._info.ttl == app.fetch_cash_conversion_trend._info.ttl
+
+
+def test_screener_source_and_other_income_share_ttls_stay_coupled():
+    # WHY: fetch_other_income_share shares the same ScreenerFigureSource singleton and internal-
+    # memoization shape as the other two Screener-derived cached functions above.
+    app = _import_app_with_clean_env()
+    assert app.get_screener_source._info.ttl == app.fetch_other_income_share._info.ttl

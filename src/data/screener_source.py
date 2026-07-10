@@ -323,6 +323,55 @@ def cash_conversion_cycle_trend_point(series: dict[int, float]) -> str | None:
             f"to {last_val:.0f} days (FY{last_year}); {read} (not cross-verified, Screener only).")
 
 
+# Above this % a year's other-income share of profit before tax reads as worth checking, not
+# routine. Calibrated against live Screener data across 3 real, different-sector companies:
+# Reliance (12-40%, a large treasury/investments book keeps its normal baseline higher), TCS
+# (4-14%), HUL (2-27%, its own recent spike). 25 sits above every company's normal baseline
+# while still catching HUL's and Reliance's real outlier years.
+_OTHER_INCOME_NOTABLE_PCT = 25.0
+
+
+def parse_other_income_share_series(html: str) -> dict[int, float]:
+    """{fiscal_year: pct} = Other Income / Profit before tax * 100, computed entirely from
+    Screener's own P&L table (both numerator and denominator from the SAME source -- not a
+    cross-source comparison, so this stays single-source by construction, like the cash
+    conversion cycle). Years with non-positive profit before tax are skipped (the ratio is not
+    meaningful for a loss-making year).
+
+    WHY (quality of earnings): a large share of profit coming from non-operating "other income"
+    (investment gains, interest income, one-off items) rather than the core Operating Profit is
+    a classic CA red flag -- profit driven by treasury gains or one-off items is less repeatable
+    than profit driven by the actual business. Cross-verifying "Other Income" itself across
+    yfinance and Screener was tried and abandoned: live-verified Reliance FY2024, Screener's
+    Other Income (~15,792cr) is ~5x yfinance's narrower "Other Non Operating Income Expenses"
+    concept (~3,302cr) -- a real methodology difference, not a parsing bug -- so this is computed
+    from Screener's own internally-consistent P&L alone, never blended across sources.
+    """
+    pnl, _, _ = _find_tables(html)
+    oi = _annual_series(pnl, "other income")
+    pbt = _annual_series(pnl, "profit before tax")
+    return {y: (oi[y] / pbt[y] * 100.0) for y in oi if y in pbt and pbt[y] > 0}
+
+
+def other_income_share_point(series: dict[int, float]) -> str | None:
+    """A single, self-disclosing plain-language sentence on the LATEST fiscal year's other-income
+    share of profit before tax, or None if unavailable. Explicitly states 'not cross-verified,
+    Screener only' inline so the caveat travels with the text wherever it is shown; context for
+    the reader, never a buy/sell signal."""
+    if not series:
+        return None
+    year = max(series)
+    pct = series[year]
+    if pct >= _OTHER_INCOME_NOTABLE_PCT:
+        return (f"{pct:.0f}% of FY{year}'s profit before tax came from non-operating \"other "
+                "income\" (investment gains, interest income, or one-off items) rather than the "
+                "core business -- worth checking how repeatable that income is (not "
+                "cross-verified, Screener only).")
+    return (f"{pct:.0f}% of FY{year}'s profit before tax came from non-operating \"other "
+            "income\"; the bulk of profit is driven by the core operating business (not "
+            "cross-verified, Screener only).")
+
+
 class ScreenerFigureSource(FigureSource):
     source_id = "screener"
 
@@ -401,3 +450,12 @@ class ScreenerFigureSource(FigureSource):
         if not html:
             return None
         return cash_conversion_cycle_trend_point(parse_cash_conversion_cycle_series(html))
+
+    def other_income_share(self, symbol: str) -> str | None:
+        """A single-source (Screener only), self-disclosing other-income-share-of-profit
+        sentence for `symbol`, or None if unavailable. Not part of the FigureSource interface (it
+        is not a cross-verifiable numeric figure); callers opt in explicitly."""
+        html = self._fetch_cached(symbol)
+        if not html:
+            return None
+        return other_income_share_point(parse_other_income_share_series(html))
