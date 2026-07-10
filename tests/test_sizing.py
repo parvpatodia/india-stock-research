@@ -122,6 +122,26 @@ def test_allocation_reports_uninvested_when_caps_bind():
     assert plan.invested == 50.0
     assert plan.uninvested == 50.0
     assert any("per-stock cap" in n for n in plan.notes)
+    # WHY (honesty, found by adversarial review): "resulting book" is stale wording left over
+    # from the old self-referential design -- the cap here is measured against the TOTAL money
+    # considered (this ask + existing holdings), not the smaller book that actually ends up
+    # invested. Must not claim a basis the code no longer uses.
+    assert not any("resulting book" in n for n in plan.notes)
+
+
+def test_allocation_discloses_that_realized_concentration_runs_above_cap_pct_when_cash_remains():
+    # WHY (real money, honesty; found by adversarial review): the cap is measured against total
+    # money considered (pv + amount), not the smaller book that actually ends up invested. So
+    # when cash is left uninvested, each placed name is a BIGGER share of what's ACTUALLY invested
+    # than cap_pct -- e.g. here A gets 50 against a book of only 50 actually deployed (100%, not
+    # 25%). position_sizing()/over_cap, used elsewhere in this app, would immediately flag this
+    # exact position as over its cap. The plan must disclose this instead of silently implying
+    # the placed amount is safely under cap_pct of the investor's real resulting stock portfolio.
+    cands = [AllocationCandidate("A", Stance.FAVORABLE, 0.0)]
+    plan = suggest_allocation(100.0, cands, portfolio_value=100.0, cap_pct=0.25)
+    assert plan.uninvested > 0
+    joined = " ".join(plan.notes)
+    assert "actually invested" in joined.lower() or "actually deployed" in joined.lower()
 
 
 def test_allocation_never_exceeds_cap_of_total_money_considered():

@@ -200,7 +200,7 @@ def suggest_allocation(amount: float,
             placed.update({s: t for s, t in takes.items() if t > 1e-9})
         return [Allocation(c.symbol, placed[c.symbol], c.stance,
                            f"{c.stance.label.lower()}; spread evenly, kept under your "
-                           f"{cap_pct:.0%} per-stock cap")
+                           f"{cap_pct:.0%} per-stock cap of the total money you're considering")
                 for c in sorted(eligible, key=lambda c: (_STANCE_ORDER[c.stance], c.symbol))
                 if c.symbol in placed]
 
@@ -222,8 +222,23 @@ def suggest_allocation(amount: float,
                      "more research, or the evidence simply does not support adding right now.")
     elif remaining > 1.0:
         notes.append(f"₹{remaining:,.0f} could not be placed without pushing a name past your "
-                     f"{cap_pct:.0%} per-stock cap of the resulting book. Add more approved names, "
-                     "raise the cap, or leave the rest as cash; do not force it into one stock.")
+                     f"{cap_pct:.0%} per-stock cap of the ₹{base:,.0f} total you're weighing here "
+                     "(this amount plus what you already hold). Add more approved names, raise "
+                     "the cap, or leave the rest as cash; do not force it into one stock.")
+        # WHY (honesty, found by adversarial review): the cap above is measured against the TOTAL
+        # money considered, not the smaller book that actually ends up invested -- so while cash
+        # stays uninvested, each placed name is a BIGGER share of what's ACTUALLY invested so far
+        # than cap_pct (e.g. a lone pick can be the only holding, 100% of the actually-invested
+        # book, while still reading as "kept under a 25% cap" of the total money being weighed).
+        # Silently implying it is already under cap_pct of the real resulting stock portfolio
+        # would contradict this app's own position_sizing()/over_cap check the moment the trade
+        # is made. This settles back toward the cap as the rest gets invested over time.
+        if allocations:
+            notes.append(
+                f"Because ₹{remaining:,.0f} of this stays uninvested for now, each name above is "
+                f"a bigger share of what you've actually invested so far than {cap_pct:.0%} -- "
+                "the cap is measured against your total money considered, cash included, not "
+                "just today's trade. It settles toward the cap as the rest gets invested.")
 
     return AllocationPlan(amount=amount, allocations=tuple(allocations),
                           uninvested=max(remaining, 0.0), notes=tuple(notes))
