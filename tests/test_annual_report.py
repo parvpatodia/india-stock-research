@@ -83,6 +83,19 @@ def test_parse_null_value_is_none():
     assert parse_extraction(payload, AR_TEXT)["net_profit"] is None
 
 
+def test_parse_accepts_a_whole_number_value_serialized_as_a_json_float():
+    # WHY (adversarial-review finding): the extraction schema types "value" as a generic JSON
+    # "number", so a model can legitimately emit a whole-number figure as 80775.0 rather than
+    # 80775. str(80775.0) is "80775.0", which digit-strips to "807750" -- a spurious extra
+    # trailing zero that would never match the real figure's digits in the quote or the report,
+    # silently rejecting perfectly legitimate annual-report data (fails closed, so not a false
+    # "verified" fact, but it weakens this source's real contribution to cross-verification).
+    text = "Profit for the year was 80,775 crore, up from the prior year."
+    payload = {"net_profit": {"value": 80775.0, "unit": "crore",
+                              "quote": "Profit for the year was 80,775 crore"}}
+    assert parse_extraction(payload, text)["net_profit"] == 80775 * 1e7
+
+
 def test_numeric_grounding_accepts_real_number_with_bad_quote():
     # The number 80,775 IS in the report; the quote is paraphrased (as garbled PDF text causes).
     payload = {"net_profit": {"value": 80775, "unit": "crore", "quote": "paraphrased, not verbatim"}}

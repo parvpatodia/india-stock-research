@@ -138,7 +138,13 @@ def parse_extraction(payload: dict, source_text: str) -> dict[str, float | None]
         if value is None or scale is None:
             result[name] = None
             continue
-        value_digits = re.sub(r"\D", "", str(obj.get("value")))
+        # WHY: build the digit string from the PARSED value, not the raw JSON token -- the
+        # extraction schema types "value" as a generic JSON number, so a model can legitimately
+        # emit a whole-number figure as 80775.0 rather than 80775. str(80775.0) is "80775.0",
+        # which strips to "807750" (a spurious extra trailing zero from the ".0"), silently
+        # rejecting perfectly legitimate data. Normalizing a whole float via int() first avoids
+        # that without affecting genuinely fractional values.
+        value_digits = re.sub(r"\D", "", str(int(value) if value == int(value) else value))
         # WHY: match whole NUMBER TOKENS within the quote (same spoof-resistant approach as
         # report_num_digits above), not a substring of the quote's concatenated digits -- a
         # quote with multiple numbers could otherwise coincidentally spoof an unrelated value
