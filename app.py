@@ -614,6 +614,19 @@ with tab_portfolio:
                 st.warning("Couldn't fetch enough 1-year price history to compute risk right now. "
                            "Try again later.")
             else:
+                # WHY (honesty): portfolio_daily_returns renormalizes weights over only the
+                # symbols that returned usable 1-year history (by design, so a missing name
+                # isn't silently scored as zero return) -- but that means volatility/beta can be
+                # driven by a small subset while still being LABELED as "your portfolio's" risk.
+                # Demonstrated: 2 of 3 equally-weighted positions failing to fetch history yields
+                # a volatility reading 100% derived from the one remaining name. Name the actual
+                # coverage so a thin sample never reads as a full-book risk assessment.
+                n_with_history = sum(1 for c in close_by_symbol.values() if not c.empty)
+                if n_with_history < len(analysis.positions):
+                    st.caption(f"Based on the {n_with_history} of {len(analysis.positions)} "
+                               "priced holdings that had usable 1-year history; the rest are "
+                               "excluded here (weights renormalized over what's available), so "
+                               "this may not reflect your full portfolio's risk.")
                 risk_cols = st.columns(3)
                 risk_cols[0].metric("Annualized volatility",
                                     f"{annualized_volatility(port_returns) * 100:.1f}%",
