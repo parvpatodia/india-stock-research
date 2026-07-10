@@ -43,12 +43,25 @@ def test_cash_conversion_quality_flags_cumulative_negative_ocf():
     assert "negative" in p.lower() and "red flag" in p.lower()
 
 
-def test_cash_conversion_quality_needs_three_years_and_positive_cumulative_profit():
+def test_cash_conversion_quality_needs_three_profitable_years():
     ocf = {2023: 40 * CR, 2024: 50 * CR}
     profit = {2023: 100 * CR, 2024: 110 * CR}
     assert cash_conversion_quality_point(ocf, profit) is None            # only 2 common years
-    loss = {2022: -100 * CR, 2023: -90 * CR, 2024: -80 * CR}             # cumulative loss period
+    loss = {2022: -100 * CR, 2023: -90 * CR, 2024: -80 * CR}             # loss-making period
     assert cash_conversion_quality_point({2022: 5 * CR, 2023: 5 * CR, 2024: 5 * CR}, loss) is None
+
+
+def test_cash_conversion_quality_abstains_when_any_year_is_loss_making():
+    # WHY (real money, HIGH severity; found by adversarial review): the cumulative OCF-to-profit
+    # ratio is only meaningful over a CONSISTENTLY profitable period. A single loss year netting
+    # against profit years can shrink cumulative profit to a near-zero residual, blowing the ratio
+    # up into a nonsensical, falsely reassuring "2700% -- well backed by real cash" verdict for a
+    # company whose earnings quality is actually murky (a real risk for cyclicals: steel,
+    # commodities). Abstain when any year in the window is a loss; the single-year earnings-quality
+    # point and the earnings-volatility caveat still cover such a period.
+    ocf = {2022: 45 * CR, 2023: 45 * CR, 2024: 45 * CR}         # cum 135
+    profit = {2022: -100 * CR, 2023: 50 * CR, 2024: 55 * CR}    # cum +5 -> near-zero denominator
+    assert cash_conversion_quality_point(ocf, profit) is None
 
 
 def test_leverage_trend_flags_a_rising_debt_to_equity_ratio():

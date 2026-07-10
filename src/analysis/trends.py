@@ -75,15 +75,24 @@ _CUM_OCF_WEAK = 0.50
 def cash_conversion_quality_point(ocf_series: dict[int, float],
                                   profit_series: dict[int, float]) -> str | None:
     """Multi-year quality-of-earnings check: cumulative operating cash flow vs cumulative net
-    profit across the years where BOTH cross-verified. None if fewer than 3 common years or the
-    cumulative profit isn't positive (the ratio isn't meaningful through a loss-making period)."""
+    profit across the years where BOTH cross-verified. None unless there are >=3 such years and
+    EVERY one is profitable.
+
+    WHY require every year profitable, not just a positive cumulative (real money, HIGH severity;
+    found by adversarial review): this ratio is a quality-of-earnings read premised on a
+    consistently profitable period. A single loss year netting against profit years can shrink
+    cumulative profit to a near-zero residual, blowing the ratio up into a nonsensical, falsely
+    reassuring verdict (e.g. profit -100/+50/+55 cr -> cumulative +5 cr, OCF 135 cr -> "2700% --
+    well backed by real cash") for a company whose earnings quality is actually murky -- a real
+    risk for cyclicals (steel, commodities). Such a period is better served by the single-year
+    earnings-quality point and the earnings-volatility caveat, so this abstains."""
     years = sorted(set(ocf_series) & set(profit_series))
     if len(years) < 3:
         return None
-    cum_ocf = sum(ocf_series[y] for y in years)
-    cum_profit = sum(profit_series[y] for y in years)
-    if cum_profit <= 0:
+    if any(profit_series[y] <= 0 for y in years):
         return None
+    cum_ocf = sum(ocf_series[y] for y in years)
+    cum_profit = sum(profit_series[y] for y in years)   # > 0: every year is profitable
     ratio = cum_ocf / cum_profit
     n = len(years)
     if ratio < 0:
