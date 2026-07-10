@@ -42,16 +42,57 @@ def enrich_sectors(holdings: list[Holding],
     return out
 
 
+def _merge_lots(usable: list[tuple[Holding, float]]) -> list[tuple[Holding, float]]:
+    """Consolidate multiple lots of the same symbol into one Holding (summed quantity,
+    quantity-weighted average cost), so weight/concentration math treats repeat purchases of
+    the same stock as ONE position, not one per lot.
+
+    WHY (real money, HIGH severity): a stock bought in more than one lot (periodic buying, or a
+    broker export that lists each purchase as its own row) is a very common real scenario. Left
+    unmerged, top_holding_weight and HHI are computed per LOT, not per symbol -- live-verified:
+    two Reliance lots at 37% each understated top_holding_weight as 37% instead of the true 74%,
+    and HHI as 0.34 instead of the true ~0.62, silently weakening the over-concentration warning
+    for exactly the user who bought more of a stock they already hold a lot of. Order of first
+    appearance is preserved; a non-'Unknown' sector wins over 'Unknown' if lots disagree.
+    """
+    qty_by_symbol: dict[str, float] = {}
+    cost_sum_by_symbol: dict[str, float] = {}
+    sector_by_symbol: dict[str, str] = {}
+    price_by_symbol: dict[str, float] = {}
+    order: list[str] = []
+    for h, p in usable:
+        if h.symbol not in qty_by_symbol:
+            order.append(h.symbol)
+            qty_by_symbol[h.symbol] = 0.0
+            cost_sum_by_symbol[h.symbol] = 0.0
+            sector_by_symbol[h.symbol] = h.sector
+        elif sector_by_symbol[h.symbol] == "Unknown" and h.sector != "Unknown":
+            sector_by_symbol[h.symbol] = h.sector
+        qty_by_symbol[h.symbol] += h.quantity
+        cost_sum_by_symbol[h.symbol] += h.quantity * h.avg_cost
+        price_by_symbol[h.symbol] = p
+    return [
+        (Holding(symbol=sym, quantity=qty_by_symbol[sym],
+                avg_cost=(cost_sum_by_symbol[sym] / qty_by_symbol[sym]
+                         if qty_by_symbol[sym] else 0.0),
+                sector=sector_by_symbol[sym]),
+         price_by_symbol[sym])
+        for sym in order
+    ]
+
+
 def analyze_portfolio(holdings: list[Holding],
                       prices: dict[str, float]) -> PortfolioAnalysis:
     """Price the book and roll up. prices maps symbol -> current price.
 
     A symbol with no price (None or missing) is reported in missing_symbols and excluded
-    from every total, so it cannot distort value, P&L, or weights.
+    from every total, so it cannot distort value, P&L, or weights. Multiple lots of the same
+    symbol are merged into one position before weights/concentration are computed (see
+    _merge_lots).
     """
     priced = [(h, prices.get(h.symbol)) for h in holdings]
-    usable = [(h, p) for h, p in priced if p is not None]
-    missing = [h.symbol for h, p in priced if p is None]
+    usable = _merge_lots([(h, p) for h, p in priced if p is not None])
+    missing = list(dict.fromkeys(h.symbol for h, p in priced if p is None))
 
     total_value = sum(h.quantity * p for h, p in usable)
     total_invested = sum(h.quantity * h.avg_cost for h, p in usable)

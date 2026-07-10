@@ -37,6 +37,43 @@ def test_concentration_metrics():
     assert abs(a.top_holding_weight - 0.6) < 1e-9
 
 
+def test_multiple_lots_of_the_same_stock_merge_into_one_position():
+    # WHY (real money, HIGH severity): a stock bought in more than one lot (a very common real
+    # scenario -- periodic/SIP-style buying, or a broker export that lists each purchase as its
+    # own row) must be treated as ONE position for concentration purposes. Before this fix, two
+    # RELIANCE lots (10 @ 2000, 10 @ 2400) each showed as their OWN 37% position instead of one
+    # combined 74% position -- top_holding_weight reported 37% (the largest SINGLE lot) instead
+    # of the true 74%, so the Concentration tab's over-concentration warning could silently fail
+    # to trigger for the exact user this feature exists to protect: someone who bought more of a
+    # stock they already hold a lot of.
+    holdings = [
+        Holding("RELIANCE", 10, 2000.0, "Energy"),
+        Holding("RELIANCE", 10, 2400.0, "Energy"),
+        Holding("TCS", 5, 3000.0, "IT"),
+    ]
+    prices = {"RELIANCE": 2500.0, "TCS": 3500.0}
+    a = analyze_portfolio(holdings, prices)
+
+    assert len(a.positions) == 2                      # merged into one RELIANCE position
+    reliance = next(p for p in a.positions if p.symbol == "RELIANCE")
+    assert reliance.quantity == 20
+    assert abs(reliance.avg_cost - 2200.0) < 1e-9      # quantity-weighted average cost
+    assert abs(reliance.weight - (20 * 2500.0) / a.total_value) < 1e-9
+    assert abs(a.top_holding_weight - reliance.weight) < 1e-9  # the TRUE merged weight, not 37%
+
+
+def test_multiple_lots_weighted_average_cost_with_uneven_quantities():
+    holdings = [Holding("A", 10, 100.0, "Tech"), Holding("A", 30, 200.0, "Tech")]
+    prices = {"A": 250.0}
+    a = analyze_portfolio(holdings, prices)
+    assert len(a.positions) == 1
+    pos = a.positions[0]
+    assert pos.quantity == 40
+    # WHY: weighted by quantity, not a plain average of the two costs (would wrongly read 150).
+    assert abs(pos.avg_cost - ((10 * 100.0 + 30 * 200.0) / 40)) < 1e-9
+    assert abs(pos.invested - (10 * 100.0 + 30 * 200.0)) < 1e-9
+
+
 def test_sector_weights_aggregate():
     holdings = [Holding("A", 10, 100, "Tech"), Holding("B", 10, 100, "Tech"),
                 Holding("C", 10, 100, "Bank")]
@@ -53,6 +90,14 @@ def test_missing_price_is_excluded_not_dropped_silently():
     assert a.missing_symbols == ["B"]
     assert a.total_value == 1200.0
     assert len(a.positions) == 1
+
+
+def test_missing_price_symbol_listed_once_even_with_multiple_unpriced_lots():
+    holdings = [Holding("A", 10, 100, "Tech"), Holding("B", 5, 100, "Bank"),
+                Holding("B", 5, 110, "Bank")]
+    prices = {"A": 120.0}  # B has no price, in either lot
+    a = analyze_portfolio(holdings, prices)
+    assert a.missing_symbols == ["B"]                  # not ["B", "B"]
 
 
 def test_zero_cost_lot_does_not_divide_by_zero():

@@ -589,6 +589,11 @@ with st.spinner("Fetching live prices..."):
     prices, prices_as_of = fetch_prices(symbols)
 analysis = analyze_portfolio(holdings, prices)
 value_by_symbol = {p.symbol: p.market_value for p in analysis.positions}
+# WHY: analyze_portfolio merges multiple lots of the same symbol into one position (see
+# _merge_lots), so len(analysis.positions) can be LESS than len(holdings) even when every row
+# priced successfully -- comparing against the raw row count would wrongly read as "N holdings
+# didn't price" when really rows just merged. Compare against distinct symbols instead.
+distinct_holding_symbols = len({h.symbol for h in holdings}) if holdings else 0
 
 if "reports" not in st.session_state:
     st.session_state.reports = {}
@@ -611,7 +616,7 @@ with tab_portfolio:
     m2 = st.columns(2)
     m2[0].metric("Profit / loss", money(analysis.total_pnl_abs),
                  f"{analysis.total_pnl_pct:+.2f}%", help=explain("P&L"))
-    m2[1].metric("Holdings priced", f"{len(analysis.positions)} / {len(holdings)}")
+    m2[1].metric("Holdings priced", f"{len(analysis.positions)} / {distinct_holding_symbols}")
 
     if analysis.missing_symbols:
         st.warning("No price found for: " + ", ".join(analysis.missing_symbols)
@@ -646,10 +651,11 @@ with tab_portfolio:
         # the concentration reading becomes an artifact of whichever subset happened to price, not
         # the real full portfolio, and could over- or under-state concentration risk with no
         # caveat at the point of the warning below. Surface that explicitly when it applies.
-        if holdings and len(analysis.positions) < len(holdings):
-            st.caption(f"Based on the {len(analysis.positions)} of {len(holdings)} holdings that "
-                       f"priced; {len(holdings) - len(analysis.positions)} missing name(s) are "
-                       "excluded, so this does not reflect your full portfolio.")
+        if holdings and len(analysis.positions) < distinct_holding_symbols:
+            st.caption(f"Based on the {len(analysis.positions)} of {distinct_holding_symbols} "
+                       f"holdings that priced; {distinct_holding_symbols - len(analysis.positions)} "
+                       "missing name(s) are excluded, so this does not reflect your full "
+                       "portfolio.")
         cc = st.columns(3)
         cc[0].metric("Largest holding", f"{analysis.top_holding_weight * 100:.1f}%")
         cc[1].metric("HHI", f"{analysis.hhi:.3f}", help=explain("Concentration (HHI)"))
