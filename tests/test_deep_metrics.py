@@ -130,3 +130,19 @@ def test_plain_points_real_estate_moderate_debt_has_no_caveat_clutter():
     joined = " ".join(plain_points(v, [], is_real_estate=True))
     assert "moderate" in joined
     assert REAL_ESTATE_LEVERAGE_CAVEAT not in joined
+
+
+def test_plain_points_debt_word_matches_leverage_health_on_weak_coverage_alone():
+    # WHY (real money, honesty; adversarial-review regression): D/E 0.60 alone reads "moderate",
+    # but weak interest coverage (2.0x, below the 3.0x minimum) makes leverage_health -- the SAME
+    # computation the Verdict's tier/concern flag is built from -- read this "stretched" overall.
+    # Before this fix, plain_points recomputed its own D/E-only word, so the ALWAYS-VISIBLE "Why,
+    # in plain terms" summary said "moderate" (no caveat) for the exact company the collapsed
+    # evidence panel and PDF called "stretched" with a concern flag -- the same company read two
+    # different ways on two supposedly-mirrored surfaces, purely because coverage (not D/E) was
+    # the actual stretched signal.
+    v = {"total_debt": 60 * CR, "equity": 100 * CR, "ebit": 200 * CR, "interest_expense": 100 * CR}
+    joined = " ".join(plain_points(v, [], is_real_estate=True))
+    assert "high, worth watching" in joined
+    assert "moderate" not in joined
+    assert REAL_ESTATE_LEVERAGE_CAVEAT in joined

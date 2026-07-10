@@ -23,45 +23,59 @@ from src.llm.client import LiteLLMClient  # noqa: E402
 from src.pipeline import build_report_for_symbol  # noqa: E402
 from src.portfolio.loader import load_holdings  # noqa: E402
 
-_ROOT = Path(__file__).resolve().parents[1]
-if len(sys.argv) > 1:                                  # explicit CLI symbols win
-    SYMS = [s.strip().upper() for s in sys.argv[1:]]
-else:                                                  # else read the portfolio (never hardcoded)
-    _src = _ROOT / "holdings.csv"
-    if not _src.exists():
-        _src = _ROOT / "sample_data" / "sample_portfolio.csv"
-    SYMS = [h.symbol for h in load_holdings(_src)]
 
-OUT = Path(__file__).resolve().parents[1] / "data" / "batch_reports.txt"
-OUT.parent.mkdir(parents=True, exist_ok=True)
-OUT.write_text("")
+def _format_verdict_lines(v) -> list[str]:
+    """All of a verdict's disclosure lines: cross-verified reasons, then any sector-specific
+    caveats (bank/NBFC, real-estate, ...). WHY: reading only `reasons` would silently drop a
+    caveat -- see Verdict.sector_caveats, which this app's other rendering surfaces (the
+    Research tab, the PDF export) already include alongside reasons."""
+    lines = [f"    - {r}" for r in v.reasons]
+    lines += [f"    - {c}" for c in v.sector_caveats]
+    return lines
 
 
-def log(msg: str) -> None:
-    with OUT.open("a", encoding="utf-8") as f:
-        f.write(msg + "\n")
-    print(msg, flush=True)
+def main() -> None:
+    root = Path(__file__).resolve().parents[1]
+    if len(sys.argv) > 1:                                  # explicit CLI symbols win
+        syms = [s.strip().upper() for s in sys.argv[1:]]
+    else:                                                  # else read the portfolio (never hardcoded)
+        src = root / "holdings.csv"
+        if not src.exists():
+            src = root / "sample_data" / "sample_portfolio.csv"
+        syms = [h.symbol for h in load_holdings(src)]
+
+    out = root / "data" / "batch_reports.txt"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("")
+
+    def log(msg: str) -> None:
+        with out.open("a", encoding="utf-8") as f:
+            f.write(msg + "\n")
+        print(msg, flush=True)
+
+    for sym in syms:
+        t0 = time.time()
+        try:
+            report = build_report_for_symbol(
+                sym, [YFinanceFigureSource(), ScreenerFigureSource(),
+                      nse_annual_report_source(client=LiteLLMClient())])
+            v = report.verdict
+            verified = [(f.name, round(f.value)) for f in report.figures if f.is_trustworthy]
+            conflicts = [f.name for f in report.figures if f.status.value == "conflict"]
+            log(f"### {sym}  ({time.time() - t0:.0f}s)")
+            log(f"  valuation={v.valuation.value} quality={v.quality.value} "
+                f"leaning={v.leaning.value} confidence={v.confidence.value}")
+            log(f"  verified: {verified}")
+            log(f"  conflicts: {conflicts}")
+            for line in _format_verdict_lines(v):
+                log(line)
+            log("")
+        except Exception as exc:
+            log(f"### {sym} ERROR ({time.time() - t0:.0f}s): {type(exc).__name__}: {str(exc)[:120]}")
+            log("")
+
+    log("DONE")
 
 
-for sym in SYMS:
-    t0 = time.time()
-    try:
-        report = build_report_for_symbol(
-            sym, [YFinanceFigureSource(), ScreenerFigureSource(),
-                  nse_annual_report_source(client=LiteLLMClient())])
-        v = report.verdict
-        verified = [(f.name, round(f.value)) for f in report.figures if f.is_trustworthy]
-        conflicts = [f.name for f in report.figures if f.status.value == "conflict"]
-        log(f"### {sym}  ({time.time() - t0:.0f}s)")
-        log(f"  valuation={v.valuation.value} quality={v.quality.value} "
-            f"leaning={v.leaning.value} confidence={v.confidence.value}")
-        log(f"  verified: {verified}")
-        log(f"  conflicts: {conflicts}")
-        for reason in v.reasons:
-            log(f"    - {reason}")
-        log("")
-    except Exception as exc:
-        log(f"### {sym} ERROR ({time.time() - t0:.0f}s): {type(exc).__name__}: {str(exc)[:120]}")
-        log("")
-
-log("DONE")
+if __name__ == "__main__":
+    main()

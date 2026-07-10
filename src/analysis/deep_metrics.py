@@ -8,7 +8,13 @@ nothing to fabricate. Thresholds are documented heuristics an expert can tune; a
 """
 from __future__ import annotations
 
-from .framework import REAL_ESTATE_LEVERAGE_CAVEAT, MetricResult
+from .framework import REAL_ESTATE_LEVERAGE_CAVEAT, MetricResult, leverage_health
+
+# Maps leverage_health's own tier (D/E AND interest coverage) onto this module's plain-language
+# wording, so the always-visible summary and the Verdict's tier/concern flag can never diverge --
+# see plain_points' debt point for the regression this closes.
+_LEVERAGE_WORD = {"healthy": "low, comfortable", "stretched": "high, worth watching",
+                  "moderate": "moderate"}
 
 # Documented heuristic thresholds (expert-tunable).
 _ROE_GOOD, _ROE_WEAK = 15.0, 8.0          # % return on shareholders' equity
@@ -160,7 +166,14 @@ def plain_points(v: dict, deep: list[MetricResult], is_real_estate: bool = False
         de = debt / eq
         ebit, interest = v.get("ebit"), v.get("interest_expense")
         cover = (ebit / interest) if (ebit and interest and interest > 0) else None
-        word = "low, comfortable" if de < 0.5 else "high, worth watching" if de > 1 else "moderate"
+        # WHY (real money, honesty; adversarial-review regression): derive the word from
+        # leverage_health's OWN tier (D/E AND interest coverage), the SAME computation the
+        # Verdict's tier/concern flag and REAL_ESTATE_LEVERAGE_CAVEAT gating are built from --
+        # a prior version recomputed an independent, D/E-only word here, which could disagree
+        # with leverage_health when weak coverage (not D/E) was the actual stretched signal, so
+        # the always-visible summary and the collapsed evidence panel called the same company
+        # two different things.
+        word = _LEVERAGE_WORD.get(leverage_health(debt, eq, ebit, interest).verdict, "moderate")
         s = f"Debt: it owes ₹{de:.2f} for every ₹1 of owners' money (D/E {de:.2f}) — {word}"
         if cover is not None:
             s += f", and operating profit covers its interest bill about {cover:.0f}x over"
