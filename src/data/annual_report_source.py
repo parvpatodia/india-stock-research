@@ -241,6 +241,19 @@ def detect_fiscal_year(text: str) -> int | None:
     Within each tier, the max of any matches is taken (a real report's own comparative tables
     routinely show a PRIOR year alongside the current one, e.g. "year ended 31 March 2025" next
     to "year ended 31 March 2026"; the current year is always the larger of the two).
+
+    KNOWN RESIDUAL GAP: if the reliable tier finds nothing at all AND the fallback tier's own
+    matches include a genuine short-form current-year mention alongside a SEPARATE forward-
+    looking short-form mention (e.g. "In FY26 revenue grew... we target FY30 as a milestone"),
+    max() still picks the higher, wrong one -- tiering can't disambiguate two matches of the
+    SAME ambiguity level. This requires a real annual report to have zero "year ended 31 March"
+    statements anywhere in its first 20000 characters, which is unusual (that statement is a
+    legally-required part of the audited financial statements), so this is expected to be rare
+    in practice. Not fixed here: reliably distinguishing a genuine mention from a forward-looking
+    one within the same ambiguous pattern would need keyword/context heuristics ("target",
+    "expect", "guidance") that are themselves error-prone without real samples to calibrate
+    against, a worse trade than leaving this narrow, safe-direction (over-rejection, not a
+    fabricated fact) gap documented.
     """
     head = text[:20000]
     reliable = _years_matching(_FY_PATTERNS_RELIABLE, head)
