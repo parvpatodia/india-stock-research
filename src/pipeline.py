@@ -175,6 +175,7 @@ def build_report_for_symbol(symbol: str, sources: list[FigureSource],
     run the pipeline. A single source stays single-source (low confidence); agreeing sources verify."""
     from .analysis.bank_framework import sector_category
     from .analysis.trends import (
+        cash_conversion_quality_point,
         leverage_trend_point,
         trend_improving,
         trend_points,
@@ -203,6 +204,14 @@ def build_report_for_symbol(symbol: str, sources: list[FigureSource],
                                    verified_series(series.get("equity", {})))
         if lev:
             trend_insights.append(lev)
+        # WHY (CA-level quality of earnings): the MULTI-YEAR cumulative view of whether reported
+        # profit actually converts to cash -- a chronic gap is a far stronger red flag than any
+        # one lumpy year. Skipped for banks/NBFCs, whose operating cash flow is dominated by
+        # lending/deposit flows, not the industrial profit-to-cash relationship this measures.
+        cash = cash_conversion_quality_point(verified_series(series.get("operating_cash_flow", {})),
+                                             verified_series(series.get("net_profit", {})))
+        if cash:
+            trend_insights.append(cash)
     return build_company_report(symbol, gather_aligned_figures(symbol, sources),
                                 claims=claims, median_pe=compute_median_pe(symbol),
                                 is_bank=category in ("bank", "nbfc"),

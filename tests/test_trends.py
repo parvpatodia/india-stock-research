@@ -1,5 +1,6 @@
 from src.analysis.trends import (
     cagr,
+    cash_conversion_quality_point,
     earnings_volatility_point,
     leverage_trend_point,
     revenue_volatility_point,
@@ -9,6 +10,45 @@ from src.analysis.trends import (
 )
 
 CR = 1e7
+
+
+def test_cash_conversion_quality_flags_a_persistent_profit_to_cash_gap():
+    # WHY (CA-level rigor, quality of earnings): a single year's cash conversion can be lumpy
+    # (working-capital timing). The multi-year cumulative view is what a professional relies on --
+    # if a company keeps reporting profit but cumulative operating cash flow chronically lags, it
+    # signals aggressive revenue recognition or a receivables/working-capital build-up. Built from
+    # cross-verified OCF and profit series, so it's a cross-verified insight.
+    ocf = {2022: 40 * CR, 2023: 45 * CR, 2024: 50 * CR}       # cum 135
+    profit = {2022: 100 * CR, 2023: 110 * CR, 2024: 120 * CR}  # cum 330 -> 41%
+    p = cash_conversion_quality_point(ocf, profit)
+    assert p is not None
+    assert "41%" in p
+    assert "3 years" in p
+    assert "cross-verified" in p
+
+
+def test_cash_conversion_quality_confirms_cash_backed_profits():
+    ocf = {2022: 95 * CR, 2023: 100 * CR, 2024: 110 * CR}      # cum 305
+    profit = {2022: 100 * CR, 2023: 105 * CR, 2024: 115 * CR}  # cum 320 -> 95%
+    p = cash_conversion_quality_point(ocf, profit)
+    assert "95%" in p and "well backed" in p.lower()
+
+
+def test_cash_conversion_quality_flags_cumulative_negative_ocf():
+    # Reported profits over the years, but the business consumed cash on a cumulative basis -- the
+    # strongest multi-year quality-of-earnings red flag.
+    ocf = {2022: -40 * CR, 2023: -30 * CR, 2024: 10 * CR}      # cum -60
+    profit = {2022: 50 * CR, 2023: 60 * CR, 2024: 70 * CR}     # cum 180
+    p = cash_conversion_quality_point(ocf, profit)
+    assert "negative" in p.lower() and "red flag" in p.lower()
+
+
+def test_cash_conversion_quality_needs_three_years_and_positive_cumulative_profit():
+    ocf = {2023: 40 * CR, 2024: 50 * CR}
+    profit = {2023: 100 * CR, 2024: 110 * CR}
+    assert cash_conversion_quality_point(ocf, profit) is None            # only 2 common years
+    loss = {2022: -100 * CR, 2023: -90 * CR, 2024: -80 * CR}             # cumulative loss period
+    assert cash_conversion_quality_point({2022: 5 * CR, 2023: 5 * CR, 2024: 5 * CR}, loss) is None
 
 
 def test_leverage_trend_flags_a_rising_debt_to_equity_ratio():
@@ -242,9 +282,11 @@ def _rising_leverage_sources():
     series = {
         "total_debt": {2022: 20 * CR, 2023: 40 * CR, 2024: 60 * CR},
         "equity": {2022: 100 * CR, 2023: 100 * CR, 2024: 100 * CR},
-        "net_profit": {2022: 10 * CR, 2023: 11 * CR, 2024: 12 * CR},
+        "net_profit": {2022: 100 * CR, 2023: 110 * CR, 2024: 120 * CR},
+        "operating_cash_flow": {2022: 40 * CR, 2023: 45 * CR, 2024: 50 * CR},  # cum 135/330 = 41%
     }
-    scalar = {"total_debt": 60 * CR, "equity": 100 * CR, "net_profit": 12 * CR}
+    scalar = {"total_debt": 60 * CR, "equity": 100 * CR, "net_profit": 120 * CR,
+              "operating_cash_flow": 50 * CR}
 
     class _FakeSrc(FigureSource):
         def __init__(self, sid):
@@ -277,3 +319,23 @@ def test_leverage_trend_is_skipped_for_a_bank(monkeypatch):
     monkeypatch.setattr(bank_framework, "_yfinance_industry", lambda s: "Banks - Regional")
     report = pipeline.build_report_for_symbol("TESTBANK", _rising_leverage_sources())
     assert not any("Leverage (debt/equity)" in i for i in report.insights)
+
+
+def test_cash_conversion_quality_reaches_report_insights_for_a_non_bank(monkeypatch):
+    import src.pipeline as pipeline
+    monkeypatch.setattr(pipeline, "compute_median_pe", lambda s: None, raising=False)
+    from src.analysis import bank_framework
+    monkeypatch.setattr(bank_framework, "_yfinance_industry", lambda s: "Auto Components")
+    report = pipeline.build_report_for_symbol("TESTCO", _rising_leverage_sources())
+    assert any("cumulative operating cash flow was only 41%" in i for i in report.insights)
+
+
+def test_cash_conversion_quality_is_skipped_for_a_bank(monkeypatch):
+    # A bank's operating cash flow is dominated by lending/deposit flows, not the industrial
+    # profit-to-cash relationship this measures -- must not surface as a quality-of-earnings flag.
+    import src.pipeline as pipeline
+    monkeypatch.setattr(pipeline, "compute_median_pe", lambda s: None, raising=False)
+    from src.analysis import bank_framework
+    monkeypatch.setattr(bank_framework, "_yfinance_industry", lambda s: "Banks - Regional")
+    report = pipeline.build_report_for_symbol("TESTBANK", _rising_leverage_sources())
+    assert not any("cumulative operating cash flow" in i for i in report.insights)

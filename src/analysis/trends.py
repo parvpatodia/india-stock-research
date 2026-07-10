@@ -63,6 +63,48 @@ def _word(rate: float) -> str:
     return "growing" if rate > _GROWTH_MIN else "shrinking" if rate < -_GROWTH_MIN else "roughly flat"
 
 
+# Cumulative operating-cash-flow-to-profit bands, mirroring the single-year earnings_quality bands
+# (framework._OCF_STRONG / _OCF_WEAK). WHY a MULTI-YEAR cumulative view in addition to the
+# single-year one: one year's conversion is lumpy (working-capital timing), so a professional
+# judges quality of earnings on whether profit converts to cash OVER TIME. A chronic cumulative
+# gap is a far stronger signal of aggressive recognition / receivables build-up than any one year.
+_CUM_OCF_STRONG = 0.80
+_CUM_OCF_WEAK = 0.50
+
+
+def cash_conversion_quality_point(ocf_series: dict[int, float],
+                                  profit_series: dict[int, float]) -> str | None:
+    """Multi-year quality-of-earnings check: cumulative operating cash flow vs cumulative net
+    profit across the years where BOTH cross-verified. None if fewer than 3 common years or the
+    cumulative profit isn't positive (the ratio isn't meaningful through a loss-making period)."""
+    years = sorted(set(ocf_series) & set(profit_series))
+    if len(years) < 3:
+        return None
+    cum_ocf = sum(ocf_series[y] for y in years)
+    cum_profit = sum(profit_series[y] for y in years)
+    if cum_profit <= 0:
+        return None
+    ratio = cum_ocf / cum_profit
+    n = len(years)
+    if ratio < 0:
+        return (f"Over the last {n} years, cumulative operating cash flow was actually NEGATIVE "
+                "despite cumulative reported profit -- a serious quality-of-earnings red flag: the "
+                "business consumed cash from operations across the period while reporting profits. "
+                "Check receivables, working capital, and revenue recognition (cross-verified).")
+    if ratio < _CUM_OCF_WEAK:
+        return (f"Over the last {n} years, cumulative operating cash flow was only {ratio:.0%} of "
+                "cumulative reported profit -- a persistent gap that can signal aggressive revenue "
+                "recognition or a receivables/working-capital build-up; check why profit isn't "
+                "converting to cash (cross-verified).")
+    if ratio >= _CUM_OCF_STRONG:
+        return (f"Over the last {n} years, cumulative operating cash flow was {ratio:.0%} of "
+                "cumulative reported profit -- reported profits have been well backed by real cash "
+                "(cross-verified).")
+    return (f"Over the last {n} years, cumulative operating cash flow was {ratio:.0%} of "
+            "cumulative reported profit -- profits are only partly backed by cash; worth watching "
+            "(cross-verified).")
+
+
 # Minimum ABSOLUTE change in debt/equity to call a multi-year direction. WHY absolute, not
 # relative: a move from 0.04 to 0.10 is a big RELATIVE jump but the leverage is negligible either
 # way (live-verified: DMART 0.04->0.10), so a relative test would cry wolf on rock-solid balance
