@@ -8,7 +8,7 @@ nothing to fabricate. Thresholds are documented heuristics an expert can tune; a
 """
 from __future__ import annotations
 
-from .framework import MetricResult
+from .framework import REAL_ESTATE_LEVERAGE_CAVEAT, MetricResult
 
 # Documented heuristic thresholds (expert-tunable).
 _ROE_GOOD, _ROE_WEAK = 15.0, 8.0          # % return on shareholders' equity
@@ -118,10 +118,20 @@ def compute_deep_metrics(v: dict, is_bank: bool = False) -> list[MetricResult]:
     return metrics
 
 
-def plain_points(v: dict, deep: list[MetricResult]) -> list[str]:
+def plain_points(v: dict, deep: list[MetricResult], is_real_estate: bool = False) -> list[str]:
     """5-6 short, everyday-language reasons with the real numbers, for a non-expert reader.
     Covers price, cash quality, and debt from the core figures, then the ratio suite. Only
-    includes points whose inputs cross-verified."""
+    includes points whose inputs cross-verified.
+
+    is_real_estate: WHY (real money, UI honesty) -- the real-estate leverage caveat
+    (framework.REAL_ESTATE_LEVERAGE_CAVEAT) previously only reached Verdict.reasons, shown inside
+    the collapsed "See the evidence" expander. This ALWAYS-VISIBLE summary (report.insights) kept
+    saying "high, worth watching" for a real developer at D/E > 1 (live-verified: Prestige 1.09)
+    with zero sector context, so a reader could see the un-caveated alarm and never open the
+    expander that explains it is sector-normal. Attached only when the debt point actually reads
+    "high, worth watching" -- a "moderate" read is not itself presented as a concern, so adding
+    sector commentary there would be clutter, not honesty.
+    """
     points: list[str] = []
 
     cpe, mpe = v.get("current_pe"), v.get("median_pe")
@@ -154,7 +164,10 @@ def plain_points(v: dict, deep: list[MetricResult]) -> list[str]:
         s = f"Debt: it owes ₹{de:.2f} for every ₹1 of owners' money (D/E {de:.2f}) — {word}"
         if cover is not None:
             s += f", and operating profit covers its interest bill about {cover:.0f}x over"
-        points.append(s + ".")
+        s += "."
+        if is_real_estate and word == "high, worth watching":
+            s += " " + REAL_ESTATE_LEVERAGE_CAVEAT
+        points.append(s)
 
     dy = v.get("dividend_yield_pct")
     if dy is not None and dy >= 0:

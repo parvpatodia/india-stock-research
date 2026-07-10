@@ -54,12 +54,19 @@ def build_company_report(company: str,
         roa = return_on_assets(tv("net_profit"), tv("total_assets"))
         verdict = assemble_bank_verdict(valuation, roa)
     else:
+        leverage = leverage_health(tv("total_debt"), tv("equity"), tv("ebit"),
+                                   tv("interest_expense"))
         quality_signals = [
             earnings_quality(tv("operating_cash_flow"), tv("net_profit")),
-            leverage_health(tv("total_debt"), tv("equity"), tv("ebit"), tv("interest_expense")),
+            leverage,
             promoter_pledge(tv("promoter_pledge_pct")),
         ]
-        extra_caveats = (REAL_ESTATE_LEVERAGE_CAVEAT,) if is_real_estate else ()
+        # WHY: only attach the sector caveat when leverage actually reads "stretched" -- a
+        # real-estate name with low/comfortable debt (e.g. DLF, live D/E 0.01) has nothing to
+        # caveat, so attaching it unconditionally to every real-estate report would be clutter
+        # dressed up as diligence, not honesty.
+        extra_caveats = ((REAL_ESTATE_LEVERAGE_CAVEAT,)
+                        if is_real_estate and leverage.verdict == "stretched" else ())
         verdict = assemble_verdict(valuation, quality_signals, extra_caveat_reasons=extra_caveats)
 
     # Plain-language "why" points from the ratio suite + core figures (cross-verified only).
@@ -71,7 +78,8 @@ def build_company_report(company: str,
     # WHY: use the computed median actually used for the valuation tier, not the (unfetched)
     # median_pe figure, so the price/valuation reason renders whenever valuation was assessed.
     tvals["median_pe"] = median
-    insights = plain_points(tvals, compute_deep_metrics(tvals, is_bank=is_bank))
+    insights = plain_points(tvals, compute_deep_metrics(tvals, is_bank=is_bank),
+                            is_real_estate=is_real_estate)
 
     return Report(
         company=company,

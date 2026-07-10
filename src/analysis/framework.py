@@ -37,13 +37,15 @@ _MIN_SIGNALS_FOR_STRONG = 2  # "strong" needs >=2 verified quality dimensions, n
 # higher debt funded against project collections and RERA-escrow accounts, so the generic
 # industrial D/E bands above can misread a normally-financed developer as stretched. Live D/E
 # across 8 real names: DLF 0.01, Oberoi Realty 0.16, Sobha 0.22, Lodha 0.42, Phoenix Mills 0.48
-# (all already read fine under the generic bands) but Godrej Properties 0.83, Brigade 0.93, and
-# Prestige 1.09 sit at or above the generic "stretched" (>1.0) threshold despite being large,
-# established developers, not distressed ones. Rather than invent a replacement sector-specific
-# threshold with no authoritative basis (the same trap this app avoids everywhere else), disclose
-# the sector context as an explicit caveat -- the same honesty-first pattern already used for the
-# bank/NBFC framework -- so the reader compares against sector peers and checks collections/
-# pre-sales momentum and RERA compliance, rather than reading this as a generic solvency concern.
+# (all already read fine under the generic bands, well below _DE_STRETCHED); Godrej Properties
+# 0.83 and Brigade 0.93 sit close to (but still just under) the generic 1.00 "stretched" line,
+# reading "moderate"; Prestige 1.09 is the one that actually crosses it, reading "high, worth
+# watching"/stretched despite being a large, established developer, not a distressed one. Rather
+# than invent a replacement sector-specific threshold with no authoritative basis (the same trap
+# this app avoids everywhere else), disclose the sector context as an explicit caveat -- the same
+# honesty-first pattern already used for the bank/NBFC framework -- so the reader compares against
+# sector peers and checks collections/pre-sales momentum and RERA compliance, rather than reading
+# this as a generic solvency concern.
 REAL_ESTATE_LEVERAGE_CAVEAT = (
     "Real estate/construction: developers commonly run higher debt funded against project "
     "collections and RERA-escrow accounts, so the industrial D/E benchmark above may read a "

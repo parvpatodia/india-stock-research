@@ -60,10 +60,11 @@ def test_industry_category_detects_real_estate():
     # is not a borrow-to-lend model) but commonly carry higher leverage funded against project
     # collections/RERA-escrow, so the generic industrial bands can misread a normally-financed
     # developer as stretched. Live-verified D/E across 8 real names: DLF 0.01, Oberoi 0.16, Sobha
-    # 0.22, Lodha 0.42, Phoenix 0.48 (all already read "healthy"/"moderate" fine); but Godrej
-    # Properties 0.83, Brigade 0.93, and Prestige 1.09 sit right at or above the generic
-    # "stretched" (>1.0) threshold despite being large, established developers, not distressed
-    # ones -- exactly the mislabeling this caveat exists to flag.
+    # 0.22, Lodha 0.42, Phoenix 0.48 (all already read "healthy"/"moderate" fine); Godrej
+    # Properties 0.83 and Brigade 0.93 sit close to (but just under) the generic 1.00 "stretched"
+    # line, reading "moderate"; Prestige 1.09 is the one that actually crosses it, reading "high,
+    # worth watching"/stretched despite being a large, established developer, not a distressed
+    # one -- exactly the mislabeling this caveat exists to flag.
     assert _industry_category("Real Estate - Development") == "real_estate"
     assert _industry_category("Real Estate - Diversified") == "real_estate"
 
@@ -84,17 +85,31 @@ def test_non_bank_still_uses_industrial_framework():
 
 
 def test_build_report_real_estate_carries_leverage_caveat():
-    # WHY (sector-aware analysis): a real-estate developer at D/E 0.93 (Brigade's live-verified
-    # figure) reads "high, worth watching" under the generic industrial band, but that leverage
-    # is commonly normal for a developer funded against project collections/RERA-escrow. Rather
-    # than silently loosen the band with an invented number, disclose the sector context (same
-    # honesty-first pattern as the bank/NBFC caveat) so the reader checks sector peers and
-    # collections momentum instead of reading this as a generic solvency red flag.
+    # WHY (sector-aware analysis): a real-estate developer at D/E 1.09 (Prestige's live-verified
+    # figure) reads "stretched"/"high, worth watching" under the generic industrial band, but
+    # that leverage is commonly normal for a developer funded against project collections/RERA-
+    # escrow. Rather than silently loosen the band with an invented number, disclose the sector
+    # context (same honesty-first pattern as the bank/NBFC caveat) so the reader checks sector
+    # peers and collections momentum instead of reading this as a generic solvency red flag.
     figs = {
-        "total_debt": [SourcedValue(93, "a"), SourcedValue(93, "b")],
+        "total_debt": [SourcedValue(109, "a"), SourcedValue(109, "b")],
         "equity": [SourcedValue(100, "a"), SourcedValue(100, "b")],
         "operating_cash_flow": [SourcedValue(90, "a"), SourcedValue(90, "b")],
         "net_profit": [SourcedValue(100, "a"), SourcedValue(100, "b")],
     }
-    r = build_company_report("BRIGADE", figs, is_bank=False, is_real_estate=True)
+    r = build_company_report("PRESTIGE", figs, is_bank=False, is_real_estate=True)
     assert any(x == REAL_ESTATE_LEVERAGE_CAVEAT for x in r.verdict.reasons)
+
+
+def test_build_report_real_estate_with_comfortable_debt_has_no_caveat_clutter():
+    # WHY: a real-estate name with low/comfortable debt (e.g. DLF, live D/E 0.01) has nothing to
+    # caveat -- attaching REAL_ESTATE_LEVERAGE_CAVEAT unconditionally to every real-estate report
+    # regardless of its actual leverage would be clutter dressed up as diligence, not honesty.
+    figs = {
+        "total_debt": [SourcedValue(1, "a"), SourcedValue(1, "b")],
+        "equity": [SourcedValue(100, "a"), SourcedValue(100, "b")],
+        "operating_cash_flow": [SourcedValue(90, "a"), SourcedValue(90, "b")],
+        "net_profit": [SourcedValue(100, "a"), SourcedValue(100, "b")],
+    }
+    r = build_company_report("DLF", figs, is_bank=False, is_real_estate=True)
+    assert not any(x == REAL_ESTATE_LEVERAGE_CAVEAT for x in r.verdict.reasons)

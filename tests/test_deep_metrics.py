@@ -8,6 +8,7 @@ from src.analysis.deep_metrics import (
     return_on_capital,
     return_on_equity,
 )
+from src.analysis.framework import REAL_ESTATE_LEVERAGE_CAVEAT
 
 CR = 1e7
 
@@ -98,3 +99,34 @@ def test_plain_points_dividend_bands_stay_neutral():
 
 def test_plain_points_no_dividend_point_when_unknown():
     assert plain_points({}, []) == []
+
+
+def test_plain_points_real_estate_debt_carries_sector_caveat_in_the_always_visible_summary():
+    # WHY (real money, UI honesty): an adversarial review of the real-estate leverage caveat
+    # (added last iteration) found it only reached verdict.reasons, shown inside the collapsed
+    # "See the evidence" expander -- the ALWAYS-VISIBLE "Why, in plain terms" summary (this
+    # function's output, report.insights) kept saying "high, worth watching" for a real developer
+    # at D/E 1.09 (Prestige, live-verified) with zero sector context, so a parent could read the
+    # un-caveated alarm and never open the expander that explains it's sector-normal.
+    v = {"total_debt": 109 * CR, "equity": 100 * CR}   # D/E 1.09 -> "high, worth watching"
+    points = plain_points(v, [], is_real_estate=True)
+    joined = " ".join(points)
+    assert "high, worth watching" in joined
+    assert REAL_ESTATE_LEVERAGE_CAVEAT in joined
+
+
+def test_plain_points_non_real_estate_debt_has_no_sector_caveat():
+    v = {"total_debt": 109 * CR, "equity": 100 * CR}
+    joined = " ".join(plain_points(v, [], is_real_estate=False))
+    assert "high, worth watching" in joined
+    assert REAL_ESTATE_LEVERAGE_CAVEAT not in joined
+
+
+def test_plain_points_real_estate_moderate_debt_has_no_caveat_clutter():
+    # WHY: only attach the caveat when the un-caveated wording could actually alarm a reader
+    # ("high, worth watching"); a "moderate" read (e.g. Brigade's live D/E 0.93) is not itself
+    # presented as a concern, so adding sector commentary there would be clutter, not honesty.
+    v = {"total_debt": 93 * CR, "equity": 100 * CR}    # D/E 0.93 -> "moderate"
+    joined = " ".join(plain_points(v, [], is_real_estate=True))
+    assert "moderate" in joined
+    assert REAL_ESTATE_LEVERAGE_CAVEAT not in joined
