@@ -90,6 +90,22 @@ def test_chained_agreement_does_not_verify_a_pair_that_actually_disagrees():
         assert f.value != 101.9
 
 
+def test_genuine_three_way_agreement_still_verifies_all_three():
+    # WHY (regression coverage, found by adversarial review of the clique fix above): the fix
+    # must not overcorrect into ONLY ever finding 2-source cliques -- a real, non-chained 3-way
+    # agreement (every pair mutually within tolerance of every other) must still verify with all
+    # 3 sources, not silently downgrade to 2 because the search stops early or picks a smaller
+    # clique first.
+    f = verify_figure("net_profit", [
+        SourcedValue(100.0, "yfinance"),
+        SourcedValue(101.0, "screener"),
+        SourcedValue(102.0, "annual_report"),
+    ])
+    assert f.status == VerificationStatus.VERIFIED
+    assert "3 independent sources agree" in f.note
+    assert f.value == 101.0
+
+
 def test_verify_identity_parts_sum_to_total():
     f = verify_identity(
         "segment revenue sums to total",
