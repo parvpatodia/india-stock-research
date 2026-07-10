@@ -204,19 +204,16 @@ def suggest_allocation(amount: float,
                 for c in sorted(eligible, key=lambda c: (_STANCE_ORDER[c.stance], c.symbol))
                 if c.symbol in placed]
 
-    # WHY: cap against the REALIZED book (current holdings + what actually gets placed), not the
-    # optimistic full-deploy book. If the caps bind, less is placed and the book is smaller, so
-    # re-solve until the base is self-consistent -> no name can exceed cap_pct of the book it ends
-    # up in (the same holdings basis the Concentration tab uses). Converges monotonically.
+    # WHY: cap against the TOTAL money under consideration (current holdings + the whole lump sum
+    # being invested), not just whatever ends up deployed. Money left uninvested is still the
+    # investor's own money, not lost or committed elsewhere -- capping against only the deployed
+    # subset instead creates a self-referential trap: with few eligible names relative to a tight
+    # cap (e.g. 4 names at a 20% cap -- 4*20%=80%<100%, so no allocation using ONLY these 4 names
+    # can ever keep each <=20% of a book made entirely of them), each round of "less got placed"
+    # shrinks the book, which shrinks the cap, spiraling toward placing almost nothing at all
+    # (live-verified: ~13 rupees of a 100,000 ask) instead of the obviously sound even split.
     base = portfolio_value + amount
-    allocations: list[Allocation] = []
-    for _ in range(40):
-        allocations = allocate(base)
-        placed_total = sum(a.amount for a in allocations)
-        new_base = portfolio_value + placed_total
-        if abs(new_base - base) < 1.0:
-            break
-        base = new_base
+    allocations = allocate(base)
     remaining = amount - sum(a.amount for a in allocations)
 
     notes: list[str] = []

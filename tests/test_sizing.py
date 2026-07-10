@@ -115,27 +115,45 @@ def test_allocation_excludes_unfavorable_and_insufficient():
 
 
 def test_allocation_reports_uninvested_when_caps_bind():
-    # One favorable name, book 100, add 100, cap 25%. Capped against the REALIZED book:
-    # base = 100 + placed, placed = 0.25*base  ->  base = 100/0.75 = 133.33, placed = 33.33.
+    # One favorable name, book 100, add 100, cap 25%. Capped against the TOTAL money considered:
+    # base = 100 + 100 = 200 (fixed), cap 25% => room 50, so 50 is placed and 50 stays uninvested.
     cands = [AllocationCandidate("A", Stance.FAVORABLE, 0.0)]
     plan = suggest_allocation(100.0, cands, portfolio_value=100.0, cap_pct=0.25)
-    assert abs(plan.invested - 100.0 / 3) < 1.0        # ~33.33, not 50
-    assert abs(plan.uninvested - 200.0 / 3) < 1.0      # ~66.67
+    assert plan.invested == 50.0
+    assert plan.uninvested == 50.0
     assert any("per-stock cap" in n for n in plan.notes)
 
 
-def test_allocation_never_exceeds_cap_of_the_realized_book():
-    # WHY (regression): the old code capped against pv+amount, so when caps bound the placed
-    # positions exceeded cap% of the smaller realized book. Each name must stay <= cap% of the
-    # book it actually ends up in (current holdings + what was placed).
+def test_allocation_never_exceeds_cap_of_total_money_considered():
+    # WHY: the cap is measured against the FULL money under consideration (existing holdings +
+    # the whole lump sum being invested), not just whatever ends up deployed. Money that stays
+    # uninvested is still the investor's money -- it hasn't left their control, they can still
+    # deploy it into another approved name later, so it still counts toward "how concentrated
+    # would this position be against everything I have to invest".
     cands = [AllocationCandidate("A", Stance.FAVORABLE, 0.0),
              AllocationCandidate("B", Stance.FAVORABLE, 0.0)]
     for pv, amount in [(0.0, 100.0), (100.0, 100.0), (50.0, 500.0)]:
         plan = suggest_allocation(amount, cands, portfolio_value=pv, cap_pct=0.25)
-        realized = pv + plan.invested
+        total_money = pv + amount
         for a in plan.allocations:
             held = next(c.current_value for c in cands if c.symbol == a.symbol)
-            assert held + a.amount <= 0.25 * realized + 1.0   # within cap of the realized book
+            assert held + a.amount <= 0.25 * total_money + 1.0  # within cap of total money considered
+
+
+def test_allocation_new_investor_with_few_names_still_gets_a_useful_answer():
+    # WHY (real money, regression): capping against the REALIZED (deployed-only) book instead of
+    # the total money under consideration creates a self-referential trap for exactly the most
+    # common real scenario -- a new investor (portfolio_value=0) with only a handful of approved
+    # names relative to the cap. With 4 names and a 20% cap, 4*20%=80%<100%, so no allocation
+    # using ONLY these 4 names can ever keep each <=20% of a book made ENTIRELY of these 4 names
+    # (their shares must average 25% of each other). Iterating "cap against what actually got
+    # placed" spirals toward placing almost nothing (live-verified: ~13 rupees of a 100,000 ask)
+    # instead of the obviously sound answer -- an even 20,000 into each name, 20,000 left as cash.
+    cands = [AllocationCandidate(f"S{i}", Stance.FAVORABLE, 0.0) for i in range(4)]
+    plan = suggest_allocation(100_000.0, cands, portfolio_value=0.0, cap_pct=0.20)
+    assert plan.invested >= 79_000.0   # not ~13 rupees
+    amounts = sorted(a.amount for a in plan.allocations)
+    assert all(abs(x - 20_000.0) < 1.0 for x in amounts)
 
 
 def test_allocation_over_cap_name_gets_nothing():
@@ -161,17 +179,18 @@ def test_allocation_over_cap_name_excluded_others_absorb_its_share():
 
 def test_allocation_near_cap_absorber_caps_out_rest_reported_uninvested():
     # A near-cap name (small real room) plus an over-cap name, asked for far more than the
-    # available room: A is filled up to (approximately) its cap of the REALIZED book, never
-    # forced beyond it, and the genuine remainder is honestly reported as uninvested, not
-    # silently dropped or force-fit into a name past its cap.
-    cands = [AllocationCandidate("A", Stance.FAVORABLE, current_value=20.0),   # ~5 of room
+    # available room: A is filled up to (exactly) its cap of the TOTAL money considered (pv +
+    # amount = 160, cap 25% => room 40, A already holds 20 => 20 more), never forced beyond it,
+    # and the genuine remainder is honestly reported as uninvested, not silently dropped or
+    # force-fit into a name past its cap.
+    cands = [AllocationCandidate("A", Stance.FAVORABLE, current_value=20.0),   # room to 40
              AllocationCandidate("B", Stance.FAVORABLE, current_value=40.0)]   # already over cap
     plan = suggest_allocation(60.0, cands, portfolio_value=100.0, cap_pct=0.25)
     by = {a.symbol: a.amount for a in plan.allocations}
     assert "B" not in by
-    realized = 100.0 + plan.invested
-    assert 20.0 + by["A"] <= 0.25 * realized + 1.0          # never exceeds cap of the realized book
-    assert plan.uninvested > 50.0                            # the genuine remainder, not silently lost
+    total_money = 100.0 + 60.0
+    assert 20.0 + by["A"] <= 0.25 * total_money + 1.0   # never exceeds cap of total money considered
+    assert plan.uninvested > 30.0                            # the genuine remainder, not silently lost
     assert abs(plan.invested + plan.uninvested - 60.0) < 1e-6  # accounts for the full requested amount
 
 
