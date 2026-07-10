@@ -139,9 +139,15 @@ def get_news_source() -> NewsSource:
     return NewsSource()
 
 
-@st.cache_resource(show_spinner="Loading AMFI mutual-fund NAVs...")
+@st.cache_resource(ttl=86400, show_spinner="Loading AMFI mutual-fund NAVs...")
 def get_amfi() -> AMFIProvider | None:
     # WHY: loaded lazily (only when the user searches a fund) so a page load needs no network.
+    # WHY ttl=86400: AMFI publishes an updated NAV once per trading day; without a TTL this
+    # cache_resource never expires for the LIFETIME of the deployed process (which can run for
+    # days/weeks between redeploys on Streamlit Cloud), unlike every other live data source in
+    # this app (all use an explicit ttl on st.cache_data). The 'As of' date shown in the results
+    # table would then silently fall further and further behind today with no signal beyond that
+    # date column. 24h keeps it no more than a day stale, matching AMFI's actual update cadence.
     provider = AMFIProvider()
     try:
         provider.load()
@@ -196,8 +202,17 @@ def fetch_ar_text(symbol: str, url: str = ""):
     return fetch_annual_report_text(symbol, url)
 
 
-@st.cache_resource
+@st.cache_resource(ttl=3600)
 def get_screener_source() -> ScreenerFigureSource:
+    # WHY ttl MUST match fetch_promoter_trend's own ttl below: ScreenerFigureSource memoizes
+    # fetched HTML per symbol internally (self._cache, never expires on its own). Without a ttl
+    # HERE, this singleton instance -- and its internal cache -- lives for the whole deployed
+    # process, so fetch_promoter_trend's ttl=3600 becomes a no-op for any symbol already looked
+    # up once: Streamlit re-calls the function every hour, but the SAME long-lived instance just
+    # returns its already-cached (possibly days-old) HTML instead of re-fetching. Live-verified:
+    # 3 calls to the same symbol over simulated hours produced exactly 1 real fetch. Expiring
+    # this resource on the same cadence forces a fresh instance (empty internal cache) each hour,
+    # so the outer ttl's freshness guarantee is actually real, not illusory.
     return ScreenerFigureSource()
 
 
