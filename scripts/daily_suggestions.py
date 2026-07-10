@@ -48,11 +48,16 @@ def main() -> None:
     analysis = analyze_portfolio(holdings, prices)
     value_by = {p.symbol: p.market_value for p in analysis.positions}
 
-    picks = research_and_rank(symbols, value_by, analysis.total_value, CAP)
+    skipped: list[str] = []
+    picks = research_and_rank(symbols, value_by, analysis.total_value, CAP, skipped=skipped)
     rows = picks_to_rows(picks, datetime.date.today().isoformat())
     gateway.write("Today", TODAY_HEADER, rows)
     push_ntfy(os.environ.get("NTFY_TOPIC", ""), picks)
     print(f"wrote {len(rows)} picks")
+    if skipped:
+        print(f"skipped {len(skipped)} symbol(s):")
+        for reason in skipped:
+            print(f"  - {reason}")
 
 
 if __name__ == "__main__":

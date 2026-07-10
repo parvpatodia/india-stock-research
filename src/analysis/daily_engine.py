@@ -41,13 +41,21 @@ def _default_sources():
 
 def research_and_rank(symbols: list[str], value_by_symbol: dict[str, float], total_value: float,
                       cap_pct: float, sources_factory=_default_sources,
-                      throttle_seconds: float = 1.5):
+                      throttle_seconds: float = 1.5,
+                      skipped: list[str] | None = None):
     """Research each symbol, build candidates, rank. One failure per symbol is skipped.
 
     WHY (throttle + shared sources): Screener throttles a rapid burst of requests from a datacenter
     IP. Build the sources ONCE and reuse them so the Screener source memoizes each page per symbol
     (was ~3 fetches/symbol), and pace the loop so the batch isn't a burst. throttle_seconds=0 in
     tests to avoid sleeping.
+
+    WHY (skipped, optional): this engine is also driven headless by scripts/daily_suggestions.py
+    (a launchd background job with no interactive UI). A mistyped watchlist/holding symbol already
+    can't produce a wrong PICK (INSUFFICIENT_DATA is excluded by rank_picks), but without a
+    diagnostic it's silently dropped forever with no signal in the log the operator reviews. When
+    given a list, this appends a human-readable reason per skipped symbol; None (default) preserves
+    prior behavior for existing callers.
     """
     import time
 
@@ -59,7 +67,13 @@ def research_and_rank(symbols: list[str], value_by_symbol: dict[str, float], tot
             time.sleep(throttle_seconds)
         try:
             report = build_report_for_symbol(symbol, sources)
-        except Exception:
+        except Exception as exc:
+            if skipped is not None:
+                skipped.append(f"{symbol}: fetch failed ({exc})")
+            continue
+        if report.no_data_found:
+            if skipped is not None:
+                skipped.append(f"{symbol}: no data from any source (check the exact ticker symbol)")
             continue
         candidates.append(candidate_from_report(
             symbol, report, value_by_symbol.get(symbol, 0.0), total_value, cap_pct))

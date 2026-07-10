@@ -1,6 +1,12 @@
-from src.analysis.daily_engine import candidate_from_report, picks_to_rows, refresh_today_if_stale
+from src.analysis.daily_engine import (
+    candidate_from_report,
+    picks_to_rows,
+    refresh_today_if_stale,
+    research_and_rank,
+)
 from src.analysis.sizing import Stance
 from src.analysis.suggestions import RankedPick
+from src.data.figure_sources import FRAMEWORK_FIGURES, FigureSource
 from src.data.sheets_backend import InMemoryGateway
 from src.research.report import (
     Confidence,
@@ -84,3 +90,44 @@ def test_picks_to_rows_floors_the_conviction_fraction():
     # WHY: the ordering fraction must not inflate the shown integer (6.9 -> "6", never "7").
     rows = picks_to_rows([RankedPick("BLS", Stance.FAVORABLE, 6.9, "x")], "2026-07-09")
     assert rows[0]["score"] == "6"
+
+
+class _FakeSource(FigureSource):
+    """A symbol with a real name resolves cleanly; anything else returns nothing from either
+    source at all -- mirrors the live-verified PAGE-shaped case (a likely wrong/nonexistent
+    ticker: e.g. Page Industries trades as PAGEIND, not PAGE)."""
+
+    def __init__(self, source_id: str, known: dict):
+        self.source_id = source_id
+        self._known = known
+
+    def figures(self, symbol: str) -> dict[str, float | None]:
+        data = self._known.get(symbol, {})
+        return {name: data.get(name) for name in FRAMEWORK_FIGURES}
+
+
+def test_research_and_rank_logs_symbols_with_no_data_from_any_source():
+    # WHY (operator visibility, real money): this daily engine is Parv's own background job with
+    # no interactive UI -- a typo'd watchlist symbol (the PAGE-shaped case) already can't produce
+    # a wrong PICK (INSUFFICIENT_DATA is excluded by rank_picks), but without a diagnostic it
+    # would be silently dropped forever with no signal in the log Parv actually reviews.
+    known = {"GOOD": {"current_pe": 15, "median_pe": 20, "net_profit": 100 * 1e7,
+                      "operating_cash_flow": 90 * 1e7, "total_debt": 20 * 1e7,
+                      "equity": 100 * 1e7, "ebit": 30 * 1e7, "interest_expense": 3 * 1e7}}
+
+    def sources_factory():
+        return [_FakeSource("a", known), _FakeSource("b", known)]
+
+    skipped: list[str] = []
+    research_and_rank(["GOOD", "WRONG"], {}, 100.0, 0.25,
+                      sources_factory=sources_factory, throttle_seconds=0, skipped=skipped)
+    assert len(skipped) == 1
+    assert "WRONG" in skipped[0]
+    assert "ticker" in skipped[0].lower() or "no data" in skipped[0].lower()
+
+
+def test_research_and_rank_skipped_is_optional_and_backward_compatible():
+    # Existing callers that don't pass `skipped` see no change in behavior.
+    picks = research_and_rank(["WRONG"], {}, 100.0, 0.25,
+                              sources_factory=lambda: [_FakeSource("a", {})], throttle_seconds=0)
+    assert picks == []
