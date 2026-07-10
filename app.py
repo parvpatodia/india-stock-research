@@ -1134,6 +1134,21 @@ with tab_ask:
             with st.spinner("Reading recent news..."):
                 items = fetch_news(sym_u, company)
                 ingest_documents(store, NewsSource.as_documents(items))
+
+            # WHY (consolidated after 4 near-identical copies): each of these is a small,
+            # authoritative, single-chunk document that must be BOTH ingested AND pinned --
+            # without pinning, live-verified repeatedly (verified figures, promoter trend, cash
+            # conversion cycle, other income share) that a realistic question's one-sentence
+            # chunk can score below the retrieval floor, crowded out by news chunks that merely
+            # repeat the company name, so the document this app already fetched would silently
+            # never reach the model. Promoter trend was shipped unpinned once and needed a
+            # follow-up fix; folding "ingest + pin" into one call makes forgetting the pin step
+            # for a future signal much harder, not just something to remember to copy correctly.
+            def _ingest_and_pin(doc, source_id: str) -> None:
+                if doc is not None:
+                    ingest_documents(store, [doc])
+                    pinned_source_ids.add(source_id)
+
             # Reuse this session's already-researched report (if any) so Ask can ground financial
             # questions in the SAME cross-verified figures the Research tab computed, not just
             # news/curated docs (previously the richest data in the app was invisible to Ask).
@@ -1141,46 +1156,18 @@ with tab_ask:
             # stale, differently-labeled report can't be grounded as if it were freshly researched.
             cached_report = most_recent_by_symbol(st.session_state.reports, sym_u)
             vf_doc = verified_figures_document(sym_u, cached_report)
-            if vf_doc is not None:
-                ingest_documents(store, [vf_doc])
-                # WHY: without pinning, a handful of authoritative figures can be crowded out of
-                # retrieval by a larger volume of news chunks that share more surface keywords
-                # with the question (demonstrated: a direct debt question failed to retrieve the
-                # exact chunk stating total debt). Pinning guarantees the model sees it; it still
-                # must be cited, and citation-tier + numeric-grounding checks still apply.
-                pinned_source_ids.add(VERIFIED_FIGURES_SOURCE_ID)
-            # WHY: promoter shareholding is a core Indian-investor signal the Research tab already
-            # fetches (single Screener page, cached 1hr, same call the Research tab's promoter
-            # expander already makes live) -- no heavier than the fetch_fundamentals/fetch_news
-            # calls just above, unlike a full re-research which Ask deliberately never triggers.
+            _ingest_and_pin(vf_doc, VERIFIED_FIGURES_SOURCE_ID)
+            # WHY: promoter shareholding, cash conversion cycle, and other income share are all
+            # core Indian-investor / CA-level signals the Research tab already fetches (single
+            # cached Screener page each, same calls the Research tab's own expanders make live) --
+            # no heavier than the fetch_fundamentals/fetch_news calls above, unlike a full
+            # re-research which Ask deliberately never triggers.
             pt_doc = promoter_trend_document(sym_u, fetch_promoter_trend(sym_u))
-            if pt_doc is not None:
-                ingest_documents(store, [pt_doc])
-                # WHY (live-verified): the SAME crowding bug as verified_figures above -- a
-                # realistic question ("What do the owners think about the business?") scores this
-                # one-sentence chunk at 0.077, below the 0.10 retrieval floor, crowded out by news
-                # chunks that merely repeat the company name. Without pinning, the document this
-                # app already fetched would silently never reach the model.
-                pinned_source_ids.add(PROMOTER_TREND_SOURCE_ID)
-            # WHY: cash conversion cycle is a core cash-flow-discipline signal, same cached,
-            # single-Screener-page shape as promoter trend above (no heavier than the calls
-            # already made). Pinned immediately (not as a follow-up fix): live-verified that a
-            # realistic question ("Is the company managing money well?") scores this chunk at
-            # EXACTLY 0.0, crowded out by news the same way promoter trend was before it was
-            # pinned -- no reason to repeat that two-iteration mistake here.
+            _ingest_and_pin(pt_doc, PROMOTER_TREND_SOURCE_ID)
             cc_doc = cash_conversion_trend_document(sym_u, fetch_cash_conversion_trend(sym_u))
-            if cc_doc is not None:
-                ingest_documents(store, [cc_doc])
-                pinned_source_ids.add(CASH_CONVERSION_TREND_SOURCE_ID)
-            # WHY: other income share is a core quality-of-earnings signal, same cached, single-
-            # Screener-page shape as the two trends above. Pinned immediately: live-verified that
-            # a realistic question ("Is earnings quality good?") scores this chunk at 0.0917, just
-            # below the 0.10 floor, crowded out by news the same way promoter trend was before it
-            # was pinned.
+            _ingest_and_pin(cc_doc, CASH_CONVERSION_TREND_SOURCE_ID)
             oi_doc = other_income_share_document(sym_u, fetch_other_income_share(sym_u))
-            if oi_doc is not None:
-                ingest_documents(store, [oi_doc])
-                pinned_source_ids.add(OTHER_INCOME_SHARE_SOURCE_ID)
+            _ingest_and_pin(oi_doc, OTHER_INCOME_SHARE_SOURCE_ID)
         # WHY (real money, workflow): distinct from "haven't researched yet". `company` alone
         # (yfinance's own name lookup) is a WEAKER signal than Report.no_data_found (which spans
         # figures from both yfinance AND Screener) -- a real, valid symbol can have yfinance's
