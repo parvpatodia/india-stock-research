@@ -143,6 +143,41 @@ def test_quote_grounding_still_accepts_a_quote_that_genuinely_contains_the_value
     assert parse_extraction(payload, text)["net_profit"] == 80775 * 1e7
 
 
+def test_rejects_a_figure_whose_own_claimed_year_disagrees_with_the_detected_report_year():
+    # WHY (real money, HIGH severity; adversarial-review follow-up): a report routinely shows the
+    # current AND a prior year side by side ("Net profit for FY2026 was 26,248 crore, compared to
+    # 22,825 crore in FY2025"). Both numbers are genuinely real and appear in the source, so
+    # neither quote- nor numeric-grounding alone can tell that 22,825 is the PRIOR year's figure,
+    # not the CURRENT year's net_profit the field is supposed to report. When the model DOES
+    # self-report which year a specific figure's value is for, cross-check it against an
+    # independent, deterministic reference (detect_fiscal_year -- not the model's own top-level
+    # claim) and reject a disagreement. Best-effort, not a complete fix (see the docstring).
+    text = ("For the year ended 31 March 2026, net profit for FY2026 was 26,248 crore, "
+            "compared to 22,825 crore in FY2025.")
+    payload = {"net_profit": {"value": 22825, "unit": "crore", "fiscal_year": 2025,
+                              "quote": "compared to 22,825 crore in FY2025"}}
+    assert parse_extraction(payload, text)["net_profit"] is None
+
+
+def test_accepts_a_figure_whose_own_claimed_year_matches_the_detected_report_year():
+    text = ("For the year ended 31 March 2026, net profit for FY2026 was 26,248 crore, "
+            "compared to 22,825 crore in FY2025.")
+    payload = {"net_profit": {"value": 26248, "unit": "crore", "fiscal_year": 2026,
+                              "quote": "net profit for FY2026 was 26,248 crore"}}
+    assert parse_extraction(payload, text)["net_profit"] == 26248 * 1e7
+
+
+def test_year_cross_check_is_skipped_when_the_model_omits_a_per_figure_year():
+    # WHY (backward compatibility): a model that doesn't support the new optional field should
+    # not be penalized -- grounding still proceeds on quote/numeric matching alone, same as before
+    # this fix. This is a real, acknowledged limitation (see the docstring), not a false negative.
+    text = ("For the year ended 31 March 2026, net profit for FY2026 was 26,248 crore, "
+            "compared to 22,825 crore in FY2025.")
+    payload = {"net_profit": {"value": 22825, "unit": "crore",
+                              "quote": "compared to 22,825 crore in FY2025"}}
+    assert parse_extraction(payload, text)["net_profit"] == 22825 * 1e7
+
+
 # --- source behavior ---
 
 def test_ar_source_no_llm_returns_all_none():

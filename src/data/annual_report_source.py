@@ -51,18 +51,21 @@ report text. Return ONLY JSON, no prose.
 Use the CONSOLIDATED figures (not standalone) and the LATEST reported financial year.
 
 For each requested figure give: the value exactly as printed (a number), the unit word used \
-near it ("crore", "lakh", "million", "billion", or "absolute"), and "quote": the exact \
-verbatim text (a substring copied from the SOURCE) the number came from. If a figure is not \
-present in the SOURCE, set its value to null. NEVER infer, compute, or use outside knowledge; \
-copy only what is written.
+near it ("crore", "lakh", "million", "billion", or "absolute"), "quote": the exact verbatim \
+text (a substring copied from the SOURCE) the number came from, and "fiscal_year": the 4-digit \
+calendar year THIS SPECIFIC value's own financial year ended in. A report often shows the \
+CURRENT year next to a PRIOR year for comparison (e.g. "26,248 crore, compared to 22,825 crore \
+last year") -- fiscal_year must match whichever year the VALUE you picked actually belongs to, \
+not the report's cover year in general. If a figure is not present in the SOURCE, set its value \
+to null. NEVER infer, compute, or use outside knowledge; copy only what is written.
 
-Also return "fiscal_year": the 4-digit calendar year in which the reported financial year
-ended (e.g. 2026 for the year ended 31 March 2026).
+Also return a top-level "fiscal_year": the 4-digit calendar year in which the report's own
+LATEST financial year ended (e.g. 2026 for the year ended 31 March 2026).
 
 Shape:
 {"fiscal_year": 2026,
- "net_profit": {"value": 26248, "unit": "crore", "quote": "Profit for the year 26,248"},
- "profit_before_tax": {"value": null, "unit": "", "quote": ""}, ...}
+ "net_profit": {"value": 26248, "unit": "crore", "quote": "Profit for the year 26,248", "fiscal_year": 2026},
+ "profit_before_tax": {"value": null, "unit": "", "quote": "", "fiscal_year": null}, ...}
 Figures: net_profit, operating_cash_flow, total_debt, equity, profit_before_tax,
 interest_expense, total_assets.
 """
@@ -71,7 +74,8 @@ interest_expense, total_assets.
 _FIGURE_SCHEMA = {
     "type": "object",
     "properties": {"value": {"type": ["number", "null"]},
-                   "unit": {"type": "string"}, "quote": {"type": "string"}},
+                   "unit": {"type": "string"}, "quote": {"type": "string"},
+                   "fiscal_year": {"type": ["integer", "null"]}},
     "required": ["value", "unit"],
 }
 _EXTRACT_SCHEMA = {
@@ -115,6 +119,18 @@ def parse_extraction(payload: dict, source_text: str) -> dict[str, float | None]
     accept it via quote-grounding alone, since it never verified the quote actually CONTAINS the
     claimed number. Requiring the value's digits to appear WITHIN the quote itself closes that
     gap while still accepting the legitimate case (a real quote that genuinely states the figure).
+
+    WHY (real money, HIGH severity, cross-year mislabeling): a report routinely shows the current
+    AND a prior year side by side (e.g. "Net profit for FY2026 was 26,248 crore, compared to
+    22,825 crore in FY2025"). Both numbers are genuinely real and appear in the source, so
+    neither quote- nor numeric-grounding above can tell a real PRIOR-year figure apart from the
+    CURRENT year's figure a field is actually supposed to report. When the model provides an
+    optional per-figure "fiscal_year", it is cross-checked against detect_fiscal_year(source_text)
+    -- an INDEPENDENT, deterministic, pattern-based reference, not the model's own top-level
+    fiscal_year claim (a model confused enough to mislabel one figure's year could just as easily
+    be wrong about that too) -- and a disagreement rejects the figure. Best-effort, not a
+    complete fix: a model that omits fiscal_year for a mislabeled figure, or confidently
+    mislabels both the value and its year the same wrong way, is not caught by this check alone.
     """
     result: dict[str, float | None] = {}
     norm_source = _norm(source_text)
@@ -126,6 +142,7 @@ def parse_extraction(payload: dict, source_text: str) -> dict[str, float | None]
     report_num_digits.discard("")
     if not isinstance(payload, dict):
         return {name: None for name in _EXTRACT_ITEMS}
+    expected_fy = detect_fiscal_year(source_text)
     for name in _EXTRACT_ITEMS:
         obj = payload.get(name)
         if not isinstance(obj, dict):
@@ -136,6 +153,10 @@ def parse_extraction(payload: dict, source_text: str) -> dict[str, float | None]
         unit = str(obj.get("unit", "")).strip().lower()
         scale = _UNIT_SCALE.get(unit)
         if value is None or scale is None:
+            result[name] = None
+            continue
+        figure_year = _num_year(obj.get("fiscal_year"))
+        if expected_fy is not None and figure_year is not None and figure_year != expected_fy:
             result[name] = None
             continue
         # WHY: build the digit string from the PARSED value, not the raw JSON token -- the
