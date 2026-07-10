@@ -94,6 +94,10 @@ def _latest(df, candidates: list[str]) -> float | None:
     return None
 
 
+def _has_any_data(df, label: str) -> bool:
+    return label in df.index and any(_num(v) is not None for v in df.loc[label])
+
+
 def _latest_pair(df, primary_candidates: list[str],
                   secondary_candidates: list[str]) -> tuple[float | None, float | None]:
     """The most recent SINGLE period where a primary and a secondary statement row are BOTH
@@ -102,11 +106,20 @@ def _latest_pair(df, primary_candidates: list[str],
     _latest() calls) risks silently pairing values from DIFFERENT fiscal periods if one row has
     a gap the other doesn't (e.g. this year's Interest Expense + last year's Pretax Income) --
     a combined figure like EBIT would be meaningless even though each half looks fine alone.
-    Matches figures_by_year()'s existing period-aligned pairing for the same figure."""
+    Matches figures_by_year()'s existing period-aligned pairing for the same figure.
+
+    WHY skip an entirely-empty candidate label (not just an absent one): matches _latest()'s own
+    fallback behaviour, which tries every candidate row and only gives up on one if it has NO
+    data at all. An earlier version of this function locked onto the first candidate label merely
+    PRESENT in the index, even when every value in that row was NaN, silently losing a good
+    figure whenever a company's statement uses the first-listed row name but leaves it empty
+    (found by adversarial review) -- exactly the gappy-statement case these synonym lists exist
+    to handle."""
     if df is None or getattr(df, "empty", True):
         return None, None
-    primary_label = next((label for label in primary_candidates if label in df.index), None)
-    secondary_label = next((label for label in secondary_candidates if label in df.index), None)
+    primary_label = next((label for label in primary_candidates if _has_any_data(df, label)), None)
+    secondary_label = next(
+        (label for label in secondary_candidates if _has_any_data(df, label)), None)
     if primary_label is None or secondary_label is None:
         return None, None
     for col in df.columns:  # most recent first

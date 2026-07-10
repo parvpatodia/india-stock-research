@@ -113,3 +113,23 @@ def test_ebit_uses_pretax_and_interest_from_the_same_fiscal_period(monkeypatch):
     # Interest Expense standalone must stay the freshest available value (2026's 100), unaffected
     # by which period the EBIT pairing had to fall back to.
     assert figs["interest_expense"] == 100.0
+
+
+def test_ebit_pairing_falls_back_to_a_synonym_row_when_the_first_is_entirely_empty(monkeypatch):
+    # WHY (regression, found by adversarial review): the first EBIT fix locked onto the FIRST
+    # candidate label present in the statement even if that row is entirely NaN, never trying
+    # the next synonym -- unlike _latest(), which tries every candidate row and only gives up if
+    # ALL of them are empty. A statement whose "Pretax Income" row is entirely empty but whose
+    # "Income Before Tax" synonym row has real, period-aligned data must still produce an EBIT,
+    # not silently fall through to the cruder Operating Income proxy.
+    cols = [pd.Timestamp("2026-03-31"), pd.Timestamp("2025-03-31")]
+    income = pd.DataFrame(
+        {cols[0]: [None, None, 100.0], cols[1]: [None, 900.0, 90.0]},
+        index=["Pretax Income", "Income Before Tax", "Interest Expense"],
+    )
+    fake_yf = type("_FakeYF", (), {"Ticker": staticmethod(lambda _sym: _FakeTicker(income))})
+    monkeypatch.setitem(__import__("sys").modules, "yfinance", fake_yf)
+
+    figs = YFinanceFigureSource().figures("X")
+
+    assert figs["ebit"] == 990.0
