@@ -55,6 +55,20 @@ def test_industry_category_detects_nbfc_lenders():
     assert _industry_category("Financial - Mortgages") == "nbfc"
 
 
+def test_industry_category_detects_financial_conglomerate_nbfcs():
+    # WHY (real money, sector-aware analysis; live-verified 2026-07-10): Aditya Birla Capital
+    # (ABCAPITAL) is tagged "Financial Conglomerates" by yfinance -- not "Credit Services" or
+    # "Mortgage Finance" -- yet its balance sheet is a textbook borrow-to-lend NBFC profile (real
+    # live figures: debt ~1.80 trillion vs equity ~344 billion, D/E ~5.2x). Left unclassified, it
+    # fell to "other" and was analyzed on the industrial D/E lens, which would flag a completely
+    # normal-for-an-NBFC 5.2x leverage as "stretched", a false solvency alarm for a large, well-
+    # known Indian NBFC. Checked other real "Financial Services" names for the same label first
+    # (insurers, asset managers, capital-markets firms all carry their OWN distinct yfinance
+    # industry tags, not "Financial Conglomerates") before adding this mapping, so it does not
+    # sweep in a business that genuinely isn't a lender.
+    assert _industry_category("Financial Conglomerates") == "nbfc"
+
+
 def test_industry_category_other_financials_stay_industrial():
     # Insurance, asset management, capital markets/exchanges do NOT run a borrow-to-lend model;
     # they must stay on the industrial D/E lens, not be swept into the ROA-only framework.

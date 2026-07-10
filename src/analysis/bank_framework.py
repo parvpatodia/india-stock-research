@@ -56,7 +56,14 @@ def _industry_category(industry: str) -> str:
     ind = industry.lower()
     if "bank" in ind:
         return "bank"
-    if "credit services" in ind or "mortgage" in ind:
+    # WHY (live-verified 2026-07-10): Aditya Birla Capital tags "Financial Conglomerates", not
+    # "Credit Services"/"Mortgage Finance", yet its balance sheet is a textbook borrow-to-lend
+    # NBFC profile (real D/E ~5.2x) -- left unclassified, it fell to "other" and its normal-for-
+    # an-NBFC leverage would be flagged "stretched" on the industrial D/E lens, a false solvency
+    # alarm. Checked other real Financial Services names for the same tag first (insurers, asset
+    # managers, capital-markets firms all carry their OWN distinct yfinance industry tags, not
+    # this one), so this does not sweep in a business that genuinely isn't a lender.
+    if "credit services" in ind or "mortgage" in ind or "conglomerate" in ind:
         return "nbfc"
     if "real estate" in ind:
         return "real_estate"
