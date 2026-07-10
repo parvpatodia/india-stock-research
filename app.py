@@ -440,6 +440,11 @@ def build_pdf_report(title: str, report, stance: Stance, guidance=None) -> bytes
             for reason in v.reasons:
                 line(f"- {reason}")
             pdf.ln(1)
+        if v.sector_caveats:
+            line("Sector context", size=12, style="B", h=7)
+            for caveat in v.sector_caveats:
+                line(f"- {caveat}")
+            pdf.ln(1)
 
     line("Figures", size=12, style="B", h=7)
     for f in report.figures:
@@ -785,6 +790,10 @@ with tab_research:
                     st.markdown("**Why (each from cross-verified figures):**")
                     for reason in report.verdict.reasons:
                         st.markdown(f"- {reason}")
+                if report.verdict.sector_caveats:
+                    st.markdown("**Sector context:**")
+                    for caveat in report.verdict.sector_caveats:
+                        st.markdown(f"- {caveat}")
             def _period(fig):
                 # WHY: surface the fiscal year the figure is for (in the source locators, e.g.
                 # "FY2024"), so a prior-year figure isn't read as current. Point figures = current.

@@ -12,8 +12,6 @@ fit every NBFC segment (e.g. gold-loan/microfinance lenders typically run higher
 """
 from __future__ import annotations
 
-from dataclasses import replace
-
 from ..research.report import Verdict
 from .framework import MetricResult, assemble_verdict
 
@@ -102,5 +100,5 @@ def assemble_bank_verdict(valuation: MetricResult, roa: MetricResult) -> Verdict
     """Bank/NBFC verdict from ROA + valuation, always carrying the 'check the filing' caveat."""
     # min_signals_for_strong=1: ROA is a lender's single designated quality lens (the industrial
     # leverage/coverage metrics do not apply), so one verified strong ROA is the intended STRONG.
-    verdict = assemble_verdict(valuation, [roa], min_signals_for_strong=1)
-    return replace(verdict, reasons=verdict.reasons + (_BANK_CAVEAT,))
+    return assemble_verdict(valuation, [roa], min_signals_for_strong=1,
+                            sector_caveats=(_BANK_CAVEAT,))

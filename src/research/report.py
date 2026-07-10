@@ -65,6 +65,12 @@ class Verdict:
     leaning: Leaning
     confidence: Confidence
     reasons: tuple[str, ...] = ()   # each reason should reference cited/verified figures
+    # WHY (real money, UI honesty): general sector/business-model context (e.g. "banks' asset
+    # quality isn't in the free feeds", "real estate normally runs higher debt") that is NOT
+    # itself a cross-verified figure. Kept structurally separate from `reasons` -- which the app
+    # renders under a "Why (each from cross-verified figures)" header -- so that header's claim
+    # stays literally true instead of quietly including generic disclosure text alongside it.
+    sector_caveats: tuple[str, ...] = ()
     caveat: str = VERDICT_CAVEAT    # always present; the verdict is never shown as certainty
     # current P/E as a fraction of its own historical median (margin-of-safety magnitude); None
     # when the median is unavailable. Lets the ranker weigh HOW cheap, not just the CHEAP tier.

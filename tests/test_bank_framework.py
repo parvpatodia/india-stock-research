@@ -17,7 +17,11 @@ def test_roa_tiers():
 def test_bank_verdict_quality_from_roa_and_carries_caveat():
     v = assemble_bank_verdict(valuation_vs_history(None, None), return_on_assets(120, 10000))
     assert v.quality == QualityTier.STRONG
-    assert any("GNPA" in r for r in v.reasons)     # the "check the filing" caveat is present
+    assert any("GNPA" in c for c in v.sector_caveats)   # "check the filing" caveat is present
+    # WHY: the caveat is NOT itself a cross-verified figure, so it must never blend into
+    # `reasons` -- the app renders that list under a "Why (each from cross-verified figures)"
+    # header, which must stay literally true.
+    assert not any("GNPA" in r for r in v.reasons)
 
 
 def test_build_report_bank_uses_roa_not_leverage():
@@ -27,7 +31,8 @@ def test_build_report_bank_uses_roa_not_leverage():
     }
     r = build_company_report("SBIN", figs, is_bank=True)
     assert r.verdict.quality == QualityTier.STRONG          # ROA 1.2% -> strong
-    assert any("GNPA" in x for x in r.verdict.reasons)
+    assert any("GNPA" in x for x in r.verdict.sector_caveats)
+    assert not any("GNPA" in x for x in r.verdict.reasons)
 
 
 def test_industry_category_detects_banks():
@@ -82,6 +87,7 @@ def test_non_bank_still_uses_industrial_framework():
     assert r.verdict.quality == QualityTier.STRONG
     assert not any("GNPA" in x for x in r.verdict.reasons)
     assert not any(x == REAL_ESTATE_LEVERAGE_CAVEAT for x in r.verdict.reasons)
+    assert r.verdict.sector_caveats == ()
 
 
 def test_build_report_real_estate_carries_leverage_caveat():
@@ -98,7 +104,8 @@ def test_build_report_real_estate_carries_leverage_caveat():
         "net_profit": [SourcedValue(100, "a"), SourcedValue(100, "b")],
     }
     r = build_company_report("PRESTIGE", figs, is_bank=False, is_real_estate=True)
-    assert any(x == REAL_ESTATE_LEVERAGE_CAVEAT for x in r.verdict.reasons)
+    assert any(x == REAL_ESTATE_LEVERAGE_CAVEAT for x in r.verdict.sector_caveats)
+    assert not any(x == REAL_ESTATE_LEVERAGE_CAVEAT for x in r.verdict.reasons)
 
 
 def test_build_report_real_estate_with_comfortable_debt_has_no_caveat_clutter():
@@ -113,3 +120,4 @@ def test_build_report_real_estate_with_comfortable_debt_has_no_caveat_clutter():
     }
     r = build_company_report("DLF", figs, is_bank=False, is_real_estate=True)
     assert not any(x == REAL_ESTATE_LEVERAGE_CAVEAT for x in r.verdict.reasons)
+    assert r.verdict.sector_caveats == ()

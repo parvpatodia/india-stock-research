@@ -67,7 +67,7 @@ def build_company_report(company: str,
         # dressed up as diligence, not honesty.
         extra_caveats = ((REAL_ESTATE_LEVERAGE_CAVEAT,)
                         if is_real_estate and leverage.verdict == "stretched" else ())
-        verdict = assemble_verdict(valuation, quality_signals, extra_caveat_reasons=extra_caveats)
+        verdict = assemble_verdict(valuation, quality_signals, sector_caveats=extra_caveats)
 
     # Plain-language "why" points from the ratio suite + core figures (cross-verified only).
     from .analysis.deep_metrics import compute_deep_metrics, plain_points
