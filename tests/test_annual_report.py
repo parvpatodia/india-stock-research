@@ -1,6 +1,6 @@
 import json
 
-from src.data.annual_report_source import AnnualReportFigureSource, parse_extraction
+from src.data.annual_report_source import AnnualReportFigureSource, detect_fiscal_year, parse_extraction
 from src.data.figure_sources import FRAMEWORK_FIGURES, FigureSource
 from src.llm.client import LLMClient
 from src.pipeline import build_report_for_symbol
@@ -142,6 +142,17 @@ def test_numeric_grounding_rejects_concatenated_digit_spoof():
     assert parse_extraction(spoof, text)["net_profit"] is None
     real = {"net_profit": {"value": 1262, "unit": "crore", "quote": "not verbatim"}}
     assert parse_extraction(real, text)["net_profit"] == 1262 * 1e7   # a real token is accepted
+
+
+def test_year_cross_check_is_skipped_when_the_report_year_cannot_be_detected():
+    # WHY (adversarial-review finding, test-coverage gap): AR_TEXT has no recognizable fiscal-
+    # year pattern at all (detect_fiscal_year(AR_TEXT) is None), so a figure carrying its own
+    # fiscal_year must not be rejected against a reference that doesn't exist -- grounding still
+    # proceeds on quote/numeric matching alone, same as if the model had omitted the field.
+    assert detect_fiscal_year(AR_TEXT) is None
+    payload = {"net_profit": {"value": 80775, "unit": "crore", "fiscal_year": 2024,
+                              "quote": "Profit for the year was 80,775 crore"}}
+    assert parse_extraction(payload, AR_TEXT)["net_profit"] == 80775 * 1e7
 
 
 def test_quote_grounding_rejects_a_real_but_numberless_quote_with_a_fabricated_value():
