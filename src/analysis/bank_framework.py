@@ -75,25 +75,26 @@ def _yfinance_industry(symbol: str) -> str:
     return str(info.get("industry") or "")
 
 
-def is_bank(symbol: str) -> bool:
-    """Detect a bank from its yfinance industry (e.g. 'Banks - Regional')."""
-    return _industry_category(_yfinance_industry(symbol)) == "bank"
+def sector_category(symbol: str) -> str:
+    """Classify `symbol`'s business model from ONE yfinance industry fetch: 'bank', 'nbfc',
+    'real_estate', or 'other'.
 
+    WHY single-fetch (rate-limit risk): this used to be three separate functions
+    (is_bank/is_nbfc/is_real_estate), each independently re-fetching the same industry string --
+    classifying one symbol for the pipeline's routing meant up to THREE yfinance .info calls for
+    a single piece of information. Consolidated to one fetch, reused for every classification.
 
-def is_nbfc(symbol: str) -> bool:
-    """Detect a lending-business NBFC from its yfinance industry (e.g. 'Credit Services',
-    'Financial - Mortgages'). Routes to the same ROA-based framework as a bank: see module
-    docstring for why the industrial D/E lens is wrong for a borrow-to-lend business."""
-    return _industry_category(_yfinance_industry(symbol)) == "nbfc"
-
-
-def is_real_estate(symbol: str) -> bool:
-    """Detect a real-estate developer from its yfinance industry (e.g. 'Real Estate -
-    Development', 'Real Estate - Diversified'; live-verified across DLF, Godrej Properties,
-    Oberoi Realty, Prestige, Brigade, Sobha, Lodha, Phoenix Mills). Unlike is_bank/is_nbfc, this
-    does NOT change the analysis framework (real estate still uses the industrial D/E lens); it
-    only adds a leverage caveat -- see framework.REAL_ESTATE_LEVERAGE_CAVEAT for why."""
-    return _industry_category(_yfinance_industry(symbol)) == "real_estate"
+    - 'bank' / 'nbfc' (e.g. 'Banks - Regional', 'Credit Services', 'Financial - Mortgages'):
+      borrow-to-lend businesses, routed to the ROA-based framework (assemble_bank_verdict) --
+      the industrial D/E lens would wrongly flag their normal funding structure as a concern.
+    - 'real_estate' (e.g. 'Real Estate - Development'/'Real Estate - Diversified'; live-verified
+      across DLF, Godrej Properties, Oberoi Realty, Prestige, Brigade, Sobha, Lodha, Phoenix
+      Mills): still uses the industrial D/E lens (this is not a borrow-to-lend model) but gets
+      an added leverage caveat -- see framework.REAL_ESTATE_LEVERAGE_CAVEAT.
+    - 'other': everything else, including insurance/asset-management/capital-markets financials
+      that do NOT run a borrow-to-lend model and must stay on the industrial framework.
+    """
+    return _industry_category(_yfinance_industry(symbol))
 
 
 def assemble_bank_verdict(valuation: MetricResult, roa: MetricResult) -> Verdict:

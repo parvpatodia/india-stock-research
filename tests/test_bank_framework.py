@@ -1,4 +1,10 @@
-from src.analysis.bank_framework import _industry_category, assemble_bank_verdict, return_on_assets
+from src.analysis import bank_framework
+from src.analysis.bank_framework import (
+    _industry_category,
+    assemble_bank_verdict,
+    return_on_assets,
+    sector_category,
+)
 from src.analysis.framework import REAL_ESTATE_LEVERAGE_CAVEAT, valuation_vs_history
 from src.pipeline import build_company_report
 from src.research.report import QualityTier
@@ -72,6 +78,23 @@ def test_industry_category_detects_real_estate():
     # one -- exactly the mislabeling this caveat exists to flag.
     assert _industry_category("Real Estate - Development") == "real_estate"
     assert _industry_category("Real Estate - Diversified") == "real_estate"
+
+
+def test_sector_category_fetches_industry_only_once(monkeypatch):
+    # WHY (rate-limit risk, live-verified 2026-07-10): is_bank/is_nbfc/is_real_estate used to
+    # each independently call _yfinance_industry, so pipeline.py's classification of one symbol
+    # (is_bank(x) or is_nbfc(x), then is_real_estate(x)) meant up to THREE separate yfinance
+    # .info fetches for the SAME industry string. sector_category collapses this to exactly one
+    # fetch, reused for every classification, removing 2/3 of that avoidable network load.
+    calls = []
+
+    def fake_fetch(symbol):
+        calls.append(symbol)
+        return "Real Estate - Development"
+
+    monkeypatch.setattr(bank_framework, "_yfinance_industry", fake_fetch)
+    assert sector_category("BRIGADE") == "real_estate"
+    assert calls == ["BRIGADE"]
 
 
 def test_non_bank_still_uses_industrial_framework():

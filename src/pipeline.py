@@ -173,7 +173,7 @@ def build_report_for_symbol(symbol: str, sources: list[FigureSource],
     """Real-data entry point: gather fiscal-year-aligned figures across sources, compute the
     historical median P/E for the valuation baseline, add cross-verified multi-year trends, then
     run the pipeline. A single source stays single-source (low confidence); agreeing sources verify."""
-    from .analysis.bank_framework import is_bank, is_nbfc, is_real_estate
+    from .analysis.bank_framework import sector_category
     from .analysis.trends import trend_improving, trend_points, verified_series
     from .analysis.valuation import compute_median_pe
     series = gather_series(symbol, sources)
@@ -183,10 +183,13 @@ def build_report_for_symbol(symbol: str, sources: list[FigureSource],
     # the business model, not a risk signal, penalizing it under the industrial D/E lens is a
     # real analytical error. Route it through the same ROA-based framework as a bank. A real-estate
     # developer stays on the industrial D/E lens (it is not a borrow-to-lend business) but gets an
-    # added leverage caveat -- see framework.REAL_ESTATE_LEVERAGE_CAVEAT for why.
+    # added leverage caveat -- see framework.REAL_ESTATE_LEVERAGE_CAVEAT for why. sector_category
+    # fetches yfinance's industry string ONCE and classifies it, rather than the three separate
+    # fetches an earlier version made (one each for is_bank/is_nbfc/is_real_estate).
+    category = sector_category(symbol)
     return build_company_report(symbol, gather_aligned_figures(symbol, sources),
                                 claims=claims, median_pe=compute_median_pe(symbol),
-                                is_bank=is_bank(symbol) or is_nbfc(symbol),
-                                is_real_estate=is_real_estate(symbol),
+                                is_bank=category in ("bank", "nbfc"),
+                                is_real_estate=category == "real_estate",
                                 trend_insights=tuple(trend_points(rev_series, prof_series)),
                                 trend_improving=trend_improving(rev_series, prof_series))
