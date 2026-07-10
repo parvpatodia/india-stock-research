@@ -1,6 +1,4 @@
 from src.llm.client import LLMClient, LiteLLMClient
-from src.portfolio.models import PositionAnalysis
-from src.research.analyst import ResearchAnalyst
 from src.research.claims import FACT
 from src.research.grounded_analyst import GroundedAnalyst
 from src.research.grounding import DocumentStore
@@ -28,18 +26,6 @@ def test_litellm_client_availability_tracks_model():
     configured = LiteLLMClient(model="nvidia_nim/deepseek-ai/deepseek-v3.2")
     assert configured.available is True
     assert configured.model_name == "nvidia_nim/deepseek-ai/deepseek-v3.2"
-
-
-def test_research_analyst_degrades_without_llm():
-    a = ResearchAnalyst(client=FakeClient("", available=False))
-    p = PositionAnalysis("RELIANCE", 15, 1180.0, 1331.0, "Energy", 0.3)
-    assert "unavailable" in a.research_note(p, {"name": "Reliance"}).lower()
-
-
-def test_research_analyst_uses_injected_client():
-    a = ResearchAnalyst(client=FakeClient("NOTE BODY"))
-    p = PositionAnalysis("RELIANCE", 15, 1180.0, 1331.0, "Energy", 0.3)
-    assert a.research_note(p, {"name": "Reliance"}) == "NOTE BODY"
 
 
 def _store_and_registry():

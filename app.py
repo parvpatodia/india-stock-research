@@ -79,7 +79,6 @@ from src.portfolio.analysis import (  # noqa: E402
     portfolio_daily_returns,
 )
 from src.portfolio.loader import load_holdings  # noqa: E402
-from src.research.analyst import ResearchAnalyst  # noqa: E402
 from src.research.claims import ESTIMATE, FACT, OPINION  # noqa: E402
 from src.research.annual_report_reader import read_filing  # noqa: E402
 from src.research.grounded_analyst import GroundedAnalyst  # noqa: E402
@@ -128,11 +127,6 @@ _STANCE_UI = {
 @st.cache_resource
 def get_provider() -> YFinanceProvider:
     return YFinanceProvider()
-
-
-@st.cache_resource
-def get_analyst() -> ResearchAnalyst:
-    return ResearchAnalyst()
 
 
 @st.cache_resource
@@ -477,9 +471,14 @@ with st.sidebar:
                         help="No single stock should exceed this share of the book. Used for the "
                              "'how much' sizing and the lump-sum plan.") / 100.0
     st.divider()
-    analyst = get_analyst()
-    if analyst.available:
-        st.success(f"AI research: on ({analyst.client.model_name})")
+    # WHY: reuse the already-cached GroundedAnalyst's client for this status check instead of a
+    # separate LLM-wrapper class -- this app has exactly one rigorous LLM research path
+    # (GroundedAnalyst: structural citation-tier + numeric-grounding checks, never trusting the
+    # model's output as-is). A prior, weaker ResearchAnalyst class (prompt-only guardrails, no
+    # structural validation) existed only for this trivial availability check and was removed.
+    grounded_status = get_grounded_analyst()
+    if grounded_status.available:
+        st.success(f"AI research: on ({grounded_status.client.model_name})")
     else:
         st.info("AI research: off. Set LLM_MODEL to enable the annual-report tiebreaker and the "
                 "research chat. The cross-verified analysis works without it.")
