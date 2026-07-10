@@ -281,6 +281,29 @@ def test_other_income_share_point_none_when_no_data():
     assert other_income_share_point({}) is None
 
 
+def test_other_income_share_point_negative_share_reads_as_a_net_expense():
+    # WHY (real money, honesty; adversarial-review finding): a negative share (live-verified
+    # against TCS's real FY2026 data, -0.2%) means "other income" was actually a net EXPENSE that
+    # year, not a small positive contribution -- the old wording ("−0% ... came from non-operating
+    # 'other income'") was confusing, not fabricated, but didn't honestly describe what a negative
+    # value means. Must say it plainly instead of rendering a nonsensical "-0%"/"-5%" figure.
+    point = other_income_share_point({2024: -5.0})
+    assert point is not None
+    assert "-5%" not in point and "−5%" not in point
+    assert "net expense" in point.lower()
+    assert "FY2024" in point
+    assert "not cross-verified" in point.lower() or "screener only" in point.lower()
+
+
+def test_other_income_share_point_near_zero_negative_share_reads_as_a_net_expense():
+    # The "-0%" cosmetic artifact this same fix closes (live-verified against TCS: -0.2 rounds
+    # to "-0" with :.0f formatting).
+    point = other_income_share_point({2024: -0.2})
+    assert point is not None
+    assert "-0%" not in point
+    assert "net expense" in point.lower()
+
+
 def test_screener_source_exposes_other_income_share():
     src = ScreenerFigureSource(fetcher=lambda symbol: OTHER_INCOME_FIXTURE)
     point = src.other_income_share("ANYTHING")

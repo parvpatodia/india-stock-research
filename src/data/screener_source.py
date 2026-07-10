@@ -362,6 +362,14 @@ def other_income_share_point(series: dict[int, float]) -> str | None:
         return None
     year = max(series)
     pct = series[year]
+    # WHY (real money, honesty): a negative share (live-verified against TCS's real data) means
+    # "other income" was actually a net EXPENSE that year, not a small positive contribution --
+    # rendering it as e.g. "-5% ... came from other income" is a confusing, nonsensical read of a
+    # genuinely different situation, and rounds to a bare "-0%" for a small negative value.
+    if pct < 0:
+        return (f"Other income was actually a net expense in FY{year} (reducing profit before "
+                f"tax by about {abs(pct):.0f}%) rather than adding to it; the bulk of profit is "
+                "driven by the core operating business (not cross-verified, Screener only).")
     if pct >= _OTHER_INCOME_NOTABLE_PCT:
         return (f"{pct:.0f}% of FY{year}'s profit before tax came from non-operating \"other "
                 "income\" (investment gains, interest income, or one-off items) rather than the "
