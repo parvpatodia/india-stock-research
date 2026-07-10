@@ -94,6 +94,28 @@ def _latest(df, candidates: list[str]) -> float | None:
     return None
 
 
+def _latest_pair(df, primary_candidates: list[str],
+                  secondary_candidates: list[str]) -> tuple[float | None, float | None]:
+    """The most recent SINGLE period where a primary and a secondary statement row are BOTH
+    non-NaN, returned as (primary_value, secondary_value) -- or (None, None) if no such period
+    exists. WHY: pulling each row's own most-recent non-null value independently (two separate
+    _latest() calls) risks silently pairing values from DIFFERENT fiscal periods if one row has
+    a gap the other doesn't (e.g. this year's Interest Expense + last year's Pretax Income) --
+    a combined figure like EBIT would be meaningless even though each half looks fine alone.
+    Matches figures_by_year()'s existing period-aligned pairing for the same figure."""
+    if df is None or getattr(df, "empty", True):
+        return None, None
+    primary_label = next((label for label in primary_candidates if label in df.index), None)
+    secondary_label = next((label for label in secondary_candidates if label in df.index), None)
+    if primary_label is None or secondary_label is None:
+        return None, None
+    for col in df.columns:  # most recent first
+        p, s = _num(df.loc[primary_label, col]), _num(df.loc[secondary_label, col])
+        if p is not None and s is not None:
+            return p, s
+    return None, None
+
+
 def _year_of(col) -> int | None:
     year = getattr(col, "year", None)
     if isinstance(year, int):
@@ -140,9 +162,14 @@ class YFinanceFigureSource(FigureSource):
         out["interest_expense"] = abs(interest) if interest is not None else None
         # WHY: define EBIT as pre-tax income + interest, matching Screener's "PBT + interest",
         # so the two sources compare the same concept. Fall back to Operating Income.
-        pretax = _latest(income, ["Pretax Income", "Income Before Tax", "Pre Tax Income"])
-        if pretax is not None and interest is not None:
-            out["ebit"] = pretax + abs(interest)
+        # Use _latest_pair (not two independent _latest() calls) so pretax and interest come from
+        # the SAME fiscal period -- see _latest_pair's docstring for why pairing independently
+        # found "latest" values can silently mix two different years.
+        pretax, interest_for_ebit = _latest_pair(
+            income, ["Pretax Income", "Income Before Tax", "Pre Tax Income"],
+            ["Interest Expense", "Interest Expense Non Operating"])
+        if pretax is not None and interest_for_ebit is not None:
+            out["ebit"] = pretax + abs(interest_for_ebit)
         else:
             out["ebit"] = _latest(income, ["EBIT", "Operating Income"])
         out["operating_cash_flow"] = _latest(

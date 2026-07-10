@@ -1,8 +1,11 @@
+import pandas as pd
+
 from src.data.figure_sources import (
     FRAMEWORK_FIGURES,
     PERCENT_FIGURES,
     RATIO_FIGURES,
     FigureSource,
+    YFinanceFigureSource,
     format_figure_value,
 )
 from src.pipeline import build_report_for_symbol, gather_figures
@@ -77,3 +80,36 @@ def test_two_disagreeing_sources_conflict():
     net_profit = next(f for f in r.figures if f.name == "net_profit")
     assert net_profit.status == VerificationStatus.CONFLICT
     assert not net_profit.is_trustworthy
+
+
+class _FakeTicker:
+    def __init__(self, income_stmt):
+        self.info = {}
+        self.income_stmt = income_stmt
+        self.balance_sheet = pd.DataFrame()
+        self.cashflow = pd.DataFrame()
+
+
+def test_ebit_uses_pretax_and_interest_from_the_same_fiscal_period(monkeypatch):
+    # WHY (real money): Pretax Income and Interest Expense are looked up independently via
+    # _latest(), each returning ITS OWN most-recent non-NaN period. If one row has a gap the
+    # other doesn't (yfinance income statements are not always fully populated for the latest
+    # period across every row), the two "latest" values can come from DIFFERENT fiscal years --
+    # e.g. this year's Interest Expense (100) plus LAST year's Pretax Income (900), producing an
+    # EBIT of 1000 that never existed in any single real fiscal year. EBIT must instead use the
+    # most recent period where BOTH rows actually have data together (here, 2025: 900 + 90 =
+    # 990), matching figures_by_year()'s existing period-aligned pairing for this same figure.
+    cols = [pd.Timestamp("2026-03-31"), pd.Timestamp("2025-03-31")]
+    income = pd.DataFrame(
+        {cols[0]: [None, 100.0], cols[1]: [900.0, 90.0]},
+        index=["Pretax Income", "Interest Expense"],
+    )
+    fake_yf = type("_FakeYF", (), {"Ticker": staticmethod(lambda _sym: _FakeTicker(income))})
+    monkeypatch.setitem(__import__("sys").modules, "yfinance", fake_yf)
+
+    figs = YFinanceFigureSource().figures("X")
+
+    assert figs["ebit"] == 990.0
+    # Interest Expense standalone must stay the freshest available value (2026's 100), unaffected
+    # by which period the EBIT pairing had to fall back to.
+    assert figs["interest_expense"] == 100.0
