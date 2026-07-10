@@ -1,4 +1,10 @@
-from src.analysis.trends import cagr, trend_improving, trend_points, verified_series
+from src.analysis.trends import (
+    cagr,
+    earnings_volatility_point,
+    trend_improving,
+    trend_points,
+    verified_series,
+)
 
 CR = 1e7
 
@@ -64,3 +70,33 @@ def test_trend_improving_false_when_shrinking():
     rev = {2020: 121 * CR, 2021: 110 * CR, 2022: 100 * CR}       # declining
     prof = {2020: 15 * CR, 2021: 12 * CR, 2022: 10 * CR}
     assert trend_improving(rev, prof) is False
+
+
+# --- earnings_volatility_point: no blind spots for cyclical/lumpy-revenue businesses ---
+
+def test_earnings_volatility_flags_a_real_cyclical_swing():
+    # WHY: live-verified against real JSW Steel data (a genuine cyclical steel producer): profit
+    # swung +115% then -61% year over year. A single year's ROE/margin here would be badly
+    # misleading -- 2024 alone would look like a standout year, 2025 alone mediocre, purely from
+    # steel-cycle timing, not a change in the underlying business.
+    profit = {2023: 4142 * CR, 2024: 8892 * CR, 2025: 3498 * CR}
+    point = earnings_volatility_point(profit)
+    assert point is not None
+    assert "swung" in point.lower() or "volatil" in point.lower()
+
+
+def test_earnings_volatility_silent_for_a_smooth_grower():
+    # Live-verified against real TCS data: consistent ~1-9%/yr growth, no cyclical swing.
+    profit = {2023: 42225 * CR, 2024: 46004 * CR, 2025: 48675 * CR, 2026: 49332 * CR}
+    assert earnings_volatility_point(profit) is None
+
+
+def test_earnings_volatility_needs_at_least_two_yoy_growth_points():
+    assert earnings_volatility_point({2024: 100 * CR}) is None            # 1 year, no growth rate
+    assert earnings_volatility_point({2023: 100 * CR, 2024: 110 * CR}) is None  # only 1 growth rate
+
+
+def test_earnings_volatility_guards_against_a_zero_base_year():
+    # A year with zero profit can't produce a meaningful % growth rate off it; must not crash.
+    profit = {2022: 0.0, 2023: 100 * CR, 2024: 50 * CR}
+    assert earnings_volatility_point(profit) is None   # <2 usable growth points after the guard

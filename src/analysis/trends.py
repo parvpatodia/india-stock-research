@@ -75,6 +75,40 @@ def trend_improving(revenue_series: dict[int, float],
     return bool(growing or margins_up)
 
 
+# Max-min spread of year-over-year profit growth rates (percentage points) beyond which earnings
+# read as cyclical/lumpy rather than smoothly compounding. Live-verified against real data: a
+# genuine cyclical steel producer (JSW Steel) swung +115% then -61% YoY (175pp spread); a smooth
+# IT grower (TCS) swung only 8pp; a stable FMCG name (HUL) sat right at this 40pp boundary, driven
+# by one unusual year, a reasonable case to flag either way.
+_VOLATILITY_SWING = 40.0
+
+
+def earnings_volatility_point(profit_series: dict[int, float]) -> str | None:
+    """A caveat when profit has swung sharply year to year, common in cyclical/commodity
+    businesses and lumpy, project-based revenue recognition (e.g. real estate), where a single
+    year's ROE/margin reading can badly misrepresent long-term earning power. WHY (no blind
+    spots): the ratio suite (ROE, margins, ...) is computed from the LATEST year only; without
+    this, a cyclical name at a temporary peak or trough would look uniformly strong/weak with no
+    signal that the reading is timing-dependent. Needs >=2 usable year-over-year growth rates (a
+    zero-profit base year is skipped, not divided by, so it never crashes or fabricates a rate)."""
+    years = sorted(profit_series)
+    growths: list[float] = []
+    for a, b in zip(years, years[1:]):
+        v0, v1 = profit_series[a], profit_series[b]
+        if v0 == 0:
+            continue
+        growths.append((v1 - v0) / abs(v0) * 100)
+    if len(growths) < 2:
+        return None
+    swing = max(growths) - min(growths)
+    if swing < _VOLATILITY_SWING:
+        return None
+    return (f"Profit has swung sharply year to year (a {swing:.0f}-percentage-point range in "
+            f"annual growth over the last {len(years)} years) — common in cyclical or "
+            f"project-based businesses. A single year's ROE/margin may not represent its "
+            f"long-term earning power; weigh the multi-year trend, not just the latest year.")
+
+
 def trend_points(revenue_series: dict[int, float],
                  profit_series: dict[int, float]) -> list[str]:
     """Plain-language multi-year track-record points, from cross-verified yearly series."""
@@ -94,4 +128,7 @@ def trend_points(revenue_series: dict[int, float],
             points.append("Profit has grown faster than sales, so margins have been improving.")
         elif prof[0] < rev[0] - _MARGIN_MIN:
             points.append("Profit has grown slower than sales, so margins have been under pressure.")
+    volatility = earnings_volatility_point(profit_series)
+    if volatility:
+        points.append(volatility)
     return points
