@@ -252,7 +252,11 @@ class Guidance:
 
 
 def _money(x: float) -> str:
-    return f"₹{x:,.0f}"
+    # Shared Indian-convention rupee formatter, so guidance amounts read consistently with the
+    # rest of the app (₹5,00,000, not Western ₹500,000). formatting.py is dependency-free, so this
+    # doesn't pull any I/O into the pure analysis layer.
+    from ..formatting import format_rupees
+    return format_rupees(x)
 
 
 def long_term_guidance(stance: Stance, sizing: SizingAdvice, verdict: Verdict | None,

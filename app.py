@@ -47,6 +47,7 @@ from src.data.figure_sources import (  # noqa: E402
     format_figure_value,
 )
 from src.data.news_source import NewsSource, registry_with_news  # noqa: E402
+from src.formatting import format_rupees  # noqa: E402
 from src.data.nse_annual_reports import (  # noqa: E402
     fetch_annual_report_text,
     nse_annual_report_source,
@@ -391,9 +392,10 @@ def get_curated_library(fingerprint: str):
 
 
 def money(value: float | None) -> str:
-    if value is None:
-        return "n/a"
-    return f"{CURRENCY}{value:,.0f}"
+    # WHY: the parents' own portfolio/allocation amounts read in the Indian convention
+    # (₹5,00,000, not Western ₹500,000), consistent with the crore/lakh research figures. Shared
+    # formatter so there is one source of truth for how rupees display (see src/formatting.py).
+    return format_rupees(value)
 
 
 def ask_no_figures_tip(symbol: str, already_researched_this_session: bool) -> str:
@@ -1282,9 +1284,12 @@ with tab_ask:
                     elif claim.kind == ESTIMATE:
                         st.info(f"Estimate (derived, not a primary figure): {claim.text}")
                     else:
-                        # A claimed 'fact' downgraded for lacking a primary source. If it's from
-                        # news/analyst, it's reporting/context (honest, not alarming); only a
-                        # missing-primary genuine fact gets the hard warning.
+                        # UNVERIFIED: a claim downgraded either for lacking a primary source, or
+                        # for stating a number absent from its cited source (a misquote -- applies
+                        # to both FACT and OPINION now). If it's from news/analyst, it's
+                        # reporting/context (honest, not alarming); only a claim resting solely on
+                        # primary sources (so the issue is a fabricated/misquoted figure, not the
+                        # tier) gets the hard warning.
                         from_primary_only_source = all(
                             registry.get(c.source_id) and registry.get(c.source_id).citable_as_fact
                             for c in claim.citations)
