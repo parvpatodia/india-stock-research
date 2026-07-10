@@ -84,8 +84,10 @@ from src.research.annual_report_reader import read_filing  # noqa: E402
 from src.research.grounded_analyst import GroundedAnalyst  # noqa: E402
 from src.research.grounding import DocumentStore  # noqa: E402
 from src.research.verified_context import (  # noqa: E402
+    CASH_CONVERSION_TREND_SOURCE_ID,
     PROMOTER_TREND_SOURCE_ID,
     VERIFIED_FIGURES_SOURCE_ID,
+    cash_conversion_trend_document,
     promoter_trend_document,
     symbol_has_no_data,
     verified_figures_document,
@@ -353,6 +355,11 @@ def get_curated_library(fingerprint: str):
               "see the Research tab for the full evidence."))
     registry.add(Source(
         PROMOTER_TREND_SOURCE_ID, "Promoter shareholding trend (Screener)", CredibilityTier.ANALYST,
+        notes="Single-source (Screener only), not cross-verified -- reported context, never a "
+              "fact, and never a buy/sell signal on its own."))
+    registry.add(Source(
+        CASH_CONVERSION_TREND_SOURCE_ID, "Cash conversion cycle trend (Screener)",
+        CredibilityTier.ANALYST,
         notes="Single-source (Screener only), not cross-verified -- reported context, never a "
               "fact, and never a buy/sell signal on its own."))
     store = DocumentStore(registry=registry)
@@ -1082,6 +1089,7 @@ with tab_ask:
         pinned_source_ids: set[str] = set()
         vf_doc = None
         pt_doc = None
+        cc_doc = None
         sym_u = ""
         company = ""
         if ask_sym.strip():
@@ -1124,19 +1132,29 @@ with tab_ask:
                 # chunks that merely repeat the company name. Without pinning, the document this
                 # app already fetched would silently never reach the model.
                 pinned_source_ids.add(PROMOTER_TREND_SOURCE_ID)
+            # WHY: cash conversion cycle is a core cash-flow-discipline signal, same cached,
+            # single-Screener-page shape as promoter trend above (no heavier than the calls
+            # already made). Pinned immediately (not as a follow-up fix): live-verified that a
+            # realistic question ("Is the company managing money well?") scores this chunk at
+            # EXACTLY 0.0, crowded out by news the same way promoter trend was before it was
+            # pinned -- no reason to repeat that two-iteration mistake here.
+            cc_doc = cash_conversion_trend_document(sym_u, fetch_cash_conversion_trend(sym_u))
+            if cc_doc is not None:
+                ingest_documents(store, [cc_doc])
+                pinned_source_ids.add(CASH_CONVERSION_TREND_SOURCE_ID)
         # WHY (real money, workflow): distinct from "haven't researched yet". `company` alone
         # (yfinance's own name lookup) is a WEAKER signal than Report.no_data_found (which spans
         # figures from both yfinance AND Screener) -- a real, valid symbol can have yfinance's
         # name lookup come back empty (a known Yahoo India-coverage gap) while Screener still has
-        # real data. symbol_has_no_data widens the check to all three independent "this symbol is
-        # real" signals (name, cross-verified figures, promoter trend) so this hint is never shown
-        # in the same response where real per-symbol data was just fetched and used. Live-verified
-        # root cause: Page Industries trades as PAGEIND, not PAGE; typing the natural/common name
-        # resolves to nothing from ANY of the three signals. Telling the user to "research it
-        # first" would be actively misleading here -- doing so with the SAME wrong symbol fails
-        # there too, for the same reason.
+        # real data. symbol_has_no_data widens the check to all four independent "this symbol is
+        # real" signals (name, cross-verified figures, promoter trend, cash conversion cycle) so
+        # this hint is never shown in the same response where real per-symbol data was just
+        # fetched and used. Live-verified root cause: Page Industries trades as PAGEIND, not PAGE;
+        # typing the natural/common name resolves to nothing from ANY of the four signals. Telling
+        # the user to "research it first" would be actively misleading here -- doing so with the
+        # SAME wrong symbol fails there too, for the same reason.
         symbol_unresolved = bool(sym_u) and symbol_has_no_data(
-            company, vf_doc is not None, pt_doc is not None)
+            company, vf_doc is not None, pt_doc is not None, cc_doc is not None)
         wrong_symbol_hint = (
             f"'{sym_u}' didn't resolve to any company data. This usually means the exact NSE "
             "trading symbol differs from the company's common name (e.g. Page Industries trades "

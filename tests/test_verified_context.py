@@ -1,8 +1,10 @@
 from src.research.report import Report
 from src.research.verification import SourcedValue, VerificationStatus, VerifiedFigure
 from src.research.verified_context import (
+    CASH_CONVERSION_TREND_SOURCE_ID,
     PROMOTER_TREND_SOURCE_ID,
     VERIFIED_FIGURES_SOURCE_ID,
+    cash_conversion_trend_document,
     promoter_trend_document,
     symbol_has_no_data,
     verified_figures_document,
@@ -95,12 +97,33 @@ def test_promoter_trend_document_none_when_no_trend_available():
     assert promoter_trend_document("RELIANCE", "") is None
 
 
+def test_cash_conversion_trend_document_carries_the_sentence_and_source_id():
+    # WHY (research rigor, cash-flow discipline): mirrors promoter_trend_document exactly --
+    # Screener-only, single-source, self-disclosed "not cross-verified" context that the Research
+    # tab already surfaces but the Ask tab had no access to at all.
+    trend = ("Cash conversion cycle has lengthened from -2 days (FY2015) to 25 days (FY2026); a "
+            "lengthening cash cycle can mean slower collections, rising inventory, or weaker "
+            "supplier terms; worth checking against sector peers and recent quarters (not "
+            "cross-verified, Screener only).")
+    doc = cash_conversion_trend_document("RELIANCE", trend)
+    assert doc is not None
+    assert doc.source_id == CASH_CONVERSION_TREND_SOURCE_ID
+    assert "RELIANCE" in doc.text
+    assert trend in doc.text
+
+
+def test_cash_conversion_trend_document_none_when_no_trend_available():
+    assert cash_conversion_trend_document("RELIANCE", None) is None
+    assert cash_conversion_trend_document("RELIANCE", "") is None
+
+
 def test_symbol_has_no_data_true_only_when_every_signal_is_empty():
-    assert symbol_has_no_data("", verified_figures_found=False, promoter_trend_found=False) is True
+    assert symbol_has_no_data("", verified_figures_found=False, promoter_trend_found=False,
+                             cash_conversion_trend_found=False) is True
 
 
 def test_symbol_has_no_data_false_when_yfinance_name_resolved():
-    assert symbol_has_no_data("Reliance Industries", False, False) is False
+    assert symbol_has_no_data("Reliance Industries", False, False, False) is False
 
 
 def test_symbol_has_no_data_false_when_only_promoter_trend_resolved():
@@ -108,8 +131,16 @@ def test_symbol_has_no_data_false_when_only_promoter_trend_resolved():
     # where yfinance's own name lookup comes back empty (a known Yahoo India-coverage gap) but
     # Screener has data. `company` alone (the OLD, sole signal) would wrongly call this symbol
     # unresolved even though real per-symbol data was just fetched and used to answer the question.
-    assert symbol_has_no_data("", False, promoter_trend_found=True) is False
+    assert symbol_has_no_data("", False, promoter_trend_found=True,
+                             cash_conversion_trend_found=False) is False
 
 
 def test_symbol_has_no_data_false_when_only_verified_figures_resolved():
-    assert symbol_has_no_data("", verified_figures_found=True, promoter_trend_found=False) is False
+    assert symbol_has_no_data("", verified_figures_found=True, promoter_trend_found=False,
+                             cash_conversion_trend_found=False) is False
+
+
+def test_symbol_has_no_data_false_when_only_cash_conversion_trend_resolved():
+    # WHY: same "Screener has data even when yfinance's name lookup is empty" shape as the
+    # promoter-trend case, for the newest of the three per-symbol signals.
+    assert symbol_has_no_data("", False, False, cash_conversion_trend_found=True) is False

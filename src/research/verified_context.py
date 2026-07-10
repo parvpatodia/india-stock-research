@@ -16,6 +16,7 @@ from .report import Report
 
 VERIFIED_FIGURES_SOURCE_ID = "verified_figures"
 PROMOTER_TREND_SOURCE_ID = "promoter_trend"
+CASH_CONVERSION_TREND_SOURCE_ID = "cash_conversion_trend"
 
 # Human-readable labels for the framework's snake_case figure keys (src/data/figure_sources.py).
 _LABELS = {
@@ -76,8 +77,26 @@ def promoter_trend_document(symbol: str, trend: str | None) -> FetchedDocument |
                            url="", locator=f"{symbol} promoter shareholding trend")
 
 
+def cash_conversion_trend_document(symbol: str, trend: str | None) -> FetchedDocument | None:
+    """Wrap the Research tab's cash-conversion-cycle-trend sentence (see
+    screener_source.cash_conversion_cycle_trend, Screener-only, single-source) as a citable
+    document for the Ask tab, or None if no trend is available. Registered at ANALYST tier by
+    the caller (never PRIMARY/citable_as_fact) so it can only ever surface as reported context,
+    matching the "not cross-verified" caveat already embedded in the sentence itself. WHY:
+    mirrors promoter_trend_document -- cash-flow discipline is a core CA-level signal the
+    Research tab already fetches, but the Ask tab had no access to it at all, so a direct
+    question ("is working-capital getting worse?") could never be grounded even when the app
+    already had the answer sitting in cache."""
+    if not trend:
+        return None
+    return FetchedDocument(CASH_CONVERSION_TREND_SOURCE_ID,
+                           f"Cash conversion cycle for {symbol}: {trend}",
+                           url="", locator=f"{symbol} cash conversion cycle trend")
+
+
 def symbol_has_no_data(company: str, verified_figures_found: bool,
-                       promoter_trend_found: bool) -> bool:
+                       promoter_trend_found: bool,
+                       cash_conversion_trend_found: bool = False) -> bool:
     """True only when NONE of the independent "this symbol is real" signals resolved to
     anything. Gates the Ask tab's "symbol didn't resolve" hint.
 
@@ -86,8 +105,10 @@ def symbol_has_no_data(company: str, verified_figures_found: bool,
     A real, valid NSE symbol can have yfinance's name lookup come back empty (a known Yahoo
     India-coverage gap) while Screener still has real data for it. Gating the hint on `company`
     alone would tell a real-money user "this symbol didn't resolve to any company data" in the
-    same response where real Screener data (promoter trend, or a cached cross-verified report)
-    was just fetched and used to answer their question -- a false claim about the app's own
-    findings. Only declare the symbol unresolved when every independent signal came up empty.
+    same response where real Screener data (promoter trend, cash conversion cycle, or a cached
+    cross-verified report) was just fetched and used to answer their question -- a false claim
+    about the app's own findings. Only declare the symbol unresolved when every independent
+    signal came up empty.
     """
-    return not company and not verified_figures_found and not promoter_trend_found
+    return (not company and not verified_figures_found and not promoter_trend_found
+            and not cash_conversion_trend_found)
