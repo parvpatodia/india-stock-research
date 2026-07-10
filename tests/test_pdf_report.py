@@ -1,0 +1,63 @@
+"""build_pdf_report lives in app.py, so it's exercised by importing the module directly (same
+env-safe pattern as test_app_cache_ttls.py) and reading the generated PDF's real text back out
+via pypdf -- the same library src/research/library.py already uses to read a PDF's content.
+"""
+import io
+import os
+
+from src.analysis.sizing import Stance
+from src.research.report import Confidence, Leaning, QualityTier, Report, ValuationTier, Verdict
+
+
+def _import_app_with_clean_env():
+    saved = dict(os.environ)
+    try:
+        for k in ("LLM_MODEL", "LLM_API_KEY", "LLM_API_BASE", "GROQ_API_KEY"):
+            os.environ.pop(k, None)
+        import app
+        return app
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
+
+
+def _pdf_text(pdf_bytes: bytes) -> str:
+    from pypdf import PdfReader
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    return "\n".join(page.extract_text() or "" for page in reader.pages)
+
+
+def _report():
+    v = Verdict(ValuationTier.FAIR, QualityTier.STRONG, Leaning.NEUTRAL, Confidence.MEDIUM,
+               reasons=("debt/equity 0.60 reads moderate.",))
+    return Report(company="RELIANCE", verdict=v, insights=("Price: fairly valued.",))
+
+
+def test_pdf_includes_the_single_source_context_signals():
+    # WHY (real money, UI honesty): the download button is labeled "Download full report" -- a
+    # parent who saves this PDF to review offline or share with family must see the SAME
+    # promoter-trend / cash-conversion-cycle / other-income-share signals the live Research tab
+    # shows in their own expanders, not a report silently missing three of the app's own signals.
+    app = _import_app_with_clean_env()
+    pdf_bytes = app.build_pdf_report(
+        "RELIANCE (live)", _report(), Stance.NEUTRAL,
+        promoter_trend="Promoter holding has stayed roughly steady near 50.0%.",
+        cash_conversion_trend="Cash conversion cycle has lengthened from -2 days to 25 days.",
+        other_income_share="27% of FY2026's profit before tax came from non-operating "
+                           "\"other income\".")
+    text = _pdf_text(pdf_bytes)
+    assert "Promoter holding has stayed roughly steady near 50.0%." in text
+    assert "Cash conversion cycle has lengthened from -2 days to 25 days." in text
+    assert "27% of FY2026's profit" in text
+    assert "Additional context" in text
+    assert "cannot cross-verify" in text
+
+
+def test_pdf_omits_the_section_entirely_when_no_signal_is_available():
+    # WHY: don't show an empty/misleading "Additional context" header when nothing was fetched
+    # (e.g. Screener was unreachable) -- omission must read as "nothing shown", not "nothing
+    # exists", but an empty section header would look like a broken/incomplete report.
+    app = _import_app_with_clean_env()
+    pdf_bytes = app.build_pdf_report("RELIANCE (live)", _report(), Stance.NEUTRAL)
+    text = _pdf_text(pdf_bytes)
+    assert "Additional context" not in text

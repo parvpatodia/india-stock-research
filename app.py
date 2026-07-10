@@ -417,9 +417,19 @@ _STANCE_PDF = {Stance.FAVORABLE: "[+] ", Stance.NEUTRAL: "[~] ",
                Stance.UNFAVORABLE: "[-] ", Stance.INSUFFICIENT_DATA: "[?] "}
 
 
-def build_pdf_report(title: str, report, stance: Stance, guidance=None) -> bytes:
+def build_pdf_report(title: str, report, stance: Stance, guidance=None,
+                     promoter_trend: str | None = None,
+                     cash_conversion_trend: str | None = None,
+                     other_income_share: str | None = None) -> bytes:
     """A downloadable PDF of the report, mirroring what is on screen. Uses the core Helvetica
-    font (Latin-1), so text is sanitized and the rupee sign is written as 'Rs.'."""
+    font (Latin-1), so text is sanitized and the rupee sign is written as 'Rs.'.
+
+    WHY (real money, UI honesty): promoter_trend/cash_conversion_trend/other_income_share are
+    the same single-source (Screener-only) context signals the Research tab shows in their own
+    expanders -- this button is labeled "Download full report", so a parent who saves this PDF
+    to review offline, or share with family, must see the SAME signals the live app shows them,
+    not a report that is silently missing three of the app's own research signals.
+    """
     from fpdf import FPDF
     from fpdf.enums import XPos, YPos
 
@@ -487,6 +497,19 @@ def build_pdf_report(title: str, report, stance: Stance, guidance=None) -> bytes
         period = next((str(sv.locator) for sv in f.sources
                        if str(getattr(sv, "locator", "") or "").upper().startswith("FY")), "current")
         line(f"- {f.name}: {val}  [{period}; {f.status.value}; {srcs}]", size=10, h=5)
+
+    single_source_points = [p for p in
+                           (promoter_trend, cash_conversion_trend, other_income_share) if p]
+    if single_source_points:
+        pdf.ln(2)
+        pdf.set_text_color(0, 0, 0)
+        line("Additional context (single-source, not cross-verified)", size=12, style="B", h=7)
+        for point in single_source_points:
+            line(f"- {point}", size=10, h=5)
+        pdf.set_text_color(90, 90, 90)
+        line("Screener-only signals (not in yfinance), so they cannot cross-verify the way the "
+             "figures above do. Context, not a fact, and never a buy/sell signal on their own.",
+             size=9, style="I", h=5)
 
     if v is not None:
         pdf.ln(2)
@@ -810,10 +833,15 @@ with tab_research:
 
         st.caption(report.verdict.caveat if report.verdict else DISCLAIMER)
 
-        # download (PDF)
-        st.download_button("⬇️ Download full report (PDF)",
-                           data=build_pdf_report(active, report, stance, guidance),
-                           file_name=f"{sym}_research.pdf", mime="application/pdf")
+        # download (PDF) -- same cached, already-fetched signals the expanders below show live,
+        # so the "full report" PDF a parent saves offline isn't silently missing them.
+        st.download_button(
+            "⬇️ Download full report (PDF)",
+            data=build_pdf_report(active, report, stance, guidance,
+                                  promoter_trend=fetch_promoter_trend(sym),
+                                  cash_conversion_trend=fetch_cash_conversion_trend(sym),
+                                  other_income_share=fetch_other_income_share(sym)),
+            file_name=f"{sym}_research.pdf", mime="application/pdf")
 
         # the evidence, one tap away
         with st.expander("See the evidence (figures, reasons, sources)"):
