@@ -10,6 +10,7 @@ that has not already cleared the same bar as everything else in this app.
 """
 from __future__ import annotations
 
+from ..data.figure_sources import PERCENT_FIGURES, RATIO_FIGURES
 from ..sources.adapters import FetchedDocument
 from .report import Report
 
@@ -30,14 +31,12 @@ _LABELS = {
     "revenue": "Revenue",
     "dividend_yield_pct": "Dividend yield",
 }
-_RATIO_FIGURES = {"current_pe", "median_pe"}      # shown as "18.2x", not rupees
-_PERCENT_FIGURES = {"promoter_pledge_pct", "dividend_yield_pct"}   # shown as "0.0%"
 
 
 def _format(name: str, value: float) -> str:
-    if name in _RATIO_FIGURES:
+    if name in RATIO_FIGURES:
         return f"{value:.1f}x"
-    if name in _PERCENT_FIGURES:
+    if name in PERCENT_FIGURES:
         return f"{value:.1f}%"
     return f"₹{value:,.0f}"
 

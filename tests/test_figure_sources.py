@@ -1,4 +1,9 @@
-from src.data.figure_sources import FRAMEWORK_FIGURES, FigureSource
+from src.data.figure_sources import (
+    FRAMEWORK_FIGURES,
+    PERCENT_FIGURES,
+    RATIO_FIGURES,
+    FigureSource,
+)
 from src.pipeline import build_report_for_symbol, gather_figures
 from src.research.report import Confidence, Leaning, QualityTier, ValuationTier
 from src.research.verification import VerificationStatus
@@ -17,6 +22,17 @@ class FakeSource(FigureSource):
 
     def figures(self, symbol: str) -> dict[str, float | None]:
         return {name: self._data.get(name) for name in FRAMEWORK_FIGURES}
+
+
+def test_ratio_and_percent_figures_are_disjoint_and_within_framework_figures():
+    # WHY: the ONE shared classification every unit-label/format call site relies on (the Ask
+    # tab's document, the expert-correction UI, ...) -- must never overlap or name a figure that
+    # doesn't exist, or a label/format would silently apply to the wrong kind of number.
+    assert RATIO_FIGURES.isdisjoint(PERCENT_FIGURES)
+    assert RATIO_FIGURES <= set(FRAMEWORK_FIGURES)
+    assert PERCENT_FIGURES <= set(FRAMEWORK_FIGURES)
+    assert RATIO_FIGURES == {"current_pe", "median_pe"}
+    assert PERCENT_FIGURES == {"promoter_pledge_pct", "dividend_yield_pct"}
 
 
 def test_gather_merges_by_source():

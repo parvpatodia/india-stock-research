@@ -40,7 +40,11 @@ from src.constants import (  # noqa: E402
     SENSEX_SYMBOL,
 )
 from src.data.annual_report_source import AnnualReportFigureSource  # noqa: E402
-from src.data.figure_sources import YFinanceFigureSource  # noqa: E402
+from src.data.figure_sources import (  # noqa: E402
+    PERCENT_FIGURES,
+    RATIO_FIGURES,
+    YFinanceFigureSource,
+)
 from src.data.news_source import NewsSource, registry_with_news  # noqa: E402
 from src.data.nse_annual_reports import (  # noqa: E402
     fetch_annual_report_text,
@@ -865,8 +869,19 @@ with tab_research:
 
             st.markdown("**Record a corrected figure** (feeds the learning loop; no mistake twice)")
             gt_fig = st.selectbox("Figure", [f.name for f in report.figures], key=f"gtf_{active}")
-            gt_val = st.number_input("Correct value (absolute rupees)", value=0.0, step=1.0,
-                                     format="%.0f", key=f"gtv_{active}")
+            # WHY: the label/step/format must match the SELECTED figure's actual unit. current_pe/
+            # median_pe are ratios (e.g. 22.5x) and promoter_pledge_pct/dividend_yield_pct are
+            # percentages (e.g. 5.2%), not rupees -- a reviewer entering a correction for one of
+            # those trusting a blanket "(absolute rupees)" label could record a wrongly-scaled
+            # ground truth into the very mechanism meant to catch the system being wrong.
+            if gt_fig in RATIO_FIGURES:
+                gt_label, gt_step, gt_fmt = "Correct value (e.g. 22.5 for 22.5x)", 0.1, "%.2f"
+            elif gt_fig in PERCENT_FIGURES:
+                gt_label, gt_step, gt_fmt = "Correct value (%, e.g. 5.2 for 5.2%)", 0.1, "%.2f"
+            else:
+                gt_label, gt_step, gt_fmt = "Correct value (absolute rupees)", 1.0, "%.0f"
+            gt_val = st.number_input(gt_label, value=0.0, step=gt_step, format=gt_fmt,
+                                     key=f"gtv_{active}")
             if st.button("Save correction", key=f"gts_{active}"):
                 # WHY: guard the default 0.0 — an accidental save would record a bogus correct
                 # value and create a permanent spurious 'trusted-wrong' in the must-be-0 metric.

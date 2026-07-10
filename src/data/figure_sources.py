@@ -29,6 +29,11 @@ YEAR_FIGURES = ("net_profit", "operating_cash_flow", "total_debt", "equity", "eb
                 "interest_expense", "total_assets", "revenue")
 # Figures that are point-in-time (current), not tied to a fiscal year.
 POINT_FIGURES = ("current_pe", "median_pe", "promoter_pledge_pct", "dividend_yield_pct")
+# Unit classification, shared by every place that formats or labels a figure by name (the Ask
+# tab's verified-figures document, the expert-correction UI, ...), so "is this rupees, a ratio,
+# or a percentage" is defined ONCE and can't drift out of sync between call sites.
+RATIO_FIGURES = frozenset({"current_pe", "median_pe"})                       # e.g. "18.2x"
+PERCENT_FIGURES = frozenset({"promoter_pledge_pct", "dividend_yield_pct"})    # e.g. "0.5%"
 
 _YEAR = re.compile(r"(\d{4})")
 
