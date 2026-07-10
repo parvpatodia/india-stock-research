@@ -148,6 +148,15 @@ class Report:
             raise ValueError(
                 f"{len(self.conflicts)} figure(s) in CONFLICT; resolve them, or approve with "
                 "acknowledge_conflicts=True and a note explaining why.")
+        # WHY (real money, accountability): acknowledge_conflicts is a documented human judgment
+        # call overriding a genuine data disagreement -- the whole point of the audit trail. The
+        # UI (app.py) shows the checkbox and the note field as two independent controls, so
+        # without this a reviewer could tick "I checked ... and accept them" and approve with the
+        # note left blank, leaving zero record of WHY the conflict was judged safe to override.
+        if self.conflicts and acknowledge_conflicts and not note.strip():
+            raise ValueError(
+                "acknowledging a conflict requires a note explaining why it's safe to override "
+                "(the audit trail must record the reasoning, not just that a box was checked).")
         return self._transition(ReviewStatus.APPROVED, reviewer, note)
 
     def reject(self, reviewer: str, note: str = "",

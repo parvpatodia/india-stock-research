@@ -122,6 +122,25 @@ def test_approve_blocked_while_conflicts_unless_acknowledged():
     assert ok.is_trusted
 
 
+def test_approve_over_a_conflict_requires_a_note_explaining_why():
+    # WHY (real money, accountability): approve()'s own error message tells the reviewer to
+    # "approve with acknowledge_conflicts=True and a NOTE EXPLAINING WHY", but nothing enforced
+    # that the note is actually non-blank -- app.py's UI shows the checkbox and the note field as
+    # two independent controls, so a reviewer could tick "I checked ... and accept them" and click
+    # Approve with the note left empty, leaving an audit-trail entry ("APPROVED, conflicts
+    # acknowledged") with zero record of WHY the conflicting figure was judged safe to override.
+    # The whole point of the acknowledge_conflicts escape hatch is a documented human judgment
+    # call; an undocumented one defeats the audit trail's purpose exactly where it matters most.
+    r = Report(company="Acme", figures=(_verified_fig(), _conflict_fig()))
+    with pytest.raises(ValueError):
+        r.approve(reviewer="expert", acknowledge_conflicts=True)            # no note at all
+    with pytest.raises(ValueError):
+        r.approve(reviewer="expert", note="   ", acknowledge_conflicts=True)  # whitespace-only
+    ok = r.approve(reviewer="expert", note="revenue conflict is a units issue, verified by hand",
+                   acknowledge_conflicts=True)
+    assert ok.is_trusted
+
+
 def test_audit_trail_preserves_order():
     r = Report(company="Acme", figures=(_verified_fig(),), verdict=_verdict())
     r2 = r.reject(reviewer="expert", note="fix x")
