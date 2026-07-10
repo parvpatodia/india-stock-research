@@ -154,8 +154,21 @@ def _dedup_sort_cap(items: list[NewsItem], cap: int,
     return unique[:cap]
 
 
-def _google_query(company_name: str, symbol: str) -> str:
-    return f"{(company_name or symbol).strip()} stock"
+def _google_query(company_name: str) -> str | None:
+    """The Google News search query, or None if there is no VERIFIED company name to search
+    safely. WHY (real money, honesty): falling back to a bare ticker SYMBOL as free-text search is
+    unsafe -- live-verified that real NSE tickers can be common English words (PAGE = Page
+    Industries; also IDEA, SAIL, RAIN), and yfinance's own name resolution can fail (confirmed
+    live for PAGE: a 404 on fundamentals). Searching 'PAGE stock' returned a Rocket Lab article
+    matched on the unrelated idiom 'takes a page out of...', mixed indistinguishably with genuine
+    Page Industries news in a feed the UI displays directly, unmediated by any LLM judgment. No
+    query augmentation reliably fixes a generic single-word ticker (also tried and confirmed
+    unhelpful: 'PAGE India NSE stock', 'PAGE.NS stock' -- the latter matched Union
+    Pacific/Norfolk Southern merger news via 'NS'). Only search when a real name is resolved."""
+    name = (company_name or "").strip()
+    if not name:
+        return None
+    return f"{name} stock"
 
 
 class NewsSource:
@@ -195,10 +208,14 @@ class NewsSource:
 
     def fetch(self, symbol: str, company_name: str = "") -> list[NewsItem]:
         items: list[NewsItem] = []
-        try:
-            items += parse_google_news_rss(self._rss_fetcher(_google_query(company_name, symbol)))
-        except Exception:
-            pass
+        query = _google_query(company_name)
+        if query is not None:
+            try:
+                items += parse_google_news_rss(self._rss_fetcher(query))
+            except Exception:
+                pass
+        # Yahoo's news is keyed by TICKER, not a free-text search, so it doesn't carry the same
+        # common-word ambiguity risk and is always attempted regardless of name resolution.
         try:
             items += parse_yahoo_news(self._yahoo_fetcher(symbol))
         except Exception:

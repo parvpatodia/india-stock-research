@@ -93,11 +93,34 @@ def test_newssource_aggregates_dedups_and_sorts_newest_first():
     assert items[0].published == "2026-07-08"
 
 
+def test_newssource_skips_google_search_without_a_verified_company_name():
+    # WHY (real money, honesty): live-verified that several real NSE tickers are common English
+    # words (PAGE = Page Industries; also IDEA, SAIL, RAIN) -- yfinance's own name resolution can
+    # fail (confirmed live for PAGE: a 404 on fundamentals -> name=None), and searching Google News
+    # for the BARE TICKER as free text then pulls in wildly unrelated results (confirmed live:
+    # "PAGE stock" returned a Rocket Lab article matched on the unrelated idiom "takes a page out
+    # of...", mixed indistinguishably with genuine Page Industries news). Only search Google News
+    # with a genuinely resolved company name; an unresolved name must skip the search entirely,
+    # not silently substitute the ticker as if it were safe free text.
+    rss_calls = []
+
+    def rss_fetcher(query):
+        rss_calls.append(query)
+        return GOOGLE_RSS
+
+    ns = NewsSource(rss_fetcher=rss_fetcher, yahoo_fetcher=lambda s: [], today=_TODAY)
+    ns.fetch("PAGE", "")                          # no resolved company name
+    assert rss_calls == []                        # Google search skipped entirely
+
+    ns.fetch("RELIANCE", "Reliance Industries")    # a genuinely resolved name
+    assert len(rss_calls) == 1                     # Google search proceeds normally
+
+
 def test_newssource_caps_and_survives_one_feed_failing():
     def boom(_):
         raise RuntimeError("feed down")
     ns = NewsSource(rss_fetcher=lambda q: GOOGLE_RSS, yahoo_fetcher=boom, max_items=1, today=_TODAY)
-    items = ns.fetch("RELIANCE")
+    items = ns.fetch("RELIANCE", "Reliance Industries")   # a resolved name -> google search runs
     assert len(items) == 1                       # yahoo failed, google still returned; capped to 1
     assert items[0].published == "2026-07-08"
 

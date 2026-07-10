@@ -795,7 +795,11 @@ with tab_research:
 
         # recent news (context only, dated, never a verified fact)
         with st.expander("Recent news (context, dated, not verified facts)"):
-            company = fetch_fundamentals(sym).get("name") or sym
+            # WHY: pass the RAW resolved name (never falling back to the bare symbol) -- some
+            # real NSE tickers are common English words (PAGE, IDEA, SAIL, RAIN), so searching
+            # news for the bare ticker when the name can't be resolved pulls in unrelated results
+            # (live-verified). NewsSource itself skips the Google search when no name is given.
+            company = fetch_fundamentals(sym).get("name") or ""
             items = fetch_news(sym, company)
             if not items:
                 st.caption("No recent news found (or the feed was unreachable).")
@@ -1033,7 +1037,11 @@ with tab_ask:
         sym_u = ""
         if ask_sym.strip():
             sym_u = ask_sym.strip().upper()
-            company = fetch_fundamentals(sym_u).get("name") or ask_sym
+            # WHY: pass the RAW resolved name, never falling back to the bare symbol -- some
+            # real NSE tickers are common English words (PAGE, IDEA, SAIL, RAIN), so searching
+            # news for the bare ticker when the name can't be resolved pulls in unrelated results
+            # (live-verified). NewsSource itself skips the Google search when no name is given.
+            company = fetch_fundamentals(sym_u).get("name") or ""
             with st.spinner("Reading recent news..."):
                 items = fetch_news(sym_u, company)
                 ingest_documents(store, NewsSource.as_documents(items))
