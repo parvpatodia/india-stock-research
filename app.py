@@ -85,9 +85,11 @@ from src.research.grounded_analyst import GroundedAnalyst  # noqa: E402
 from src.research.grounding import DocumentStore  # noqa: E402
 from src.research.verified_context import (  # noqa: E402
     CASH_CONVERSION_TREND_SOURCE_ID,
+    OTHER_INCOME_SHARE_SOURCE_ID,
     PROMOTER_TREND_SOURCE_ID,
     VERIFIED_FIGURES_SOURCE_ID,
     cash_conversion_trend_document,
+    other_income_share_document,
     promoter_trend_document,
     symbol_has_no_data,
     verified_figures_document,
@@ -371,6 +373,11 @@ def get_curated_library(fingerprint: str):
         CredibilityTier.ANALYST,
         notes="Single-source (Screener only), not cross-verified -- reported context, never a "
               "fact, and never a buy/sell signal on its own."))
+    registry.add(Source(
+        OTHER_INCOME_SHARE_SOURCE_ID, "Other income share of profit (Screener)",
+        CredibilityTier.ANALYST,
+        notes="Single-source (Screener's own P&L), not cross-verified -- reported context, "
+              "never a fact, and never a buy/sell signal on its own."))
     store = DocumentStore(registry=registry)
     skipped: list[str] = []
     failed: list[str] = []
@@ -1112,6 +1119,7 @@ with tab_ask:
         vf_doc = None
         pt_doc = None
         cc_doc = None
+        oi_doc = None
         sym_u = ""
         company = ""
         if ask_sym.strip():
@@ -1164,19 +1172,29 @@ with tab_ask:
             if cc_doc is not None:
                 ingest_documents(store, [cc_doc])
                 pinned_source_ids.add(CASH_CONVERSION_TREND_SOURCE_ID)
+            # WHY: other income share is a core quality-of-earnings signal, same cached, single-
+            # Screener-page shape as the two trends above. Pinned immediately: live-verified that
+            # a realistic question ("Is earnings quality good?") scores this chunk at 0.0917, just
+            # below the 0.10 floor, crowded out by news the same way promoter trend was before it
+            # was pinned.
+            oi_doc = other_income_share_document(sym_u, fetch_other_income_share(sym_u))
+            if oi_doc is not None:
+                ingest_documents(store, [oi_doc])
+                pinned_source_ids.add(OTHER_INCOME_SHARE_SOURCE_ID)
         # WHY (real money, workflow): distinct from "haven't researched yet". `company` alone
         # (yfinance's own name lookup) is a WEAKER signal than Report.no_data_found (which spans
         # figures from both yfinance AND Screener) -- a real, valid symbol can have yfinance's
         # name lookup come back empty (a known Yahoo India-coverage gap) while Screener still has
-        # real data. symbol_has_no_data widens the check to all four independent "this symbol is
-        # real" signals (name, cross-verified figures, promoter trend, cash conversion cycle) so
-        # this hint is never shown in the same response where real per-symbol data was just
-        # fetched and used. Live-verified root cause: Page Industries trades as PAGEIND, not PAGE;
-        # typing the natural/common name resolves to nothing from ANY of the four signals. Telling
-        # the user to "research it first" would be actively misleading here -- doing so with the
-        # SAME wrong symbol fails there too, for the same reason.
+        # real data. symbol_has_no_data widens the check to all five independent "this symbol is
+        # real" signals (name, cross-verified figures, promoter trend, cash conversion cycle,
+        # other income share) so this hint is never shown in the same response where real per-
+        # symbol data was just fetched and used. Live-verified root cause: Page Industries trades
+        # as PAGEIND, not PAGE; typing the natural/common name resolves to nothing from ANY of the
+        # five signals. Telling the user to "research it first" would be actively misleading here
+        # -- doing so with the SAME wrong symbol fails there too, for the same reason.
         symbol_unresolved = bool(sym_u) and symbol_has_no_data(
-            company, vf_doc is not None, pt_doc is not None, cc_doc is not None)
+            company, vf_doc is not None, pt_doc is not None, cc_doc is not None,
+            oi_doc is not None)
         wrong_symbol_hint = (
             f"'{sym_u}' didn't resolve to any company data. This usually means the exact NSE "
             "trading symbol differs from the company's common name (e.g. Page Industries trades "

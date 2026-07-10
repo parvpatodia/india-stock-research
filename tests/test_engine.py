@@ -274,6 +274,55 @@ def test_retrieve_pins_the_cash_conversion_trend_source_regardless_of_score():
     assert any(rc.chunk.source_id == "cash_conversion_trend" for rc in hits)
 
 
+def _news_and_other_income_share_store():
+    """Same shape as _news_and_cash_conversion_trend_store, for the Ask tab's newest small,
+    authoritative, single-chunk addition (see verified_context.other_income_share_document)."""
+    store = DocumentStore()
+    news = [
+        "[Moneycontrol, 2026-07-08] Reliance shares slip after SEBI warning on compliance issues "
+        "affecting the stock price today.",
+        "[India Infoline, 2026-07-07] Reliance Q1 earnings preview: analysts expect strong retail "
+        "and Jio segment growth this quarter.",
+        "[Economic Times, 2026-07-06] Reliance Industries stock hits 52-week high on strong Jio "
+        "subscriber additions.",
+        "[Business Standard, 2026-07-05] Reliance Retail expands into new cities, stock reacts "
+        "positively to expansion news.",
+        "[LiveMint, 2026-07-04] Reliance announces new green energy investment plan for the "
+        "coming decade.",
+        "[CNBC-TV18, 2026-07-03] Reliance Jio price hike expected to boost ARPU and profit "
+        "margins going forward.",
+        "[Reuters, 2026-07-02] Reliance Industries in talks for a new petrochemical joint "
+        "venture deal.",
+        "[Bloomberg, 2026-07-01] Reliance stock outlook: brokerages raise target price after "
+        "strong quarter.",
+    ]
+    for text in news:
+        store.add_document("news_google", text)
+    store.add_document("other_income_share",
+                       "Other income share of profit for RELIANCE: 27% of FY2026's profit before "
+                       "tax came from non-operating \"other income\" (investment gains, interest "
+                       "income, or one-off items) rather than the core business -- worth checking "
+                       "how repeatable that income is (not cross-verified, Screener only).")
+    return store
+
+
+def test_retrieve_without_pin_can_miss_the_other_income_share_chunk():
+    # WHY (real money, honesty): the SAME crowding bug as verified_figures/promoter_trend/
+    # cash_conversion_trend above -- a realistic question about quality of earnings scores the
+    # one relevant chunk at 0.0917, just below the 0.10 retrieval floor, crowded out by news
+    # items that merely repeat the company name.
+    store = _news_and_other_income_share_store()
+    hits = store.retrieve("Is earnings quality good?", k=5)
+    assert not any(rc.chunk.source_id == "other_income_share" for rc in hits)
+
+
+def test_retrieve_pins_the_other_income_share_source_regardless_of_score():
+    store = _news_and_other_income_share_store()
+    hits = store.retrieve("Is earnings quality good?", k=5,
+                          pin_source_ids=frozenset({"other_income_share"}))
+    assert any(rc.chunk.source_id == "other_income_share" for rc in hits)
+
+
 # --- G3 claims contract ---
 
 def test_enforce_downgrades_unsourced_fact():
