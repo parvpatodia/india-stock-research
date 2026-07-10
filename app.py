@@ -396,6 +396,26 @@ def money(value: float | None) -> str:
     return f"{CURRENCY}{value:,.0f}"
 
 
+def ask_no_figures_tip(symbol: str, already_researched_this_session: bool) -> str:
+    """The right guidance when the Ask tab can't ground a numeric question in cross-verified
+    figures for `symbol`. WHY (real money, workflow honesty): the tip used to be the SAME
+    "research it in the Research tab first" message whether the stock was never researched this
+    session at all, OR it WAS researched but simply produced no cross-verified figure (every
+    figure single-source or in genuine CONFLICT across sources) -- verified_figures_document
+    returns None in both cases, so vf_doc is None can't tell them apart on its own. Telling a user
+    who already researched the stock to "research it first" is a false claim about what they just
+    did, and re-researching will not resolve a genuine cross-source disagreement between yfinance
+    and Screener -- the fix there is to open the evidence panel, not click Research again."""
+    if not already_researched_this_session:
+        return (f"Tip: for questions about {symbol}'s numbers (P/E, debt, profit, dividend...), "
+                "research it in the 'Research a Stock' tab first — Ask can then ground answers "
+                "in its cross-verified figures.")
+    return (f"{symbol} was already researched this session, but no figure cross-verified across "
+            "sources (each is either single-source or a genuine conflict). Re-researching won't "
+            "resolve a real disagreement between sources -- open the Research tab's evidence "
+            "panel to see which figures conflict or are single-source.")
+
+
 def plain_summary(verdict, stance: Stance) -> str:
     """A one-line, jargon-free read for a non-expert. Honest when data is thin."""
     if verdict is None or stance == Stance.INSUFFICIENT_DATA:
@@ -1247,9 +1267,7 @@ with tab_ask:
                 if symbol_unresolved:
                     st.caption(wrong_symbol_hint)
                 elif sym_u and vf_doc is None:
-                    st.caption(f"Tip: for questions about {sym_u}'s numbers (P/E, debt, profit, "
-                               "dividend...), research it in the 'Research a Stock' tab first — "
-                               "Ask can then ground answers in its cross-verified figures.")
+                    st.caption(ask_no_figures_tip(sym_u, cached_report is not None))
             else:
                 for claim in result.claims:
                     cited = ", ".join(
