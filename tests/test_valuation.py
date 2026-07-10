@@ -1,13 +1,51 @@
 import pandas as pd
 
+from src.analysis import valuation
 from src.analysis.valuation import (
     _price_by_fiscal_year,
+    compute_median_pe,
     median_pe_from_annuals,
     median_pe_from_eps,
 )
 from src.pipeline import build_company_report
 from src.research.report import ValuationTier
 from src.research.verification import SourcedValue
+
+
+def test_compute_median_pe_uses_split_adjusted_not_dividend_adjusted_prices(monkeypatch):
+    # WHY (real money, data quality; live-verified on ITC/RELIANCE/NESTLEIND): historical median
+    # P/E must pair prices with yfinance's income_stmt EPS, which is retroactively restated to the
+    # CURRENT split-adjusted share basis. yfinance's Close is ALWAYS split-adjusted; the
+    # auto_adjust flag only toggles the DIVIDEND adjustment. The old default (auto_adjust=True)
+    # additionally applied dividends, understating past prices (~11% over 3y on a ~3%-yield name
+    # like ITC) -> historical P/E read low -> the "cheap vs its own history" call biased toward
+    # "expensive". compute_median_pe must fetch auto_adjust=False (split-adjusted, NOT
+    # dividend-adjusted) -- the same basis the EPS is on.
+    import yfinance as yf
+    idx = pd.to_datetime(["2023-03-31", "2024-03-31"])
+    div_unadjusted = pd.DataFrame({"Close": [120.0, 140.0]}, index=idx)  # auto_adjust=False
+    div_adjusted = pd.DataFrame({"Close": [100.0, 130.0]}, index=idx)    # auto_adjust=True (lower)
+    income = pd.DataFrame(
+        {pd.Timestamp("2024-03-31"): [10.0, 1000.0], pd.Timestamp("2023-03-31"): [10.0, 900.0]},
+        index=["Diluted EPS", "Net Income"])
+
+    class FakeTicker:
+        @property
+        def income_stmt(self):
+            return income
+
+        @property
+        def info(self):
+            return {}
+
+        def history(self, period=None, auto_adjust=True, **kw):
+            return div_unadjusted if auto_adjust is False else div_adjusted
+
+    monkeypatch.setattr(yf, "Ticker", lambda *a, **k: FakeTicker())
+    m = compute_median_pe("X")
+    # dividend-UNadjusted prices 120/140 over EPS 10/10 -> P/E 12 and 14 -> median 13.0, NOT the
+    # dividend-adjusted 100/130 -> P/E 10 and 13 -> median 11.5 the old default produced.
+    assert m == 13.0
 
 
 def test_price_by_fiscal_year_uses_actual_period_end_not_hardcoded_march():

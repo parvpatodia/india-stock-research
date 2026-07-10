@@ -97,7 +97,16 @@ def compute_median_pe(symbol: str) -> float | None:
                 except (TypeError, ValueError):
                     pass
     target_years = list(eps_series) or list(net_profit)
-    history = _safe(lambda: ticker.history(period="6y"))
+    # WHY auto_adjust=False (real money, data quality; live-verified): the historical median P/E
+    # pairs prices with yfinance's income_stmt EPS, which is retroactively restated to the CURRENT
+    # split-adjusted share basis (confirmed on NESTLEIND: pre-split FY2021/22 EPS both report the
+    # current ~192.8cr shares). yfinance's Close is ALWAYS split-adjusted in BOTH modes -- the
+    # auto_adjust flag only toggles the DIVIDEND adjustment (confirmed: RELIANCE Mar-2022 Close is
+    # 1216 either way = ~2400 pre-bonus / 2). The DEFAULT (auto_adjust=True) additionally applies
+    # dividends, understating past prices (~11% over 3y on a ~3%-yield name like ITC) and biasing
+    # the "cheap vs its own history" margin-of-safety call toward "expensive". auto_adjust=False
+    # gives split-adjusted-but-NOT-dividend-adjusted Close -- exactly the basis the EPS is on.
+    history = _safe(lambda: ticker.history(period="6y", auto_adjust=False))
     prices = _price_by_fiscal_year(history, {y: year_ends[y] for y in target_years
                                              if y in year_ends})
     # Prefer period-correct EPS (no dilution error); fall back to net profit / current shares.
