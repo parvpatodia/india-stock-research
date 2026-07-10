@@ -193,12 +193,25 @@ def parse_extraction(payload: dict, source_text: str) -> dict[str, float | None]
 _REPORT_NUM = re.compile(r"\d[\d,]*(?:\.\d+)?")
 
 
-_FY_PATTERNS = [
+# WHY (real money, adversarial-review finding): these three patterns are structurally
+# unambiguous -- "the year ended 31 March YYYY" is a legally-required statement in every Indian
+# annual report's financial statements, and by its own grammar can only ever describe a
+# COMPLETED period, never a future target. Kept separate from the ambiguous "bare FY mention"
+# patterns below (see detect_fiscal_year).
+_FY_PATTERNS_RELIABLE = [
     re.compile(r"year\s+ended[^.]{0,40}?march[,\s]+.{0,6}?(20\d{2})", re.IGNORECASE),
     re.compile(r"march\s+31[,\s]+(20\d{2})", re.IGNORECASE),
     re.compile(r"31\s*(?:st)?\s*march[,\s]+(20\d{2})", re.IGNORECASE),
+]
+# WHY: a bare "FY2026" or short "FY26" mention is genuinely ambiguous -- confirmed live that a
+# forward-looking sentence ("management expects FY2028 to be strong") uses the exact same shape
+# to describe a FUTURE target, not the report's own year. Only used as a fallback (see
+# detect_fiscal_year) when no reliable cover-page-style statement was found at all.
+_FY_PATTERNS_FALLBACK = [
     re.compile(r"\bFY\s?(20\d{2})", re.IGNORECASE),
 ]
+_FY_SHORT = re.compile(r"\bFY\s?'?(\d{2})\b", re.IGNORECASE)          # e.g. "FY26", "FY'26"
+_FY_RANGE = re.compile(r"20\d{2}\s*[-/]\s*(\d{2})\b")                  # e.g. "2025-26" -> ends 2026
 
 
 def _num_year(value) -> int | None:
@@ -209,23 +222,40 @@ def _num_year(value) -> int | None:
     return y if 1990 <= y <= 2100 else None
 
 
-_FY_RANGE = re.compile(r"20\d{2}\s*[-/]\s*(\d{2})\b")  # e.g. "2025-26" -> ends 2026
-
-
-def detect_fiscal_year(text: str) -> int | None:
-    """Best-effort report fiscal year (the calendar year the financial year ended)."""
-    head = text[:20000]
+def _years_matching(patterns: list, head: str) -> list[int]:
     years: list[int] = []
-    for pattern in _FY_PATTERNS:
+    for pattern in patterns:
         for m in pattern.finditer(head):
             y = _num_year(m.group(1))
             if y:
                 years.append(y)
+    return years
+
+
+def detect_fiscal_year(text: str) -> int | None:
+    """Best-effort report fiscal year (the calendar year the financial year ended).
+
+    Prefers the structurally-unambiguous "year ended 31 March YYYY" style statements; only
+    falls back to bare/short "FY" mentions (which can appear in forward-looking prose, e.g. a
+    target for a future year, not this report's own year) when none of those are found at all.
+    Within each tier, the max of any matches is taken (a real report's own comparative tables
+    routinely show a PRIOR year alongside the current one, e.g. "year ended 31 March 2025" next
+    to "year ended 31 March 2026"; the current year is always the larger of the two).
+    """
+    head = text[:20000]
+    reliable = _years_matching(_FY_PATTERNS_RELIABLE, head)
+    if reliable:
+        return max(reliable)
+    fallback = _years_matching(_FY_PATTERNS_FALLBACK, head)
+    for m in _FY_SHORT.finditer(head):
+        y = _num_year("20" + m.group(1))
+        if y:
+            fallback.append(y)
     for m in _FY_RANGE.finditer(head):        # "FY 2025-26" style -> the ending year 2026
         y = _num_year("20" + m.group(1))
         if y:
-            years.append(y)
-    return max(years) if years else None
+            fallback.append(y)
+    return max(fallback) if fallback else None
 
 
 class AnnualReportFigureSource(FigureSource):

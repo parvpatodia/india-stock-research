@@ -265,6 +265,49 @@ def test_annual_report_and_yfinance_crossverify():
     assert r.verdict.confidence in (Confidence.MEDIUM, Confidence.HIGH)
 
 
+# --- detect_fiscal_year ---
+
+def test_detect_fiscal_year_reliable_cover_page_pattern():
+    text = "Annual Report for the year ended 31 March 2026. Consolidated financial statements."
+    assert detect_fiscal_year(text) == 2026
+
+
+def test_detect_fiscal_year_ignores_a_forward_looking_fy_mention_when_reliable_pattern_present():
+    # WHY (adversarial-review finding, follow-up): a bare "FY2028" mention (e.g. "management
+    # expects FY2028 to be strong") is genuinely ambiguous -- it can describe a FUTURE target,
+    # not this report's own year. Before this fix, detect_fiscal_year pooled every year mention
+    # together and took the overall max, so this single forward-looking sentence would inflate
+    # the detected year past the report's real, current year, wrongly rejecting a correctly-
+    # labeled current-year figure in parse_extraction's year cross-check. The "year ended...
+    # March..." statement is a legally-required, structurally-unambiguous statement (always
+    # describes a COMPLETED period) that appears in every real Indian annual report's financial
+    # statements -- prefer it over any bare "FY" mention entirely.
+    text = ("Annual Report for the year ended 31 March 2026. Management expects FY2028 to be "
+            "a strong year for the sector, driven by capacity expansion.")
+    assert detect_fiscal_year(text) == 2026
+
+
+def test_detect_fiscal_year_falls_back_to_bare_fy_mention_when_no_reliable_pattern():
+    # The existing, pre-fix behavior for a report with no cover-page-style statement at all
+    # (e.g. only a scanned/garbled excerpt) must still resolve a year, best-effort.
+    text = "For FY2026, the company reported strong growth across all segments."
+    assert detect_fiscal_year(text) == 2026
+
+
+def test_detect_fiscal_year_recognizes_a_short_form_fy_mention():
+    # WHY (adversarial-review finding, follow-up): "FY26" (no full 4-digit year) was previously
+    # invisible to detect_fiscal_year entirely -- confirmed the pattern requires a literal "20"
+    # prefix. Recognized now as a fallback signal (same ambiguity tier as bare "FY2026": could in
+    # principle appear in forward-looking prose too, so still only used when no reliable
+    # cover-page pattern is present).
+    text = "In FY26, revenue grew 12% year on year across all segments."
+    assert detect_fiscal_year(text) == 2026
+
+
+def test_detect_fiscal_year_none_when_nothing_recognizable():
+    assert detect_fiscal_year("A report with no year mentioned anywhere in it.") is None
+
+
 def test_ar_figures_by_year_tags_fiscal_year():
     resp = json.dumps({"fiscal_year": 2026,
                        "net_profit": {"value": 80775, "unit": "crore",
