@@ -145,6 +145,36 @@ def test_allocation_over_cap_name_gets_nothing():
     assert plan.uninvested == 30.0
 
 
+def test_allocation_over_cap_name_excluded_others_absorb_its_share():
+    # WHY: a MIXED batch (some already over cap, some with room) in the SAME call -- confirms the
+    # over-cap name doesn't "poison" the batch or leave its share stranded as uninvested; it's
+    # cleanly excluded (zero room) and the full amount flows to the remaining eligible names.
+    cands = [AllocationCandidate("A", Stance.FAVORABLE, current_value=40.0),   # over 25% cap
+             AllocationCandidate("B", Stance.FAVORABLE, current_value=0.0),
+             AllocationCandidate("C", Stance.FAVORABLE, current_value=0.0)]
+    plan = suggest_allocation(60.0, cands, portfolio_value=100.0, cap_pct=0.25)
+    by = {a.symbol: a.amount for a in plan.allocations}
+    assert "A" not in by                                    # over-cap name gets nothing
+    assert abs(by["B"] - 30.0) < 0.5 and abs(by["C"] - 30.0) < 0.5   # its share split evenly
+    assert plan.uninvested == 0.0
+
+
+def test_allocation_near_cap_absorber_caps_out_rest_reported_uninvested():
+    # A near-cap name (small real room) plus an over-cap name, asked for far more than the
+    # available room: A is filled up to (approximately) its cap of the REALIZED book, never
+    # forced beyond it, and the genuine remainder is honestly reported as uninvested, not
+    # silently dropped or force-fit into a name past its cap.
+    cands = [AllocationCandidate("A", Stance.FAVORABLE, current_value=20.0),   # ~5 of room
+             AllocationCandidate("B", Stance.FAVORABLE, current_value=40.0)]   # already over cap
+    plan = suggest_allocation(60.0, cands, portfolio_value=100.0, cap_pct=0.25)
+    by = {a.symbol: a.amount for a in plan.allocations}
+    assert "B" not in by
+    realized = 100.0 + plan.invested
+    assert 20.0 + by["A"] <= 0.25 * realized + 1.0          # never exceeds cap of the realized book
+    assert plan.uninvested > 50.0                            # the genuine remainder, not silently lost
+    assert abs(plan.invested + plan.uninvested - 60.0) < 1e-6  # accounts for the full requested amount
+
+
 def test_allocation_no_eligible_names_suggests_nothing():
     cands = [AllocationCandidate("A", Stance.UNFAVORABLE, 0.0)]
     plan = suggest_allocation(50.0, cands, portfolio_value=100.0, cap_pct=0.25)
