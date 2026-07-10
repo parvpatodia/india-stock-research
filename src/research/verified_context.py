@@ -55,7 +55,13 @@ def verified_figures_document(symbol: str, report: Report | None) -> FetchedDocu
             lines.append(f"{label}: {_format(fig.name, fig.value)} (cross-verified: {fig.note}).")
     if not lines:
         return None
-    text = (f"Cross-verified research on {symbol} (each figure independently agreed by "
-            f">=2 public sources):\n" + "\n".join(lines))
+    # WHY (real money, honesty): the Ask tab stamps every citation's as_of with the CURRENT time
+    # (when the question is asked), not when these figures were actually fetched -- a stock
+    # researched hours earlier in the same session would otherwise look freshly-verified when
+    # asked about later. Self-disclose the real fetch time in the text itself, so the freshness
+    # signal travels with the content regardless of the citation metadata (same pattern already
+    # used for news and the annual-report reader).
+    text = (f"Cross-verified research on {symbol}, fetched {report.created_at} (each figure "
+            f"independently agreed by >=2 public sources):\n" + "\n".join(lines))
     return FetchedDocument(VERIFIED_FIGURES_SOURCE_ID, text, url="",
                            locator=f"{symbol} verified figures")

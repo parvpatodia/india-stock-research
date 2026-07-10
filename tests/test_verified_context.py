@@ -43,6 +43,19 @@ def test_document_formats_dividend_yield_as_a_percentage():
     assert "Dividend yield" in doc.text and "0.5%" in doc.text  # human label, percent not rupees
 
 
+def test_document_discloses_when_the_figures_were_fetched():
+    # WHY (real money, honesty): the Ask tab stamps every citation's as_of with the CURRENT time
+    # (when the question is asked), not when these figures were actually fetched. A user who
+    # researched a stock hours earlier in the same session and asks a question later would see a
+    # citation implying today's-figures freshness for data that could be substantially stale. The
+    # document text must self-disclose the real fetch time, the same self-disclosure pattern
+    # already used for news (dated, attributed) and the annual-report reader (📄, self-reported).
+    report = Report(company="X", created_at="2026-07-09T09:00:00Z",
+                    figures=(_verified("current_pe", 18.2),))
+    doc = verified_figures_document("RELIANCE", report)
+    assert "2026-07-09T09:00:00Z" in doc.text
+
+
 def test_no_document_when_nothing_verified():
     report = Report(company="X", figures=(_single_source("net_profit", 100.0),))
     assert verified_figures_document("RELIANCE", report) is None
