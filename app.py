@@ -1048,12 +1048,15 @@ with tab_ask:
         vf_pin: frozenset[str] = frozenset()
         vf_doc = None
         sym_u = ""
+        company = ""
         if ask_sym.strip():
             sym_u = ask_sym.strip().upper()
             # WHY: pass the RAW resolved name, never falling back to the bare symbol -- some
             # real NSE tickers are common English words (PAGE, IDEA, SAIL, RAIN), so searching
             # news for the bare ticker when the name can't be resolved pulls in unrelated results
             # (live-verified). NewsSource itself skips the Google search when no name is given.
+            # An empty `company` here is also reused below as a cheap (yfinance-only, no extra
+            # Screener load) signal that the symbol itself may not exist at all.
             company = fetch_fundamentals(sym_u).get("name") or ""
             with st.spinner("Reading recent news..."):
                 items = fetch_news(sym_u, company)
@@ -1073,8 +1076,22 @@ with tab_ask:
                 # exact chunk stating total debt). Pinning guarantees the model sees it; it still
                 # must be cited, and citation-tier + numeric-grounding checks still apply.
                 vf_pin = frozenset({VERIFIED_FIGURES_SOURCE_ID})
+        # WHY (real money, workflow): distinct from "haven't researched yet" -- an empty `company`
+        # here (yfinance's own name lookup, no extra Screener load) is the same cheap signal used
+        # in the Research tab's no_data_found check. Live-verified: Page Industries trades as
+        # PAGEIND, not PAGE; typing the natural/common name resolves to nothing from any source.
+        # Telling the user to "research it first" would be actively misleading here -- doing so
+        # with the SAME wrong symbol fails there too, for the same reason.
+        wrong_symbol_hint = (
+            f"'{sym_u}' didn't resolve to any company data. This usually means the exact NSE "
+            "trading symbol differs from the company's common name (e.g. Page Industries trades "
+            "as PAGEIND, not PAGE). Double-check the exact symbol on NSE, BSE, or Screener.in, "
+            "then try again.")
         if len(store) == 0:
-            st.warning("No sources to answer from. Enter a stock symbol so recent news can load.")
+            if sym_u and not company:
+                st.warning(wrong_symbol_hint)
+            else:
+                st.warning("No sources to answer from. Enter a stock symbol so recent news can load.")
         else:
             with st.spinner("Reading the sources..."):
                 result = grounded.answer(question, store, registry, pin_source_ids=vf_pin,
@@ -1088,7 +1105,9 @@ with tab_ask:
                 # rate-limited datacenter IP, on every random Ask query, degrading the Research
                 # tab and daily picks for everyone -- so Ask deliberately reuses, never triggers,
                 # a live fetch). Point the user at the fix instead of leaving a dead end.
-                if sym_u and vf_doc is None:
+                if sym_u and not company:
+                    st.caption(wrong_symbol_hint)
+                elif sym_u and vf_doc is None:
                     st.caption(f"Tip: for questions about {sym_u}'s numbers (P/E, debt, profit, "
                                "dividend...), research it in the 'Research a Stock' tab first — "
                                "Ask can then ground answers in its cross-verified figures.")
