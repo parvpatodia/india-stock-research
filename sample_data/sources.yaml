@@ -1,6 +1,17 @@
 # SAMPLE source registry for the demo. The owner's real config lives at config/sources.yaml.
 # These point at the synthetic documents in sample_data/documents/ (stem == source id).
-primary:
+#
+# WHY these are 'creator' tier, NOT 'primary' (real money, HIGH severity): config/sources.yaml
+# is gitignored, so it can never exist in a git-based Streamlit Cloud deployment -- the deployed
+# app currently has no way to have a real config, and so falls back to loading THIS file. Live-
+# verified: the synthetic Acme Industries document's made-up figures score well above the
+# retrieval floor against ordinary questions about a REAL stock ("What is Reliance's revenue and
+# net profit?"). If this were 'primary' (citable as fact), a real-money user's question about a
+# real company could surface a fabricated number from this entirely unrelated, non-existent
+# "Acme Industries" rendered with a green verified-fact checkmark. 'creator' is the lowest tier
+# (never citable as fact, context only) -- the correct, honest label for known-synthetic content,
+# regardless of which real company's question it happens to be retrieved for.
+creator:
   - id: acme_ar_fy24
     name: Acme Industries Annual Report FY2024 (SAMPLE, synthetic)
     notes: Synthetic demo document, not real figures.

@@ -65,6 +65,28 @@ def test_registry_unknown_tier_raises(tmp_path):
         SourceRegistry.from_config(p)
 
 
+def test_sample_demo_sources_are_never_citable_as_fact():
+    # WHY (real money, HIGH severity, live-verified): config/sources.yaml is gitignored, so it
+    # can never exist in a git-based Streamlit Cloud deployment -- app.py's own fallback
+    # ("prefer the owner's real config, else fall back to the bundled sample") means the
+    # DEPLOYED app has no way to have a real config/sources.yaml, and therefore is currently
+    # running on this exact sample library. Live-verified: the synthetic Acme Industries
+    # document's made-up figures (Rs 974,000cr revenue, "energy, retail, digital services")
+    # score 0.2-0.35 on TF-IDF cosine -- well above the 0.10 retrieval floor -- against ordinary
+    # questions about a REAL stock like Reliance ("What is Reliance's revenue and net profit?").
+    # If this sample source were PRIMARY tier (citable as fact), a real-money user's question
+    # about a real company could surface a fabricated number from an entirely unrelated,
+    # non-existent "Acme Industries" rendered with a green verified-fact checkmark. Sample/demo
+    # data must NEVER be capable of that, regardless of what it happens to be retrieved for.
+    from pathlib import Path
+    sample_yaml = Path(__file__).resolve().parents[1] / "sample_data" / "sources.yaml"
+    reg = SourceRegistry.from_config(sample_yaml)
+    for source in reg.all_sources():
+        assert not source.citable_as_fact, (
+            f"sample/demo source '{source.id}' is citable_as_fact -- synthetic sample data must "
+            "never be able to render as a verified fact")
+
+
 # --- G2 grounding ---
 
 def test_retrieve_returns_relevant_and_abstains_on_no_match():
