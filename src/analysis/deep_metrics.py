@@ -8,13 +8,21 @@ nothing to fabricate. Thresholds are documented heuristics an expert can tune; a
 """
 from __future__ import annotations
 
-from .framework import REAL_ESTATE_LEVERAGE_CAVEAT, MetricResult, leverage_health
+from .framework import REAL_ESTATE_LEVERAGE_CAVEAT, MetricResult, earnings_quality, leverage_health
 
 # Maps leverage_health's own tier (D/E AND interest coverage) onto this module's plain-language
 # wording, so the always-visible summary and the Verdict's tier/concern flag can never diverge --
 # see plain_points' debt point for the regression this closes.
 _LEVERAGE_WORD = {"healthy": "low, comfortable", "stretched": "high, worth watching",
                   "moderate": "moderate"}
+
+# Maps earnings_quality's own tier onto this module's plain-language wording, so the always-
+# visible summary and the Verdict's tier/concern flag can never diverge -- see plain_points'
+# cash-quality point for the regression this closes (the same class of bug as _LEVERAGE_WORD).
+_OCF_WORD = {"strong": "well backed by real cash", "mixed": "reasonably backed by cash",
+            "weak": "only partly backed by cash (watch this)",
+            "red_flag": "NOT backed by cash -- a red flag (it consumed cash while reporting a "
+                        "profit)"}
 
 # Documented heuristic thresholds (expert-tunable).
 _ROE_GOOD, _ROE_WEAK = 15.0, 8.0          # % return on shareholders' equity
@@ -155,11 +163,17 @@ def plain_points(v: dict, deep: list[MetricResult], is_real_estate: bool = False
     np_, ocf = v.get("net_profit"), v.get("operating_cash_flow")
     if np_ and ocf and np_ > 0:
         r = ocf / np_
-        word = ("well backed by real cash" if r >= 0.8
-                else "only partly backed by cash (watch this)" if r < 0.5
-                else "reasonably backed by cash")
+        # WHY (real money, honesty; adversarial-review-style regression, same class as the debt
+        # word below): derive the word from earnings_quality's OWN tier, the SAME computation the
+        # Verdict's tier/concern flag is built from -- a prior version recomputed an independent
+        # ratio/word here, which silently softened a genuinely NEGATIVE operating cash flow (cash
+        # consumed while reporting a profit) into the same "only partly backed" wording as a
+        # merely-thin-but-positive ratio, so the always-visible summary understated exactly the
+        # pattern the collapsed evidence panel now calls a red flag.
+        word = _OCF_WORD.get(earnings_quality(ocf, np_).verdict, "reasonably backed by cash")
+        cash_txt = f"₹{r:.2f}" if r >= 0 else f"a net outflow of ₹{abs(r):.2f}"
         points.append(f"Cash quality: for every ₹1 of reported profit it actually collected "
-                      f"₹{r:.2f} of cash — profits are {word}.")
+                      f"{cash_txt} of cash — profits are {word}.")
 
     debt, eq = v.get("total_debt"), v.get("equity")
     if debt is not None and eq and eq > 0:

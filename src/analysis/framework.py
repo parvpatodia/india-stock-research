@@ -100,6 +100,19 @@ def earnings_quality(operating_cash_flow: float | None,
     if operating_cash_flow is None or net_profit is None or net_profit <= 0:
         return _unknown(name, "operating cash flow or (positive) net profit unavailable.")
     ratio = operating_cash_flow / net_profit
+    # WHY (CA-level rigor, real money, live-verified against real filings: BHEL FY2024, SAIL
+    # FY2023, VAKRANGEE FY2025/FY2023): a company can report a genuine profit while operating
+    # cash flow is actually NEGATIVE -- cash left the business even as it claimed to make money.
+    # Folding this into the same "weak" band as a merely-thin-but-still-positive cash conversion
+    # (e.g. ratio 10%) understates a much more severe, textbook earnings-quality red flag (working
+    # capital stress, or aggressive revenue recognition); it must read as distinctly more serious.
+    if ratio < 0:
+        return MetricResult(
+            name, True, "red_flag",
+            f"operating cash flow was NEGATIVE ({ratio:.0%} of net profit) despite a reported "
+            "profit -- a serious quality-of-earnings red flag: the business consumed cash from "
+            "operations while claiming to be profitable. Check receivables, working capital, "
+            "and revenue recognition before trusting the profit figure.", concern=True)
     if ratio >= _OCF_STRONG:
         v, concern = "strong", False
     elif ratio < _OCF_WEAK:

@@ -37,6 +37,23 @@ def test_earnings_quality():
     assert earnings_quality(90, 0).known is False
 
 
+def test_earnings_quality_flags_negative_operating_cash_flow_as_a_distinct_red_flag():
+    # WHY (CA-level rigor, real money): a company can report a genuine profit while operating
+    # cash flow is actually NEGATIVE -- cash left the business even as it claimed to make money
+    # (live-verified against real filings: BHEL FY2024 net profit ~2.82B vs OCF ~-37.1B, SAIL
+    # FY2023 net profit ~21.8B vs OCF ~-52.9B, VAKRANGEE FY2025 net profit ~65M vs OCF ~-188M).
+    # The old code folded this into the same "weak" band as a merely-thin-but-still-positive
+    # cash conversion (e.g. ratio 10%), with a "profits are only partly backed by cash" message --
+    # a serious understatement of a much more severe pattern (receivables/working-capital stress,
+    # or a revenue-recognition red flag), the textbook earnings-quality red flag CAs specifically
+    # watch for. It must read as distinctly more serious than "weak", not the same tier.
+    r = earnings_quality(-40, 100)
+    assert r.concern is True
+    assert r.verdict != "weak"
+    assert "negative" in r.detail.lower()
+    assert "red flag" in r.detail.lower()
+
+
 def test_leverage_health():
     assert leverage_health(20, 100, 50, 5).verdict == "healthy"   # D/E 0.2, cover 10x
     assert leverage_health(150, 100, 10, 8).verdict == "stretched"  # D/E 1.5

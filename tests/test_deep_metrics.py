@@ -132,6 +132,22 @@ def test_plain_points_real_estate_moderate_debt_has_no_caveat_clutter():
     assert REAL_ESTATE_LEVERAGE_CAVEAT not in joined
 
 
+def test_plain_points_cash_quality_word_matches_earnings_quality_on_negative_ocf():
+    # WHY (real money, honesty; same class of bug as the debt-word regression below): this
+    # function used to recompute its own cash-quality ratio/word independently instead of calling
+    # earnings_quality() (the SAME computation the Verdict's tier/concern flag is built from) --
+    # so a negative operating cash flow (net_profit 100, ocf -40, live-verified pattern: BHEL
+    # FY2024, SAIL FY2023, VAKRANGEE FY2025/FY2023) fell into the same "only partly backed by
+    # cash (watch this)" wording as a merely-thin-but-positive ratio, instead of the distinctly
+    # more serious "red flag" earnings_quality() itself now reports for this exact pattern. The
+    # ALWAYS-VISIBLE "Why, in plain terms" summary must not soften what the evidence panel calls
+    # a red flag.
+    v = {"net_profit": 100 * CR, "operating_cash_flow": -40 * CR}
+    joined = " ".join(plain_points(v, [])).lower()
+    assert "red flag" in joined
+    assert "only partly backed by cash" not in joined
+
+
 def test_plain_points_debt_word_matches_leverage_health_on_weak_coverage_alone():
     # WHY (real money, honesty; adversarial-review regression): D/E 0.60 alone reads "moderate",
     # but weak interest coverage (2.0x, below the 3.0x minimum) makes leverage_health -- the SAME
