@@ -1,6 +1,7 @@
 from src.analysis.trends import (
     cagr,
     earnings_volatility_point,
+    revenue_volatility_point,
     trend_improving,
     trend_points,
     verified_series,
@@ -100,3 +101,61 @@ def test_earnings_volatility_guards_against_a_zero_base_year():
     # A year with zero profit can't produce a meaningful % growth rate off it; must not crash.
     profit = {2022: 0.0, 2023: 100 * CR, 2024: 50 * CR}
     assert earnings_volatility_point(profit) is None   # <2 usable growth points after the guard
+
+
+# --- revenue_volatility_point: fills a real gap earnings_volatility_point cannot ---
+
+def test_revenue_volatility_flags_lumpy_project_based_revenue():
+    # WHY: live-verified against real Brigade Enterprises data (a real-estate developer): 4
+    # cross-verified REVENUE years swinging sharply, but only 1 cross-verified PROFIT year
+    # (percentage-of-completion accounting makes profit recognition lumpier and harder to
+    # cross-verify), so earnings_volatility_point can NEVER fire for this name -- revenue data
+    # alone must be able to surface the real lumpiness.
+    revenue = {2022: 1000 * CR, 2023: 1387 * CR, 2024: 1050 * CR, 2025: 1450 * CR}
+    point = revenue_volatility_point(revenue)
+    assert point is not None
+    assert "revenue" in point.lower() and ("swung" in point.lower() or "volatil" in point.lower())
+
+
+def test_revenue_volatility_silent_for_a_smooth_grower():
+    revenue = {2023: 100 * CR, 2024: 108 * CR, 2025: 115 * CR, 2026: 120 * CR}
+    assert revenue_volatility_point(revenue) is None
+
+
+def test_revenue_volatility_uses_a_lower_threshold_than_profit():
+    # WHY: operating leverage means revenue swings LESS than profit for the same underlying
+    # volatility (live-verified: JSW Steel's PROFIT swung 175pp but its REVENUE only 13pp), so
+    # reusing profit's 40pp threshold for revenue would miss genuine project-based lumpiness.
+    # These are the EXACT real, cross-verified swing magnitudes for three independent real-estate
+    # developers (Brigade 38.8pp, DLF 38.0pp, Sobha 37.2pp) -- all comfortably under the 40pp
+    # profit threshold, so a shared threshold would have silently missed all three real cases.
+    for real_swing_pct in (38.8, 38.0, 37.2):
+        # One flat year (0% growth) then one year growing by the target swing: the max-min
+        # spread across those two growth legs equals exactly real_swing_pct.
+        rev = {2022: 1000 * CR, 2023: 1000 * CR, 2024: 1000 * (1 + real_swing_pct / 100) * CR}
+        point = revenue_volatility_point(rev)
+        assert point is not None, f"{real_swing_pct}pp swing should fire under the 25pp threshold"
+
+
+def test_trend_points_prefers_profit_volatility_when_both_swing():
+    # WHY (avoid repetitive messaging): when BOTH profit and revenue swing sharply (live-verified
+    # pattern seen in DLF), show only ONE volatility caveat, not two near-duplicate sentences.
+    # Profit (the bottom line) is the more decision-relevant one and takes priority.
+    rev = {2022: 1000 * CR, 2023: 1380 * CR, 2024: 1050 * CR}     # also swings
+    prof = {2022: 100 * CR, 2023: 215 * CR, 2024: 84 * CR}         # swings even more
+    pts = trend_points(rev, prof)
+    volatility_pts = [p for p in pts if "swung sharply" in p]
+    assert len(volatility_pts) == 1
+    assert "Profit" in volatility_pts[0]
+
+
+def test_trend_points_falls_back_to_revenue_volatility_when_profit_data_is_thin():
+    # The actual Brigade-shaped case: profit has too few cross-verified years to judge volatility
+    # at all, but revenue has enough and swings -- the reader should still see SOMETHING, not
+    # nothing, about the real lumpiness the data shows.
+    rev = {2022: 1000 * CR, 2023: 1387 * CR, 2024: 1050 * CR, 2025: 1450 * CR}
+    prof = {2024: 90 * CR}                                          # only 1 year -> no signal
+    pts = trend_points(rev, prof)
+    volatility_pts = [p for p in pts if "swung sharply" in p]
+    assert len(volatility_pts) == 1
+    assert "Revenue" in volatility_pts[0]
