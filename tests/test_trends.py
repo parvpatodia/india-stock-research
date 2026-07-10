@@ -1,6 +1,7 @@
 from src.analysis.trends import (
     cagr,
     earnings_volatility_point,
+    leverage_trend_point,
     revenue_volatility_point,
     trend_improving,
     trend_points,
@@ -8,6 +9,44 @@ from src.analysis.trends import (
 )
 
 CR = 1e7
+
+
+def test_leverage_trend_flags_a_rising_debt_to_equity_ratio():
+    # WHY (real money, CA-level rigor): a single-year D/E snapshot hides whether the balance sheet
+    # is getting RISKIER over time. Debt rising faster than equity (D/E climbing) is a core
+    # leverage-risk signal a professional watches. Built from cross-verified debt & equity series,
+    # so it's a cross-verified insight, not single-source context.
+    debt = {2022: 20 * CR, 2023: 40 * CR, 2024: 60 * CR}
+    equity = {2022: 100 * CR, 2023: 100 * CR, 2024: 100 * CR}
+    p = leverage_trend_point(debt, equity)
+    assert p is not None
+    assert "risen" in p.lower()
+    assert "0.20" in p and "0.60" in p          # shows both endpoints
+    assert "FY2022" in p and "FY2024" in p
+
+
+def test_leverage_trend_flags_deleveraging_as_a_positive():
+    # Suzlon-style turnaround: D/E collapses as debt is repaid -- a genuine positive signal.
+    debt = {2023: 176 * CR, 2024: 4 * CR, 2026: 6 * CR}
+    equity = {2023: 100 * CR, 2024: 100 * CR, 2026: 100 * CR}
+    p = leverage_trend_point(debt, equity)
+    assert "fallen" in p.lower() or "deleverag" in p.lower()
+    assert "1.76" in p and "0.06" in p
+
+
+def test_leverage_trend_steady_when_change_is_immaterial():
+    # A small absolute move on an already-low D/E is noise, not a trend -- don't alarm on it.
+    debt = {2023: 4 * CR, 2024: 3 * CR, 2026: 10 * CR}   # DMART-like: 0.04 -> 0.10, tiny absolute
+    equity = {2023: 100 * CR, 2024: 100 * CR, 2026: 100 * CR}
+    p = leverage_trend_point(debt, equity)
+    assert p is not None and "steady" in p.lower()
+
+
+def test_leverage_trend_needs_two_years_with_positive_equity():
+    assert leverage_trend_point({2024: 40 * CR}, {2024: 100 * CR}) is None      # one year only
+    # negative-equity years are skipped (D/E is meaningless there); too few left -> None
+    assert leverage_trend_point({2023: 40 * CR, 2024: 50 * CR},
+                                {2023: -10 * CR, 2024: 100 * CR}) is None
 
 
 def test_verified_series_keeps_only_agreeing_years():
@@ -191,3 +230,50 @@ def test_trend_points_does_not_fall_back_to_revenue_when_profit_is_confirmed_smo
     prof = {2022: 100 * CR, 2023: 108 * CR, 2024: 118 * CR, 2025: 127 * CR}  # steady ~8%/yr, ample data
     pts = trend_points(rev, prof)
     assert not any("swung sharply" in p for p in pts)   # profit had enough data and is smooth
+
+
+# --- pipeline integration: the leverage trend reaches report.insights (offline) ---
+
+def _rising_leverage_sources():
+    """Two agreeing sources whose debt/equity series show D/E climbing 0.20 -> 0.60, plus a
+    couple of other cross-verifying figures so the report builds normally."""
+    from src.data.figure_sources import FRAMEWORK_FIGURES, FigureSource
+
+    series = {
+        "total_debt": {2022: 20 * CR, 2023: 40 * CR, 2024: 60 * CR},
+        "equity": {2022: 100 * CR, 2023: 100 * CR, 2024: 100 * CR},
+        "net_profit": {2022: 10 * CR, 2023: 11 * CR, 2024: 12 * CR},
+    }
+    scalar = {"total_debt": 60 * CR, "equity": 100 * CR, "net_profit": 12 * CR}
+
+    class _FakeSrc(FigureSource):
+        def __init__(self, sid):
+            self.source_id = sid
+
+        def figures(self, symbol):
+            return {n: scalar.get(n) for n in FRAMEWORK_FIGURES}
+
+        def figures_by_year(self, symbol):
+            return series
+
+    return [_FakeSrc("yfinance"), _FakeSrc("screener")]
+
+
+def test_leverage_trend_reaches_report_insights_for_a_non_bank(monkeypatch):
+    import src.pipeline as pipeline
+    monkeypatch.setattr(pipeline, "compute_median_pe", lambda s: None, raising=False)
+    from src.analysis import bank_framework
+    monkeypatch.setattr(bank_framework, "_yfinance_industry", lambda s: "Auto Components")
+    report = pipeline.build_report_for_symbol("TESTCO", _rising_leverage_sources())
+    assert any("Leverage (debt/equity) has risen" in i for i in report.insights)
+
+
+def test_leverage_trend_is_skipped_for_a_bank(monkeypatch):
+    # WHY: a bank/NBFC is leveraged by design, so a rising D/E is its business model, not a risk
+    # signal -- it must not surface as a leverage-risk insight (same reason banks use the ROA lens).
+    import src.pipeline as pipeline
+    monkeypatch.setattr(pipeline, "compute_median_pe", lambda s: None, raising=False)
+    from src.analysis import bank_framework
+    monkeypatch.setattr(bank_framework, "_yfinance_industry", lambda s: "Banks - Regional")
+    report = pipeline.build_report_for_symbol("TESTBANK", _rising_leverage_sources())
+    assert not any("Leverage (debt/equity)" in i for i in report.insights)

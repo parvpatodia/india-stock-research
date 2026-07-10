@@ -174,7 +174,12 @@ def build_report_for_symbol(symbol: str, sources: list[FigureSource],
     historical median P/E for the valuation baseline, add cross-verified multi-year trends, then
     run the pipeline. A single source stays single-source (low confidence); agreeing sources verify."""
     from .analysis.bank_framework import sector_category
-    from .analysis.trends import trend_improving, trend_points, verified_series
+    from .analysis.trends import (
+        leverage_trend_point,
+        trend_improving,
+        trend_points,
+        verified_series,
+    )
     from .analysis.valuation import compute_median_pe
     series = gather_series(symbol, sources)
     rev_series = verified_series(series.get("revenue", {}))
@@ -187,9 +192,20 @@ def build_report_for_symbol(symbol: str, sources: list[FigureSource],
     # fetches yfinance's industry string ONCE and classifies it, rather than the three separate
     # fetches an earlier version made (one each for is_bank/is_nbfc/is_real_estate).
     category = sector_category(symbol)
+    trend_insights = list(trend_points(rev_series, prof_series))
+    # WHY (CA-level rigor): add the multi-year debt/equity trend for industrials/real-estate --
+    # is the balance sheet getting more or less leveraged over time? Skipped for banks/NBFCs,
+    # whose leverage is their business model, not a risk signal (same reason they use the ROA
+    # framework, not the D/E lens). Built from cross-verified debt & equity, so it sits with the
+    # other cross-verified insights, not the single-source Screener context signals.
+    if category not in ("bank", "nbfc"):
+        lev = leverage_trend_point(verified_series(series.get("total_debt", {})),
+                                   verified_series(series.get("equity", {})))
+        if lev:
+            trend_insights.append(lev)
     return build_company_report(symbol, gather_aligned_figures(symbol, sources),
                                 claims=claims, median_pe=compute_median_pe(symbol),
                                 is_bank=category in ("bank", "nbfc"),
                                 is_real_estate=category == "real_estate",
-                                trend_insights=tuple(trend_points(rev_series, prof_series)),
+                                trend_insights=tuple(trend_insights),
                                 trend_improving=trend_improving(rev_series, prof_series))

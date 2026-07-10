@@ -63,6 +63,40 @@ def _word(rate: float) -> str:
     return "growing" if rate > _GROWTH_MIN else "shrinking" if rate < -_GROWTH_MIN else "roughly flat"
 
 
+# Minimum ABSOLUTE change in debt/equity to call a multi-year direction. WHY absolute, not
+# relative: a move from 0.04 to 0.10 is a big RELATIVE jump but the leverage is negligible either
+# way (live-verified: DMART 0.04->0.10), so a relative test would cry wolf on rock-solid balance
+# sheets; a >=0.15 absolute shift in D/E is a real change in capital structure across the range
+# (live-verified: Reliance held ~0.44 flat -> steady; Suzlon 1.76 -> 0.06 -> clear deleveraging).
+_LEVERAGE_TREND_BAND = 0.15
+
+
+def leverage_trend_point(debt_series: dict[int, float],
+                         equity_series: dict[int, float]) -> str | None:
+    """Plain-language multi-year leverage (debt/equity) trend, oldest vs latest, from
+    CROSS-VERIFIED debt and equity series. WHY (real money, CA-level rigor): a single-year D/E
+    snapshot hides whether the balance sheet is getting riskier -- debt rising faster than equity
+    (D/E climbing) is a core leverage-risk signal, and steady deleveraging is a genuine positive.
+    Built only from years where BOTH debt and equity cross-verified and equity is positive (D/E
+    is meaningless through zero/negative net worth); None if fewer than 2 such years exist. The
+    caller skips this for banks/NBFCs, whose leverage is their business model, not a risk signal."""
+    de = {y: debt_series[y] / equity_series[y]
+          for y in set(debt_series) & set(equity_series) if equity_series[y] > 0}
+    if len(de) < 2:
+        return None
+    years = sorted(de)
+    first, last = de[years[0]], de[years[-1]]
+    span = f"{first:.2f} in FY{years[0]} to {last:.2f} in FY{years[-1]}"
+    if abs(last - first) < _LEVERAGE_TREND_BAND:
+        return f"Leverage (debt/equity) has stayed roughly steady, {span} (cross-verified)."
+    if last > first:
+        return (f"Leverage (debt/equity) has risen, {span} -- the balance sheet has taken on "
+                "relatively more debt over these years; check whether it funded productive growth "
+                "or covered cash shortfalls (cross-verified).")
+    return (f"Leverage (debt/equity) has fallen, {span} -- the company has been deleveraging, "
+            "usually a positive for balance-sheet resilience (cross-verified).")
+
+
 def trend_improving(revenue_series: dict[int, float],
                     profit_series: dict[int, float]) -> bool:
     """Structured multi-year signal for the ranker: True iff sales OR profit have compounded above
