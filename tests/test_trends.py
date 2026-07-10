@@ -95,6 +95,25 @@ def test_leverage_trend_steady_when_change_is_immaterial():
     assert p is not None and "steady" in p.lower()
 
 
+def test_leverage_trend_surfaces_a_hidden_mid_period_spike():
+    # WHY (found by adversarial review): oldest-vs-latest alone hides a leverage episode that
+    # resolved -- D/E 0.20 -> 1.50 -> 0.25 reads "roughly steady" on the endpoints, erasing a real
+    # (if temporary) spike a CA would want to know about. Surface the intra-period peak.
+    debt = {2022: 20 * CR, 2023: 150 * CR, 2024: 25 * CR}
+    equity = {2022: 100 * CR, 2023: 100 * CR, 2024: 100 * CR}
+    p = leverage_trend_point(debt, equity)
+    assert "steady" in p.lower()                 # primary read is still the net endpoint position
+    assert "1.50" in p and "FY2023" in p         # but the hidden spike is surfaced
+    assert "spiked" in p.lower()
+
+
+def test_leverage_trend_no_spike_note_when_move_is_monotonic():
+    # a clean monotonic rise has its peak AT the last year -> no misleading "spiked in between"
+    debt = {2022: 20 * CR, 2023: 40 * CR, 2024: 60 * CR}
+    equity = {2022: 100 * CR, 2023: 100 * CR, 2024: 100 * CR}
+    assert "spiked" not in leverage_trend_point(debt, equity).lower()
+
+
 def test_leverage_trend_needs_two_years_with_positive_equity():
     assert leverage_trend_point({2024: 40 * CR}, {2024: 100 * CR}) is None      # one year only
     # negative-equity years are skipped (D/E is meaningless there); too few left -> None

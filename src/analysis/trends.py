@@ -138,14 +138,22 @@ def leverage_trend_point(debt_series: dict[int, float],
     years = sorted(de)
     first, last = de[years[0]], de[years[-1]]
     span = f"{first:.2f} in FY{years[0]} to {last:.2f} in FY{years[-1]}"
+    # WHY (found by adversarial review): an oldest-vs-latest read alone hides a leverage episode
+    # that resolved -- 0.20 -> 1.50 -> 0.25 reads "steady" on the endpoints, erasing a real spike.
+    # Surface a materially higher intra-period peak (above both endpoints, at a middle year) so a
+    # temporary leverage-up a CA would want to know about is not silently averaged away.
+    peak_year = max(years, key=lambda y: de[y])
+    spike = ""
+    if peak_year not in (years[0], years[-1]) and de[peak_year] > max(first, last) + _LEVERAGE_TREND_BAND:
+        spike = f", though it spiked to {de[peak_year]:.2f} in FY{peak_year} in between"
     if abs(last - first) < _LEVERAGE_TREND_BAND:
-        return f"Leverage (debt/equity) has stayed roughly steady, {span} (cross-verified)."
+        return f"Leverage (debt/equity) has stayed roughly steady, {span}{spike} (cross-verified)."
     if last > first:
-        return (f"Leverage (debt/equity) has risen, {span} -- the balance sheet has taken on "
-                "relatively more debt over these years; check whether it funded productive growth "
-                "or covered cash shortfalls (cross-verified).")
-    return (f"Leverage (debt/equity) has fallen, {span} -- the company has been deleveraging, "
-            "usually a positive for balance-sheet resilience (cross-verified).")
+        return (f"Leverage (debt/equity) has risen, {span}{spike} -- the balance sheet has taken "
+                "on relatively more debt over these years; check whether it funded productive "
+                "growth or covered cash shortfalls (cross-verified).")
+    return (f"Leverage (debt/equity) has fallen, {span}{spike} -- the company has been "
+            "deleveraging, usually a positive for balance-sheet resilience (cross-verified).")
 
 
 def trend_improving(revenue_series: dict[int, float],
