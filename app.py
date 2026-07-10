@@ -94,7 +94,11 @@ from src.research.verified_context import (  # noqa: E402
     symbol_has_no_data,
     verified_figures_document,
 )
-from src.research.library import build_library, resolve_curated_library_paths  # noqa: E402
+from src.research.library import (  # noqa: E402
+    build_library,
+    parse_demo_enabled_secret,
+    resolve_curated_library_paths,
+)
 from src.research.report import ReviewStatus, most_recent_by_symbol  # noqa: E402
 from src.sip import sip_future_value  # noqa: E402
 from src.sources.adapters import HttpDocumentAdapter, ingest_documents  # noqa: E402
@@ -128,7 +132,7 @@ def _secret(key: str, default=None):
 SOURCES_YAML, DOCS_DIR = resolve_curated_library_paths(
     _ROOT / "config" / "sources.yaml", _ROOT / "documents",
     _ROOT / "sample_data" / "sources.yaml", _ROOT / "sample_data" / "documents",
-    demo_enabled=bool(_secret("demo_sample_library", False)))
+    demo_enabled=parse_demo_enabled_secret(_secret("demo_sample_library", False)))
 
 CURRENCY = "₹"
 

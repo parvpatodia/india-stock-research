@@ -1,6 +1,11 @@
 import pytest
 
-from src.research.library import build_library, load_document_text, resolve_curated_library_paths
+from src.research.library import (
+    build_library,
+    load_document_text,
+    parse_demo_enabled_secret,
+    resolve_curated_library_paths,
+)
 from src.sources.registry import CredibilityTier, Source, SourceRegistry
 
 
@@ -99,3 +104,33 @@ def test_resolve_curated_library_paths_falls_back_to_sample_only_when_demo_enabl
     yaml_path, docs_path = resolve_curated_library_paths(
         real_yaml, real_docs, sample_yaml, sample_docs, demo_enabled=True)
     assert yaml_path == sample_yaml and docs_path == sample_docs
+
+
+def test_parse_demo_enabled_secret_handles_real_booleans():
+    assert parse_demo_enabled_secret(True) is True
+    assert parse_demo_enabled_secret(False) is False
+    assert parse_demo_enabled_secret(None) is False
+
+
+def test_parse_demo_enabled_secret_rejects_a_mistakenly_quoted_false_string():
+    # WHY (real money, adversarial-review finding): an adversarial review flagged that
+    # bool(_secret("demo_sample_library", False)) would read a mistakenly-quoted TOML string
+    # `demo_sample_library = "false"` as True -- Python's bare bool() treats ANY non-empty string
+    # as truthy, so writing exactly what looks like "turn this off" would silently RE-ENABLE the
+    # sample/demo document fallback this secret exists to gate off by default (see
+    # resolve_curated_library_paths / sample_data/sources.yaml's citability fix). Confirmed live:
+    # bool("false") is True in plain Python.
+    assert parse_demo_enabled_secret("false") is False
+    assert parse_demo_enabled_secret("False") is False
+    assert parse_demo_enabled_secret("FALSE") is False
+    assert parse_demo_enabled_secret("no") is False
+    assert parse_demo_enabled_secret("0") is False
+    assert parse_demo_enabled_secret("") is False
+    assert parse_demo_enabled_secret("off") is False
+
+
+def test_parse_demo_enabled_secret_accepts_a_quoted_true_string():
+    assert parse_demo_enabled_secret("true") is True
+    assert parse_demo_enabled_secret("True") is True
+    assert parse_demo_enabled_secret("1") is True
+    assert parse_demo_enabled_secret("yes") is True

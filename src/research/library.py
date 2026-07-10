@@ -14,6 +14,23 @@ from .grounding import DocumentStore
 
 _SUPPORTED = {".txt", ".md", ".pdf"}
 
+_FALSY_SECRET_STRINGS = {"", "0", "false", "no", "off"}
+
+
+def parse_demo_enabled_secret(value) -> bool:
+    """Coerce a Streamlit secret value into a strict boolean for the demo_sample_library gate.
+
+    WHY (real money, adversarial-review finding): a bare `bool(value)` would read a mistakenly-
+    quoted TOML string `demo_sample_library = "false"` as True -- Python's bool() treats ANY
+    non-empty string as truthy, so writing exactly what looks like "turn this off" would
+    silently RE-ENABLE the sample/demo document fallback this secret exists to keep off by
+    default (see resolve_curated_library_paths / sample_data/sources.yaml's citability fix).
+    A real TOML/Python boolean still passes straight through via bool(value).
+    """
+    if isinstance(value, str):
+        return value.strip().lower() not in _FALSY_SECRET_STRINGS
+    return bool(value)
+
 
 def resolve_curated_library_paths(config_yaml: Path, docs_dir: Path, sample_yaml: Path,
                                   sample_docs_dir: Path,
