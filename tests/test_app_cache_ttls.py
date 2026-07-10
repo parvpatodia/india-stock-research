@@ -28,3 +28,11 @@ def _import_app_with_clean_env():
 def test_screener_source_and_promoter_trend_ttls_stay_coupled():
     app = _import_app_with_clean_env()
     assert app.get_screener_source._info.ttl == app.fetch_promoter_trend._info.ttl
+
+
+def test_screener_source_and_cash_conversion_trend_ttls_stay_coupled():
+    # WHY: fetch_cash_conversion_trend shares the exact same ScreenerFigureSource singleton and
+    # internal-memoization shape as fetch_promoter_trend above, so it is exposed to the identical
+    # bug if its ttl is ever changed without updating get_screener_source's to match.
+    app = _import_app_with_clean_env()
+    assert app.get_screener_source._info.ttl == app.fetch_cash_conversion_trend._info.ttl

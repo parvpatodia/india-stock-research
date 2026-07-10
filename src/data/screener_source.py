@@ -259,6 +259,70 @@ def promoter_holding_trend_point(series: dict[str, float]) -> str | None:
             f"{last_val:.1f}% ({last_label}); {read} (not cross-verified, Screener only).")
 
 
+# Below this many days a year-to-year move reads as ordinary noise, not a genuine multi-year
+# drift. Calibrated against live Screener data across 3 real, different-sector companies:
+# Reliance (FY2015-FY2026, -46 to +25 days), TCS (67-93 days, a services company with no
+# inventory), HUL (-107 to -50 days) -- adjacent-year swings of 10-25 days are routine for all
+# three without reflecting a structural change; 15 stays clear of that noise band.
+_CCC_STEADY_BAND = 15.0
+
+
+def _find_ratio_table(html: str):
+    """The per-year efficiency-ratio table (Debtor Days, Inventory Days, Days Payable, Cash
+    Conversion Cycle, ROCE %), verified live against screener.in/company/RELIANCE and .../TCS (a
+    services company with no inventory still reports a valid Cash Conversion Cycle, from debtor
+    days alone)."""
+    try:
+        tables = pd.read_html(io.StringIO(html))
+    except Exception:
+        tables = []
+    for df in tables:
+        if df.shape[1] < 2:
+            continue
+        labels = {_clean_label(v) for v in df.iloc[:, 0]}
+        if any(l.startswith("cash conversion cycle") for l in labels):
+            return df
+    return None
+
+
+def parse_cash_conversion_cycle_series(html: str) -> dict[int, float]:
+    """{fiscal_year: days} for the Cash Conversion Cycle row -- Screener's own computed
+    working-capital-efficiency ratio (days debtors + inventory tie up cash, minus days payables
+    fund it). SINGLE-SOURCE by nature (yfinance does not carry this), like promoter holding --
+    callers must disclose that (see cash_conversion_cycle_trend_point), never present it as a
+    cross-verified fact. A NEGATIVE value is normal and can be favorable (e.g. Reliance, HUL):
+    it means suppliers effectively fund working capital, not a parsing error."""
+    return _annual_series(_find_ratio_table(html), "cash conversion cycle")
+
+
+def cash_conversion_cycle_trend_point(series: dict[int, float]) -> str | None:
+    """A single, self-disclosing plain-language sentence on how the cash conversion cycle has
+    moved across the available fiscal years (oldest vs. latest), or None if there are fewer than
+    2 data points. A LENGTHENING cycle (more days) can signal slower collections, rising
+    inventory, or weaker supplier terms -- worth the reader's attention as a cash-flow-discipline/
+    quality-of-earnings signal; a SHORTENING cycle usually reflects tighter working-capital
+    management. Explicitly states 'not cross-verified, Screener only' inline so the caveat
+    travels with the text wherever it is shown; context for the reader, never a buy/sell signal."""
+    if len(series) < 2:
+        return None
+    years = sorted(series)
+    first_year, last_year = years[0], years[-1]
+    first_val, last_val = series[first_year], series[last_year]
+    delta = last_val - first_val
+    if abs(delta) < _CCC_STEADY_BAND:
+        return (f"Cash conversion cycle has stayed roughly steady near {last_val:.0f} days "
+                f"(FY{first_year} to FY{last_year}; not cross-verified, Screener only).")
+    if delta > 0:
+        read = ("a lengthening cash cycle can mean slower collections, rising inventory, or "
+                "weaker supplier terms; worth checking against sector peers and recent quarters")
+    else:
+        read = ("a shortening cash cycle usually reflects faster collections or tighter "
+                "inventory/payables discipline, a positive sign for cash-flow quality")
+    direction = "lengthened" if delta > 0 else "shortened"
+    return (f"Cash conversion cycle has {direction} from {first_val:.0f} days (FY{first_year}) "
+            f"to {last_val:.0f} days (FY{last_year}); {read} (not cross-verified, Screener only).")
+
+
 class ScreenerFigureSource(FigureSource):
     source_id = "screener"
 
@@ -328,3 +392,12 @@ class ScreenerFigureSource(FigureSource):
         if not html:
             return None
         return promoter_holding_trend_point(parse_promoter_holding_series(html))
+
+    def cash_conversion_cycle_trend(self, symbol: str) -> str | None:
+        """A single-source (Screener only), self-disclosing cash-conversion-cycle trend sentence
+        for `symbol`, or None if unavailable. Not part of the FigureSource interface (it is not a
+        cross-verifiable numeric figure); callers opt in explicitly."""
+        html = self._fetch_cached(symbol)
+        if not html:
+            return None
+        return cash_conversion_cycle_trend_point(parse_cash_conversion_cycle_series(html))

@@ -1,6 +1,8 @@
 from src.data.figure_sources import FRAMEWORK_FIGURES
 from src.data.screener_source import (
     ScreenerFigureSource,
+    cash_conversion_cycle_trend_point,
+    parse_cash_conversion_cycle_series,
     parse_promoter_holding_series,
     parse_screener_figures,
     promoter_holding_trend_point,
@@ -153,6 +155,66 @@ def test_screener_source_exposes_promoter_holding_trend():
     src = ScreenerFigureSource(fetcher=lambda symbol: SHAREHOLDING_FIXTURE)
     point = src.promoter_holding_trend("ANYTHING")
     assert point is not None and ("increased" in point or "decreased" in point or "steady" in point)
+
+
+# The per-year efficiency-ratio table (Debtor Days, Inventory Days, Days Payable, Cash
+# Conversion Cycle, ROCE %), verified live against screener.in/company/RELIANCE and .../TCS (a
+# services company with no inventory still reports a valid CCC, from debtor days alone -- Screener
+# leaves Inventory Days/Days Payable blank rather than zero, so this fixture mirrors that with
+# no separate row for those two, exactly as a real services-company page renders).
+RATIO_FIXTURE = FIXTURE + """
+<table><thead><tr><th></th><th>Mar 2023</th><th>Mar 2024</th></tr></thead><tbody>
+<tr><td>Debtor Days</td><td>16</td><td>19</td></tr>
+<tr><td>Cash Conversion Cycle</td><td>-27</td><td>7</td></tr>
+<tr><td>ROCE %</td><td>8%</td><td>9%</td></tr>
+</tbody></table>
+"""
+
+
+def test_parse_cash_conversion_cycle_series_extracts_days_by_year():
+    series = parse_cash_conversion_cycle_series(RATIO_FIXTURE)
+    assert series == {2023: -27.0, 2024: 7.0}
+
+
+def test_parse_cash_conversion_cycle_does_not_confuse_the_pnl_table():
+    # WHY: FIXTURE alone has no 'Cash Conversion Cycle' row; must not mistake the P&L/balance/
+    # cash-flow tables for the ratio table.
+    assert parse_cash_conversion_cycle_series(FIXTURE) == {}
+
+
+def test_cash_conversion_cycle_trend_point_lengthening():
+    # WHY (live-verified against Reliance's real Screener data, FY2015-FY2026): a rising CCC can
+    # signal slower collections, rising inventory, or weaker supplier terms -- a genuine
+    # cash-flow-discipline/quality-of-earnings signal, worth the reader's attention.
+    point = cash_conversion_cycle_trend_point({2015: -2, 2026: 25})
+    assert point is not None
+    assert "lengthened" in point
+    assert "-2 days" in point and "25 days" in point
+    assert "not cross-verified" in point.lower() or "screener only" in point.lower()
+
+
+def test_cash_conversion_cycle_trend_point_shortening():
+    point = cash_conversion_cycle_trend_point({2020: 50, 2024: 30})
+    assert point is not None and "shortened" in point
+
+
+def test_cash_conversion_cycle_trend_point_roughly_steady_below_threshold():
+    # WHY (live-verified against TCS's real data): year-to-year noise of a few days is routine
+    # even for a stable business; only a genuine multi-year drift should read as a trend.
+    point = cash_conversion_cycle_trend_point({2015: 79, 2026: 88})
+    assert point is not None and "steady" in point.lower()
+
+
+def test_cash_conversion_cycle_trend_point_none_when_insufficient_data():
+    assert cash_conversion_cycle_trend_point({}) is None
+    assert cash_conversion_cycle_trend_point({2024: 50}) is None   # need >=2 points
+
+
+def test_screener_source_exposes_cash_conversion_cycle_trend():
+    src = ScreenerFigureSource(fetcher=lambda symbol: RATIO_FIXTURE)
+    point = src.cash_conversion_cycle_trend("ANYTHING")
+    assert point is not None
+    assert "lengthened" in point or "shortened" in point or "steady" in point.lower()
 
 
 def test_parse_empty_html_all_none():

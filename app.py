@@ -224,6 +224,11 @@ def fetch_promoter_trend(symbol: str):
     return get_screener_source().promoter_holding_trend(symbol)
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_cash_conversion_trend(symbol: str):
+    return get_screener_source().cash_conversion_cycle_trend(symbol)
+
+
 @st.cache_data(ttl=300, show_spinner="Loading holdings from your Sheet…")
 def fetch_published_holdings(url: str):
     """Read holdings from a Google Sheet 'Publish to web -> CSV' link. Keyless: the link is
@@ -850,6 +855,19 @@ with tab_research:
             st.caption("Shareholding data is published only by Screener (not yfinance), so it "
                        "cannot cross-verify the way the figures above do. Context, not a fact, "
                        "and never a buy/sell signal on its own.")
+
+        # cash conversion cycle trend (Screener only, single-source; a cash-flow-discipline /
+        # quality-of-earnings signal -- a lengthening cycle can flag slower collections or rising
+        # inventory well before it shows up in reported profit)
+        with st.expander("Cash conversion cycle trend (context, not cross-verified)"):
+            cc_trend = fetch_cash_conversion_trend(sym)
+            if cc_trend:
+                st.markdown(f"- {cc_trend}")
+            else:
+                st.caption("No cash-conversion-cycle data found (or the page was unreachable).")
+            st.caption("This ratio is published only by Screener (not yfinance), so it cannot "
+                       "cross-verify the way the figures above do. Context, not a fact, and "
+                       "never a buy/sell signal on its own.")
 
         # grounded annual-report reading (cited to the filing; abstains if it can't read it)
         with st.expander("What the annual report says (read by AI, cited to the filing)"):
