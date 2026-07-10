@@ -18,6 +18,7 @@ VERIFIED_FIGURES_SOURCE_ID = "verified_figures"
 PROMOTER_TREND_SOURCE_ID = "promoter_trend"
 CASH_CONVERSION_TREND_SOURCE_ID = "cash_conversion_trend"
 OTHER_INCOME_SHARE_SOURCE_ID = "other_income_share"
+PROMOTER_PLEDGE_SOURCE_ID = "promoter_pledge"
 
 # Human-readable labels for the framework's snake_case figure keys (src/data/figure_sources.py).
 _LABELS = {
@@ -112,10 +113,26 @@ def other_income_share_document(symbol: str, trend: str | None) -> FetchedDocume
                            url="", locator=f"{symbol} other income share of profit")
 
 
+def promoter_pledge_document(symbol: str, pledge: str | None) -> FetchedDocument | None:
+    """Wrap the Research tab's promoter-pledge sentence (see screener_source.promoter_pledge,
+    Screener-only, single-source) as a citable document for the Ask tab, or None if Screener does
+    not flag a material pledge. Registered at ANALYST tier by the caller (never
+    PRIMARY/citable_as_fact) so it only ever surfaces as reported context, matching the "not
+    cross-verified" caveat embedded in the sentence. WHY: promoter pledge is a top-tier Indian red
+    flag ("has the promoter pledged shares?" is a natural question) the app previously could not
+    answer at all -- promoter_pledge_pct was declared but no source populated it."""
+    if not pledge:
+        return None
+    return FetchedDocument(PROMOTER_PLEDGE_SOURCE_ID,
+                           f"Promoter pledge for {symbol}: {pledge}",
+                           url="", locator=f"{symbol} promoter pledge")
+
+
 def symbol_has_no_data(company: str, verified_figures_found: bool,
                        promoter_trend_found: bool,
                        cash_conversion_trend_found: bool = False,
-                       other_income_share_found: bool = False) -> bool:
+                       other_income_share_found: bool = False,
+                       promoter_pledge_found: bool = False) -> bool:
     """True only when NONE of the independent "this symbol is real" signals resolved to
     anything. Gates the Ask tab's "symbol didn't resolve" hint.
 
@@ -130,4 +147,5 @@ def symbol_has_no_data(company: str, verified_figures_found: bool,
     independent signal came up empty.
     """
     return (not company and not verified_figures_found and not promoter_trend_found
-            and not cash_conversion_trend_found and not other_income_share_found)
+            and not cash_conversion_trend_found and not other_income_share_found
+            and not promoter_pledge_found)

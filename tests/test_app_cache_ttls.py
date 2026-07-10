@@ -43,3 +43,10 @@ def test_screener_source_and_other_income_share_ttls_stay_coupled():
     # memoization shape as the other two Screener-derived cached functions above.
     app = _import_app_with_clean_env()
     assert app.get_screener_source._info.ttl == app.fetch_other_income_share._info.ttl
+
+
+def test_screener_source_and_promoter_pledge_ttls_stay_coupled():
+    # WHY: fetch_promoter_pledge shares the same ScreenerFigureSource singleton and internal-
+    # memoization shape as the other Screener-derived cached functions above.
+    app = _import_app_with_clean_env()
+    assert app.get_screener_source._info.ttl == app.fetch_promoter_pledge._info.ttl

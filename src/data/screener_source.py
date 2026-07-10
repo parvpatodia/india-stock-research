@@ -216,6 +216,44 @@ def parse_screener_figures(html: str) -> dict[str, float | None]:
     return out
 
 
+# Screener surfaces a material promoter pledge as a narrative flag, e.g. "Promoters have pledged
+# 73.0% of their holding." Live-verified it appears only when the pledge is material (JPPOWER
+# 73%), and is absent for unpledged names -- so absence means "not flagged", NOT zero pledge.
+_PLEDGE_RE = re.compile(r"promoter[s]?\s+have\s+pledged\s+([\d.]+)\s*%", re.IGNORECASE)
+# At/above this % of promoter holding pledged reads as a serious red flag (mirrors
+# framework._PLEDGE_HIGH, the industrial-metric threshold, so the two never drift).
+_PLEDGE_SERIOUS_PCT = 25.0
+
+
+def parse_promoter_pledge(html: str) -> float | None:
+    """The % of promoter holding pledged, from Screener's narrative flag, or None if not flagged.
+    SINGLE-SOURCE (Screener only): yfinance does not carry Indian promoter-pledge data, so this
+    can never cross-verify; callers disclose that (see promoter_pledge_point) and never present it
+    as a cross-verified fact. WHY None-not-zero when absent: Screener only shows the flag when the
+    pledge is material, so its absence is 'not flagged', never a reassuring 0% we could fabricate."""
+    m = _PLEDGE_RE.search(html or "")
+    return _num(m.group(1)) if m else None
+
+
+def promoter_pledge_point(pct: float | None) -> str | None:
+    """A self-disclosing plain-language sentence on promoter pledge, or None if unavailable.
+
+    WHY (real money): pledged promoter shares are collateral a lender can SELL on a margin call if
+    the price falls, forcing more selling and often signalling promoter cash stress -- a top-tier
+    Indian-market red flag. Wording escalates above _PLEDGE_SERIOUS_PCT and always self-discloses
+    'not cross-verified, Screener only' so the caveat travels with the text; context for the
+    reader, never a buy/sell signal and never mixed into the cross-verified figures."""
+    if pct is None:
+        return None
+    base = (f"Screener flags that promoters have pledged {pct:.0f}% of their holding. Pledged "
+            "shares can be sold by the lender if the price falls (a forced-selling risk) and often "
+            "reflect promoter cash stress")
+    tail = (" -- at this level a serious red flag; verify against the latest shareholding filing"
+            if pct >= _PLEDGE_SERIOUS_PCT
+            else "; worth checking against the latest shareholding filing")
+    return f"{base}{tail} (not cross-verified, Screener only)."
+
+
 # Below the promoter-holding threshold a move reads as "roughly steady" rather than overclaiming
 # direction from ordinary quarter-to-quarter noise.
 _HOLDING_STEADY_BAND = 0.5
@@ -471,6 +509,15 @@ class ScreenerFigureSource(FigureSource):
         if not html:
             return None
         return cash_conversion_cycle_trend_point(parse_cash_conversion_cycle_series(html))
+
+    def promoter_pledge(self, symbol: str) -> str | None:
+        """A single-source (Screener only), self-disclosing promoter-pledge sentence for `symbol`,
+        or None if Screener does not flag a material pledge. Not part of the FigureSource interface
+        (it is not a cross-verifiable numeric figure); callers opt in explicitly."""
+        html = self._fetch_cached(symbol)
+        if not html:
+            return None
+        return promoter_pledge_point(parse_promoter_pledge(html))
 
     def other_income_share(self, symbol: str) -> str | None:
         """A single-source (Screener only), self-disclosing other-income-share-of-profit

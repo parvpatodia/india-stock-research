@@ -44,11 +44,13 @@ def test_pdf_includes_the_single_source_context_signals():
         promoter_trend="Promoter holding has stayed roughly steady near 50.0%.",
         cash_conversion_trend="Cash conversion cycle has lengthened from -2 days to 25 days.",
         other_income_share="27% of FY2026's profit before tax came from non-operating "
-                           "\"other income\".")
+                           "\"other income\".",
+        promoter_pledge="Screener flags that promoters have pledged 73% of their holding.")
     text = _pdf_text(pdf_bytes)
     assert "Promoter holding has stayed roughly steady near 50.0%." in text
     assert "Cash conversion cycle has lengthened from -2 days to 25 days." in text
     assert "27% of FY2026's profit" in text
+    assert "promoters have pledged 73% of their holding" in text   # the red flag must be in the PDF
     assert "Additional context" in text
     assert "cannot cross-verify" in text
 

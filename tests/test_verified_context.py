@@ -3,10 +3,12 @@ from src.research.verification import SourcedValue, VerificationStatus, Verified
 from src.research.verified_context import (
     CASH_CONVERSION_TREND_SOURCE_ID,
     OTHER_INCOME_SHARE_SOURCE_ID,
+    PROMOTER_PLEDGE_SOURCE_ID,
     PROMOTER_TREND_SOURCE_ID,
     VERIFIED_FIGURES_SOURCE_ID,
     cash_conversion_trend_document,
     other_income_share_document,
+    promoter_pledge_document,
     promoter_trend_document,
     symbol_has_no_data,
     verified_figures_document,
@@ -138,6 +140,24 @@ def test_other_income_share_document_carries_the_sentence_and_source_id():
 def test_other_income_share_document_none_when_no_data_available():
     assert other_income_share_document("RELIANCE", None) is None
     assert other_income_share_document("RELIANCE", "") is None
+
+
+def test_promoter_pledge_document_carries_the_sentence_and_source_id():
+    # WHY (top-tier Indian red flag): promoter pledge is a natural Ask question ("has the promoter
+    # pledged shares?") the app previously could not answer at all. Single-source (Screener),
+    # self-disclosed "not cross-verified", surfaced as context like the other pledge/holding signals.
+    pledge = ("Screener flags that promoters have pledged 73% of their holding. Pledged shares can "
+              "be sold by the lender if the price falls -- at this level a serious red flag "
+              "(not cross-verified, Screener only).")
+    doc = promoter_pledge_document("JPPOWER", pledge)
+    assert doc is not None
+    assert doc.source_id == PROMOTER_PLEDGE_SOURCE_ID
+    assert "JPPOWER" in doc.text and pledge in doc.text
+
+
+def test_promoter_pledge_document_none_when_not_flagged():
+    assert promoter_pledge_document("RELIANCE", None) is None
+    assert promoter_pledge_document("RELIANCE", "") is None
 
 
 def test_symbol_has_no_data_true_only_when_every_signal_is_empty():

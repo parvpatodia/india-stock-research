@@ -87,10 +87,12 @@ from src.research.grounding import DocumentStore  # noqa: E402
 from src.research.verified_context import (  # noqa: E402
     CASH_CONVERSION_TREND_SOURCE_ID,
     OTHER_INCOME_SHARE_SOURCE_ID,
+    PROMOTER_PLEDGE_SOURCE_ID,
     PROMOTER_TREND_SOURCE_ID,
     VERIFIED_FIGURES_SOURCE_ID,
     cash_conversion_trend_document,
     other_income_share_document,
+    promoter_pledge_document,
     promoter_trend_document,
     symbol_has_no_data,
     verified_figures_document,
@@ -255,6 +257,11 @@ def fetch_other_income_share(symbol: str):
     return get_screener_source().other_income_share(symbol)
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_promoter_pledge(symbol: str):
+    return get_screener_source().promoter_pledge(symbol)
+
+
 @st.cache_data(ttl=300, show_spinner="Loading holdings from your Sheet…")
 def fetch_published_holdings(url: str):
     """Read holdings from a Google Sheet 'Publish to web -> CSV' link. Keyless: the link is
@@ -383,6 +390,10 @@ def get_curated_library(fingerprint: str):
         CredibilityTier.ANALYST,
         notes="Single-source (Screener's own P&L), not cross-verified -- reported context, "
               "never a fact, and never a buy/sell signal on its own."))
+    registry.add(Source(
+        PROMOTER_PLEDGE_SOURCE_ID, "Promoter pledge (Screener)", CredibilityTier.ANALYST,
+        notes="Single-source (Screener only), not cross-verified -- reported context, never a "
+              "fact, and never a buy/sell signal on its own."))
     store = DocumentStore(registry=registry)
     skipped: list[str] = []
     failed: list[str] = []
@@ -444,15 +455,16 @@ _STANCE_PDF = {Stance.FAVORABLE: "[+] ", Stance.NEUTRAL: "[~] ",
 def build_pdf_report(title: str, report, stance: Stance, guidance=None,
                      promoter_trend: str | None = None,
                      cash_conversion_trend: str | None = None,
-                     other_income_share: str | None = None) -> bytes:
+                     other_income_share: str | None = None,
+                     promoter_pledge: str | None = None) -> bytes:
     """A downloadable PDF of the report, mirroring what is on screen. Uses the core Helvetica
     font (Latin-1), so text is sanitized and the rupee sign is written as 'Rs.'.
 
-    WHY (real money, UI honesty): promoter_trend/cash_conversion_trend/other_income_share are
-    the same single-source (Screener-only) context signals the Research tab shows in their own
-    expanders -- this button is labeled "Download full report", so a parent who saves this PDF
-    to review offline, or share with family, must see the SAME signals the live app shows them,
-    not a report that is silently missing three of the app's own research signals.
+    WHY (real money, UI honesty): promoter_trend/cash_conversion_trend/other_income_share/
+    promoter_pledge are the same single-source (Screener-only) context signals the Research tab
+    shows in their own expanders -- this button is labeled "Download full report", so a parent who
+    saves this PDF to review offline, or share with family, must see the SAME signals the live app
+    shows them, not a report that is silently missing some of the app's own research signals.
     """
     from fpdf import FPDF
     from fpdf.enums import XPos, YPos
@@ -523,7 +535,8 @@ def build_pdf_report(title: str, report, stance: Stance, guidance=None,
         line(f"- {f.name}: {val}  [{period}; {f.status.value}; {srcs}]", size=10, h=5)
 
     single_source_points = [p for p in
-                           (promoter_trend, cash_conversion_trend, other_income_share) if p]
+                           (promoter_pledge, promoter_trend, cash_conversion_trend,
+                            other_income_share) if p]
     if single_source_points:
         pdf.ln(2)
         pdf.set_text_color(0, 0, 0)
@@ -864,7 +877,8 @@ with tab_research:
             data=build_pdf_report(active, report, stance, guidance,
                                   promoter_trend=fetch_promoter_trend(sym),
                                   cash_conversion_trend=fetch_cash_conversion_trend(sym),
-                                  other_income_share=fetch_other_income_share(sym)),
+                                  other_income_share=fetch_other_income_share(sym),
+                                  promoter_pledge=fetch_promoter_pledge(sym)),
             file_name=f"{sym}_research.pdf", mime="application/pdf")
 
         # the evidence, one tap away
@@ -928,6 +942,21 @@ with tab_research:
                             f"{it.published or 'undated'}_")
             st.caption("News is reporting, attributed and dated. It is NOT cross-verified like a "
                        "figure and does not move the verdict above.")
+
+        # promoter pledge (Screener only, single-source; a top-tier Indian red flag -- pledged
+        # promoter shares can be sold by lenders on a margin call. Screener flags it only when
+        # material, so its ABSENCE means "not flagged", never a confirmed zero pledge.)
+        with st.expander("Promoter pledge (context, not cross-verified)"):
+            pledge = fetch_promoter_pledge(sym)
+            if pledge:
+                st.markdown(f"- ⚠ {pledge}")
+            else:
+                st.caption("Screener does not flag a material promoter pledge for this stock. "
+                           "That is not a confirmed zero -- Screener surfaces pledge only when it "
+                           "is material; check the latest shareholding filing to be sure.")
+            st.caption("Pledge data is published only by Screener (not yfinance), so it cannot "
+                       "cross-verify the way the figures above do. Context, not a fact, and never "
+                       "a buy/sell signal on its own.")
 
         # promoter shareholding trend (Screener only, single-source by nature; a well-known
         # Indian-investor signal, kept clearly separate from the cross-verified figures above)
@@ -1182,6 +1211,7 @@ with tab_ask:
         pt_doc = None
         cc_doc = None
         oi_doc = None
+        pl_doc = None
         sym_u = ""
         company = ""
         if ask_sym.strip():
@@ -1230,20 +1260,24 @@ with tab_ask:
             _ingest_and_pin(cc_doc, CASH_CONVERSION_TREND_SOURCE_ID)
             oi_doc = other_income_share_document(sym_u, fetch_other_income_share(sym_u))
             _ingest_and_pin(oi_doc, OTHER_INCOME_SHARE_SOURCE_ID)
+            # promoter pledge: a top-tier Indian red flag ("has the promoter pledged shares?" is a
+            # natural question); same single cached Screener page as the signals above.
+            pl_doc = promoter_pledge_document(sym_u, fetch_promoter_pledge(sym_u))
+            _ingest_and_pin(pl_doc, PROMOTER_PLEDGE_SOURCE_ID)
         # WHY (real money, workflow): distinct from "haven't researched yet". `company` alone
         # (yfinance's own name lookup) is a WEAKER signal than Report.no_data_found (which spans
         # figures from both yfinance AND Screener) -- a real, valid symbol can have yfinance's
         # name lookup come back empty (a known Yahoo India-coverage gap) while Screener still has
-        # real data. symbol_has_no_data widens the check to all five independent "this symbol is
+        # real data. symbol_has_no_data widens the check to all six independent "this symbol is
         # real" signals (name, cross-verified figures, promoter trend, cash conversion cycle,
-        # other income share) so this hint is never shown in the same response where real per-
-        # symbol data was just fetched and used. Live-verified root cause: Page Industries trades
-        # as PAGEIND, not PAGE; typing the natural/common name resolves to nothing from ANY of the
-        # five signals. Telling the user to "research it first" would be actively misleading here
-        # -- doing so with the SAME wrong symbol fails there too, for the same reason.
+        # other income share, promoter pledge) so this hint is never shown in the same response
+        # where real per-symbol data was just fetched and used. Live-verified root cause: Page
+        # Industries trades as PAGEIND, not PAGE; typing the natural/common name resolves to
+        # nothing from ANY of the six signals. Telling the user to "research it first" would be
+        # actively misleading here -- doing so with the SAME wrong symbol fails there too.
         symbol_unresolved = bool(sym_u) and symbol_has_no_data(
             company, vf_doc is not None, pt_doc is not None, cc_doc is not None,
-            oi_doc is not None)
+            oi_doc is not None, pl_doc is not None)
         wrong_symbol_hint = (
             f"'{sym_u}' didn't resolve to any company data. This usually means the exact NSE "
             "trading symbol differs from the company's common name (e.g. Page Industries trades "

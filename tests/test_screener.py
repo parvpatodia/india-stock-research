@@ -8,9 +8,37 @@ from src.data.screener_source import (
     parse_cash_conversion_cycle_series,
     parse_other_income_share_series,
     parse_promoter_holding_series,
+    parse_promoter_pledge,
     parse_screener_figures,
     promoter_holding_trend_point,
+    promoter_pledge_point,
 )
+
+
+def test_parse_promoter_pledge_reads_screeners_pledge_flag():
+    # WHY (real money, top-tier Indian red flag; live-verified on JPPOWER): Screener surfaces a
+    # material promoter pledge as a narrative flag. Pledged promoter shares can be dumped by
+    # lenders on a margin call, crashing the stock -- a signal a professional never ignores. The
+    # app declared promoter_pledge_pct but no source populated it; parse Screener's flag.
+    html = "<div><ul><li>Promoters have pledged 73.0% of their holding.</li></ul></div>"
+    assert parse_promoter_pledge(html) == 73.0
+
+
+def test_parse_promoter_pledge_none_when_not_flagged():
+    # WHY (real money): Screener only shows the sentence when pledge is MATERIAL, so its absence
+    # does NOT mean zero pledge -- it means "not flagged". Must return None (unavailable), never a
+    # fabricated reassuring 0%.
+    assert parse_promoter_pledge("<div><ul><li>Company is nearly debt free.</li></ul></div>") is None
+
+
+def test_promoter_pledge_point_escalates_wording_by_severity_and_self_discloses():
+    high = promoter_pledge_point(73.0)
+    assert "73%" in high and "red flag" in high.lower()
+    assert "not cross-verified, Screener only" in high
+    modest = promoter_pledge_point(8.0)
+    assert "8%" in modest and "red flag" not in modest.lower()   # below the serious threshold
+    assert "not cross-verified, Screener only" in modest
+    assert promoter_pledge_point(None) is None                    # nothing to say when unavailable
 
 FIXTURE = """
 <div><ul><li>Stock P/E <span>20.5</span></li>
