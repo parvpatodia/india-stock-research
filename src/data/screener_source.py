@@ -92,10 +92,23 @@ def _find_tables(html: str):
         if df.shape[1] < 2:
             continue
         labels = {_clean_label(v) for v in df.iloc[:, 0]}
+        # WHY accept "financing profit" too (real money, data quality; live-verified on HDFCBANK):
+        # a bank/NBFC's Screener P&L has no "operating profit" line -- it shows "Financing Profit"
+        # instead. Gating only on "operating profit" left every bank/NBFC with an unparsed P&L, so
+        # net_profit/pbt/interest came back None, net_profit never cross-verified, and the ROA-based
+        # bank framework (the app's core lens for lenders) always read low-confidence. Both labels
+        # still require "net profit" + an annual layout, so this can't misidentify a non-P&L table.
         if pnl is None and any("net profit" in l for l in labels) \
-                and any("operating profit" in l for l in labels) and _is_annual(df):
+                and any("operating profit" in l or "financing profit" in l for l in labels) \
+                and _is_annual(df):
             pnl = df
-        if balance is None and any("borrowings" in l for l in labels) \
+        # WHY "borrowing" not "borrowings" (real money, data quality; live-verified on HDFCBANK):
+        # a bank's Screener balance sheet labels the row "Borrowing" (singular), so requiring the
+        # plural left every bank/NBFC balance sheet unidentified -> total_assets/equity/total_debt
+        # all None -> single-source -> the bank's balance-sheet figures never cross-verified. The
+        # singular substring also matches a non-bank's "Borrowings" (the row-level lookups use
+        # startswith), so this correctly recognizes both.
+        if balance is None and any("borrowing" in l for l in labels) \
                 and any("equity capital" in l for l in labels):
             balance = df
         if cash is None and any("cash from operating activity" in l for l in labels):
@@ -146,7 +159,7 @@ def parse_screener_series(html: str) -> dict[str, dict[int, float]]:
     interest = _annual_series(pnl, "interest")
     sales = _annual_series(pnl, "sales")
     ocf = _annual_series(cash, "cash from operating activity")
-    debt = _annual_series(balance, "borrowings")
+    debt = _annual_series(balance, "borrowing")
     eqcap = _annual_series(balance, "equity capital")
     reserves = _annual_series(balance, "reserves")
     tassets = _annual_series(balance, "total liabilities")
@@ -172,7 +185,7 @@ def parse_screener_figures(html: str) -> dict[str, float | None]:
     pbt = _latest_annual(pnl, "profit before tax")
     interest = _latest_annual(pnl, "interest")
     ocf = _latest_annual(cash, "cash from operating activity")
-    debt = _latest_annual(balance, "borrowings")
+    debt = _latest_annual(balance, "borrowing")
     equity_capital = _latest_annual(balance, "equity capital")
     reserves = _latest_annual(balance, "reserves")
 

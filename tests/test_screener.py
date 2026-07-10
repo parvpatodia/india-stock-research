@@ -47,6 +47,49 @@ def test_parse_screener_figures():
     assert figs["dividend_yield_pct"] == 0.47           # percent as displayed, no crore scaling
 
 
+# A bank's Screener P&L: uses "Financing Profit" (banks have no operating-profit line), "Revenue"
+# not "Sales", and carries GNPA/NNPA rows. Verified against the live HDFCBANK page structure.
+BANK_FIXTURE = """
+<div><ul><li>Stock P/E <span>18.5</span></li></ul></div>
+<table><thead><tr><th></th><th>Mar 2023</th><th>Mar 2024</th></tr></thead><tbody>
+<tr><td>Revenue</td><td>200000</td><td>240000</td></tr>
+<tr><td>Interest</td><td>110000</td><td>130000</td></tr>
+<tr><td>Expenses +</td><td>40000</td><td>45000</td></tr>
+<tr><td>Financing Profit</td><td>50000</td><td>65000</td></tr>
+<tr><td>Financing Margin %</td><td>25</td><td>27</td></tr>
+<tr><td>Other Income +</td><td>10000</td><td>12000</td></tr>
+<tr><td>Profit before tax</td><td>58000</td><td>72000</td></tr>
+<tr><td>Net Profit +</td><td>44000</td><td>55000</td></tr>
+<tr><td>Gross NPA %</td><td>1.2</td><td>1.1</td></tr>
+<tr><td>Net NPA %</td><td>0.3</td><td>0.3</td></tr>
+</tbody></table>
+<table><thead><tr><th></th><th>Mar 2023</th><th>Mar 2024</th></tr></thead><tbody>
+<tr><td>Equity Capital</td><td>500</td><td>500</td></tr>
+<tr><td>Reserves</td><td>300000</td><td>350000</td></tr>
+<tr><td>Deposits</td><td>1800000</td><td>2050000</td></tr>
+<tr><td>Borrowing +</td><td>1500000</td><td>1700000</td></tr>
+<tr><td>Other Liabilities +</td><td>90000</td><td>100000</td></tr>
+<tr><td>Total Liabilities</td><td>2500000</td><td>2900000</td></tr>
+</tbody></table>
+"""
+
+
+def test_parse_screener_figures_recognizes_a_bank_pnl_and_balance_sheet():
+    # WHY (real money, data quality; live-verified on HDFCBANK): a bank's Screener tables use
+    # labels the old parser didn't recognize -- the P&L shows "Financing Profit" (not "Operating
+    # Profit"; banks have no operating-profit line) and the balance sheet shows "Borrowing"
+    # (singular, not "Borrowings"). The old _find_tables gated on "operating profit" AND
+    # "borrowings", so EVERY bank/NBFC returned None for net_profit AND total_assets/equity ->
+    # nothing cross-verified -> the ROA-based bank framework (the app's core lens for lenders)
+    # always read low-confidence/unknown. Live-verified after the fix: ICICIBANK/SBIN total_assets
+    # and equity now cross-verify.
+    figs = parse_screener_figures(BANK_FIXTURE)
+    assert figs["net_profit"] == 55000 * CR             # P&L: recognized via "Financing Profit"
+    assert figs["total_assets"] == 2900000 * CR          # balance sheet: recognized via "Borrowing"
+    assert figs["equity"] == (500 + 350000) * CR         # equity capital + reserves
+    assert figs["total_debt"] == 1700000 * CR            # "Borrowing" row (singular)
+
+
 # A quarterly results table (multi-month columns straddling a calendar year) placed BEFORE the
 # annual P&L, sharing its row labels — exactly how Screener lays the page out.
 QUARTERLY_THEN_ANNUAL = """
