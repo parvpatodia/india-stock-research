@@ -207,9 +207,14 @@ def _assemble_result(question: str, payload: dict, retrieved: list[RetrievedChun
         kind = str(raw_claim.get("kind", OPINION)).lower()
         if kind not in _ALLOWED_KINDS:
             kind = OPINION
-        # WHY: a fact whose number is not actually in its cited source is a misquote; downgrade
-        # it so it can never show as a verified fact (real-money guardrail, not just tier).
-        if kind == FACT and not numbers_grounded(text, cited_texts):
+        # WHY (real money, "never a fabricated number"): a FACT or an OPINION states a figure it
+        # is quoting from its cited source, so a material number absent from that source is a
+        # misquote/hallucination -- downgrade it to UNVERIFIED (which renders with a caution) so a
+        # wrong figure can never show as a clean verified fact OR a clean attributed opinion.
+        # ESTIMATE is exempt by design: it is explicitly a derived/approximated value, not a
+        # verbatim source figure, so requiring digit-for-digit source presence would wrongly flag
+        # legitimate arithmetic (summing/annualizing source numbers).
+        if kind in (FACT, OPINION) and not numbers_grounded(text, cited_texts):
             kind = UNVERIFIED
         claims.append(Claim(text=text, citations=tuple(citations), kind=kind))
 

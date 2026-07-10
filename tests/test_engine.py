@@ -2,6 +2,7 @@ import pytest
 
 from src.instruments import InstrumentType
 from src.research.claims import (
+    ESTIMATE,
     FACT,
     OPINION,
     UNVERIFIED,
@@ -364,6 +365,39 @@ def test_assemble_enforces_tiers_drops_hallucinated_and_mixed():
     assert by["Mixed cite"].kind == UNVERIFIED                   # H1: primary + creator is NOT a fact
     assert by["Creator is bullish"].kind == OPINION
     assert by["Creator is bullish"].citations[0].tier == CredibilityTier.CREATOR
+
+
+def test_opinion_with_a_fabricated_number_is_downgraded_not_shown_as_clean_opinion():
+    # WHY (real money, "never a fabricated number"): numbers_grounded guarded FACT claims but not
+    # OPINION -- so an attributed opinion stating a specific figure ABSENT from its cited source
+    # (a misquote/hallucination) rendered as a clean "Reported / opinion" with that fabricated
+    # number in front of a parent. An OPINION quotes/attributes a figure, so like a FACT its
+    # number must appear in the source; it is downgraded to UNVERIFIED (which renders with a
+    # caution) when it does not.
+    reg, retrieved = _setup_assembly()   # ar#0 = "Revenue was 100 cr in FY24."
+    payload = {"abstain": False, "claims": [
+        {"text": "Management guided revenue to 5000 cr", "chunk_ids": ["ar#0"], "kind": "opinion"},
+        {"text": "Management sounds optimistic about growth", "chunk_ids": ["ar#0"], "kind": "opinion"},
+        {"text": "Revenue was 100 cr per the filing", "chunk_ids": ["ar#0"], "kind": "opinion"},
+    ]}
+    res = _assemble_result("q", payload, retrieved, reg, None)
+    by = {c.text: c for c in res.claims}
+    assert by["Management guided revenue to 5000 cr"].kind == UNVERIFIED   # fabricated number caught
+    assert by["Management sounds optimistic about growth"].kind == OPINION  # no number -> stays opinion
+    assert by["Revenue was 100 cr per the filing"].kind == OPINION         # grounded number -> stays
+
+
+def test_estimate_with_a_derived_number_is_not_number_checked():
+    # WHY: an ESTIMATE is explicitly a derived/approximated value, NOT a verbatim source figure,
+    # so requiring its digits to appear in the source would wrongly flag legitimate arithmetic
+    # (e.g. summing or annualizing source numbers). Only FACT and OPINION quote a source figure.
+    reg, retrieved = _setup_assembly()   # ar#0 = "Revenue was 100 cr in FY24."
+    payload = {"abstain": False, "claims": [
+        {"text": "That annualizes to about 5000 cr over five years", "chunk_ids": ["ar#0"],
+         "kind": "estimate"},
+    ]}
+    res = _assemble_result("q", payload, retrieved, reg, None)
+    assert res.claims[0].kind == ESTIMATE   # derived number NOT downgraded
 
 
 def test_numbers_grounded_helper():
