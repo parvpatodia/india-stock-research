@@ -96,6 +96,33 @@ def test_parse_accepts_a_whole_number_value_serialized_as_a_json_float():
     assert parse_extraction(payload, text)["net_profit"] == 80775 * 1e7
 
 
+def test_parse_degrades_instead_of_crashing_on_a_non_finite_value():
+    # WHY (real money, HIGH severity; adversarial-review finding): Python's json module accepts
+    # the non-standard "Infinity"/"-Infinity"/"NaN" tokens by default, so a model's raw JSON
+    # response can legitimately parse into float('inf'). The whole-number-float fix's
+    # int(value) call crashes with OverflowError on infinity ("cannot convert float infinity to
+    # integer") with no guard anywhere in the call chain -- reopening exactly the "stack trace to
+    # the parents" failure mode this file's own network-fetch guard was built to prevent. A
+    # non-finite value must degrade to a withheld figure (None), never an unhandled exception.
+    text = "Profit for the year was 80,775 crore."
+    payload = {"net_profit": {"value": float("inf"), "unit": "crore",
+                              "quote": "Profit for the year was 80,775 crore"}}
+    assert parse_extraction(payload, text)["net_profit"] is None
+
+    payload_nan = {"net_profit": {"value": float("nan"), "unit": "crore",
+                                  "quote": "Profit for the year was 80,775 crore"}}
+    assert parse_extraction(payload_nan, text)["net_profit"] is None
+
+
+def test_parse_degrades_instead_of_crashing_on_a_non_finite_per_figure_year():
+    # WHY: _num_year (used for the new optional per-figure fiscal_year) shares the exact same
+    # int()-on-infinity crash risk via the same underlying _num() helper.
+    text = "For the year ended 31 March 2026, profit for the year was 80,775 crore."
+    payload = {"net_profit": {"value": 80775, "unit": "crore", "fiscal_year": float("inf"),
+                              "quote": "profit for the year was 80,775 crore"}}
+    assert parse_extraction(payload, text)["net_profit"] == 80775 * 1e7
+
+
 def test_numeric_grounding_accepts_real_number_with_bad_quote():
     # The number 80,775 IS in the report; the quote is paraphrased (as garbled PDF text causes).
     payload = {"net_profit": {"value": 80775, "unit": "crore", "quote": "paraphrased, not verbatim"}}

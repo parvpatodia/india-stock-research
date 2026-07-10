@@ -9,6 +9,7 @@ therefore fails to verify rather than becoming a trusted fact.
 """
 from __future__ import annotations
 
+import math
 import re
 from typing import Callable
 
@@ -93,13 +94,20 @@ def _norm(text: str) -> str:
 
 
 def _num(value) -> float | None:
+    """Parse to a finite float, or None. WHY (real money, HIGH severity): Python's json module
+    accepts the non-standard "Infinity"/"-Infinity"/"NaN" tokens by default, so a model's raw
+    JSON response can legitimately parse into float('inf'). A later int(value) call on an
+    infinite value raises OverflowError with no guard anywhere in the call chain -- rejecting
+    non-finite values HERE, at the single point every numeric value and year passes through,
+    closes that for every caller at once (value parsing here, and _num_year's year parsing,
+    which reuses this same function) instead of guarding each call site separately."""
     try:
         if value is None:
             return None
         if isinstance(value, str):
             value = value.replace(",", "").replace("₹", "").strip()
         f = float(value)
-        return f if f == f else None
+        return f if math.isfinite(f) else None
     except (TypeError, ValueError):
         return None
 
