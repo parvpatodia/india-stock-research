@@ -151,6 +151,57 @@ def test_retrieve_pin_source_absent_from_query_is_a_noop():
            store.retrieve("SIP", k=3)
 
 
+def _news_and_promoter_trend_store():
+    """Same shape as _news_and_figures_store, but with the Ask tab's OTHER small, authoritative,
+    single-chunk addition (see verified_context.promoter_trend_document): one sentence of
+    promoter-shareholding context, ingested alongside 8 news chunks."""
+    store = DocumentStore()
+    news = [
+        "[Moneycontrol, 2026-07-08] Reliance shares slip after SEBI warning on compliance issues "
+        "affecting the stock price today.",
+        "[India Infoline, 2026-07-07] Reliance Q1 earnings preview: analysts expect strong retail "
+        "and Jio segment growth this quarter.",
+        "[Economic Times, 2026-07-06] Reliance Industries stock hits 52-week high on strong Jio "
+        "subscriber additions.",
+        "[Business Standard, 2026-07-05] Reliance Retail expands into new cities, stock reacts "
+        "positively to expansion news.",
+        "[LiveMint, 2026-07-04] Reliance announces new green energy investment plan for the "
+        "coming decade.",
+        "[CNBC-TV18, 2026-07-03] Reliance Jio price hike expected to boost ARPU and profit "
+        "margins going forward.",
+        "[Reuters, 2026-07-02] Reliance Industries in talks for a new petrochemical joint "
+        "venture deal.",
+        "[Bloomberg, 2026-07-01] Reliance stock outlook: brokerages raise target price after "
+        "strong quarter.",
+    ]
+    for text in news:
+        store.add_document("news_google", text)
+    store.add_document("promoter_trend",
+                       "Promoter shareholding for RELIANCE: Promoter holding has decreased from "
+                       "55.0% (Mar 2023) to 48.0% (Mar 2026); a falling promoter stake can reflect "
+                       "a stake sale, a merger/reclassification, or dilution; check exchange "
+                       "filings or recent news for the actual reason (not cross-verified, "
+                       "Screener only).")
+    return store
+
+
+def test_retrieve_without_pin_can_miss_the_promoter_trend_chunk():
+    # WHY (real money, honesty): the SAME crowding bug as the verified_figures case above -- a
+    # realistic question about promoter/owner behavior scores the one relevant chunk BELOW the
+    # min_score floor (live-verified: 0.077, under the 0.10 floor), crowded out by news items that
+    # merely repeat the company name, so it is silently excluded from what the model even sees.
+    store = _news_and_promoter_trend_store()
+    hits = store.retrieve("What do the owners think about the business?", k=5)
+    assert not any(rc.chunk.source_id == "promoter_trend" for rc in hits)
+
+
+def test_retrieve_pins_the_promoter_trend_source_regardless_of_score():
+    store = _news_and_promoter_trend_store()
+    hits = store.retrieve("What do the owners think about the business?", k=5,
+                          pin_source_ids=frozenset({"promoter_trend"}))
+    assert any(rc.chunk.source_id == "promoter_trend" for rc in hits)
+
+
 # --- G3 claims contract ---
 
 def test_enforce_downgrades_unsourced_fact():

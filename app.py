@@ -1052,7 +1052,7 @@ with tab_ask:
         base = get_base_registry()
         if base is not None:
             build_library(base, DOCS_DIR, store=store)
-        vf_pin: frozenset[str] = frozenset()
+        pinned_source_ids: set[str] = set()
         vf_doc = None
         pt_doc = None
         sym_u = ""
@@ -1083,7 +1083,7 @@ with tab_ask:
                 # with the question (demonstrated: a direct debt question failed to retrieve the
                 # exact chunk stating total debt). Pinning guarantees the model sees it; it still
                 # must be cited, and citation-tier + numeric-grounding checks still apply.
-                vf_pin = frozenset({VERIFIED_FIGURES_SOURCE_ID})
+                pinned_source_ids.add(VERIFIED_FIGURES_SOURCE_ID)
             # WHY: promoter shareholding is a core Indian-investor signal the Research tab already
             # fetches (single Screener page, cached 1hr, same call the Research tab's promoter
             # expander already makes live) -- no heavier than the fetch_fundamentals/fetch_news
@@ -1091,6 +1091,12 @@ with tab_ask:
             pt_doc = promoter_trend_document(sym_u, fetch_promoter_trend(sym_u))
             if pt_doc is not None:
                 ingest_documents(store, [pt_doc])
+                # WHY (live-verified): the SAME crowding bug as verified_figures above -- a
+                # realistic question ("What do the owners think about the business?") scores this
+                # one-sentence chunk at 0.077, below the 0.10 retrieval floor, crowded out by news
+                # chunks that merely repeat the company name. Without pinning, the document this
+                # app already fetched would silently never reach the model.
+                pinned_source_ids.add(PROMOTER_TREND_SOURCE_ID)
         # WHY (real money, workflow): distinct from "haven't researched yet". `company` alone
         # (yfinance's own name lookup) is a WEAKER signal than Report.no_data_found (which spans
         # figures from both yfinance AND Screener) -- a real, valid symbol can have yfinance's
@@ -1116,7 +1122,8 @@ with tab_ask:
                 st.warning("No sources to answer from. Enter a stock symbol so recent news can load.")
         else:
             with st.spinner("Reading the sources..."):
-                result = grounded.answer(question, store, registry, pin_source_ids=vf_pin,
+                result = grounded.answer(question, store, registry,
+                                         pin_source_ids=frozenset(pinned_source_ids),
                                          as_of=datetime.now().strftime("%Y-%m-%d %H:%M"))
             if result.abstained:
                 st.warning(f"No verified answer. {result.abstain_reason}")
