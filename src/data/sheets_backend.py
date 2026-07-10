@@ -170,8 +170,16 @@ class GspreadGateway(SheetGateway):
     def write(self, tab: str, header: list[str], rows: list[dict]) -> None:
         ws = self._worksheet(tab, header)
         grid = [header] + [[str(r.get(h, "")) for h in header] for r in rows]
-        ws.clear()
+        # WHY (data-loss resilience): clear()-then-update() would leave the tab PERMANENTLY
+        # EMPTY if update() failed partway (network blip, quota, transient Google API error) --
+        # clear() had already wiped it with no way to recover. This is the parents' Reports
+        # history / daily-picks tab. Write the new data FIRST (a plain overwrite from A1 that
+        # leaves the OLD data untouched if it fails), THEN trim any stale trailing rows beyond
+        # the new grid's extent via resize -- a much lower-stakes secondary step: if THAT fails,
+        # the important data already landed safely; worst case is a few leftover stale rows,
+        # never a wiped tab.
         ws.update(grid)   # gspread 6.x: update(values, range_name=None) -> writes from A1
+        ws.resize(rows=len(grid))
 
     def append(self, tab: str, header: list[str], row: dict) -> None:
         ws = self._worksheet(tab, header)

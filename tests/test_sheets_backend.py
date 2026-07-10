@@ -1,6 +1,9 @@
+import pytest
+
 from src.analysis.sizing import Stance
 from src.data.sheets_backend import (
     AppsScriptGateway,
+    GspreadGateway,
     InMemoryGateway,
     LocalJsonGateway,
     ReportRecord,
@@ -180,6 +183,60 @@ def test_apps_script_gives_up_after_attempts_and_raises():
     import pytest
     with pytest.raises(TimeoutError):
         gw.read("Today")
+
+
+class _FakeWorksheet:
+    """Stands in for a gspread Worksheet so GspreadGateway.write() is testable without a real
+    Google Sheet connection (GspreadGateway.__init__ makes a live network call)."""
+
+    def __init__(self, update_should_fail: bool = False):
+        self.cleared = False
+        self.updated_grid: list | None = None
+        self.resized_to: int | None = None
+        self._update_should_fail = update_should_fail
+
+    def clear(self):
+        self.cleared = True
+
+    def update(self, grid):
+        if self._update_should_fail:
+            raise TimeoutError("simulated transient Google Sheets API failure")
+        self.updated_grid = grid
+
+    def resize(self, rows=None, cols=None):
+        self.resized_to = rows
+
+
+def _gateway_with_fake_worksheet(ws: _FakeWorksheet) -> GspreadGateway:
+    # WHY: GspreadGateway.__init__ opens a real Sheet over the network, so it can't be
+    # constructed normally in a test; bypass __init__ and inject a fake worksheet directly.
+    gw = object.__new__(GspreadGateway)
+    gw._worksheet = lambda tab, header=None: ws
+    return gw
+
+
+def test_gspread_write_does_not_wipe_the_tab_if_the_update_fails():
+    # WHY (data-loss resilience): the old clear()-then-update() sequence would leave the tab
+    # PERMANENTLY EMPTY if update() failed partway (network blip, quota, transient Google API
+    # error) -- clear() had already wiped it with no way to recover. This is the parents'
+    # Reports history / daily-picks tab; a transient API hiccup must not silently destroy it.
+    ws = _FakeWorksheet(update_should_fail=True)
+    gw = _gateway_with_fake_worksheet(ws)
+    with pytest.raises(TimeoutError):
+        gw.write("Reports", ["symbol", "stance"], [{"symbol": "BLS", "stance": "favorable"}])
+    assert ws.cleared is False   # must NOT have wiped the tab before the failed write landed
+
+
+def test_gspread_write_succeeds_and_trims_stale_rows_after():
+    # The new data must land via a plain overwrite (no preceding clear), and stale trailing rows
+    # from a previously-larger tab are trimmed AFTER the write succeeds, via resize -- a much
+    # lower-stakes secondary step than clearing before the write.
+    ws = _FakeWorksheet()
+    gw = _gateway_with_fake_worksheet(ws)
+    gw.write("Reports", ["symbol", "stance"], [{"symbol": "BLS", "stance": "favorable"}])
+    assert ws.updated_grid == [["symbol", "stance"], ["BLS", "favorable"]]
+    assert ws.resized_to == 2   # header + 1 data row
+    assert ws.cleared is False
 
 
 def test_local_json_gateway_persists_across_instances(tmp_path):
