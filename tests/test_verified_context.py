@@ -4,6 +4,7 @@ from src.research.verified_context import (
     PROMOTER_TREND_SOURCE_ID,
     VERIFIED_FIGURES_SOURCE_ID,
     promoter_trend_document,
+    symbol_has_no_data,
     verified_figures_document,
 )
 
@@ -92,3 +93,23 @@ def test_promoter_trend_document_carries_the_sentence_and_source_id():
 def test_promoter_trend_document_none_when_no_trend_available():
     assert promoter_trend_document("RELIANCE", None) is None
     assert promoter_trend_document("RELIANCE", "") is None
+
+
+def test_symbol_has_no_data_true_only_when_every_signal_is_empty():
+    assert symbol_has_no_data("", verified_figures_found=False, promoter_trend_found=False) is True
+
+
+def test_symbol_has_no_data_false_when_yfinance_name_resolved():
+    assert symbol_has_no_data("Reliance Industries", False, False) is False
+
+
+def test_symbol_has_no_data_false_when_only_promoter_trend_resolved():
+    # WHY (real money, honesty): the actual bug this guards against -- a real, valid NSE symbol
+    # where yfinance's own name lookup comes back empty (a known Yahoo India-coverage gap) but
+    # Screener has data. `company` alone (the OLD, sole signal) would wrongly call this symbol
+    # unresolved even though real per-symbol data was just fetched and used to answer the question.
+    assert symbol_has_no_data("", False, promoter_trend_found=True) is False
+
+
+def test_symbol_has_no_data_false_when_only_verified_figures_resolved():
+    assert symbol_has_no_data("", verified_figures_found=True, promoter_trend_found=False) is False

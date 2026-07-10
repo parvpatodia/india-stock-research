@@ -87,6 +87,7 @@ from src.research.verified_context import (  # noqa: E402
     PROMOTER_TREND_SOURCE_ID,
     VERIFIED_FIGURES_SOURCE_ID,
     promoter_trend_document,
+    symbol_has_no_data,
     verified_figures_document,
 )
 from src.research.library import build_library  # noqa: E402
@@ -1053,6 +1054,7 @@ with tab_ask:
             build_library(base, DOCS_DIR, store=store)
         vf_pin: frozenset[str] = frozenset()
         vf_doc = None
+        pt_doc = None
         sym_u = ""
         company = ""
         if ask_sym.strip():
@@ -1089,19 +1091,26 @@ with tab_ask:
             pt_doc = promoter_trend_document(sym_u, fetch_promoter_trend(sym_u))
             if pt_doc is not None:
                 ingest_documents(store, [pt_doc])
-        # WHY (real money, workflow): distinct from "haven't researched yet" -- an empty `company`
-        # here (yfinance's own name lookup, no extra Screener load) is the same cheap signal used
-        # in the Research tab's no_data_found check. Live-verified: Page Industries trades as
-        # PAGEIND, not PAGE; typing the natural/common name resolves to nothing from any source.
-        # Telling the user to "research it first" would be actively misleading here -- doing so
-        # with the SAME wrong symbol fails there too, for the same reason.
+        # WHY (real money, workflow): distinct from "haven't researched yet". `company` alone
+        # (yfinance's own name lookup) is a WEAKER signal than Report.no_data_found (which spans
+        # figures from both yfinance AND Screener) -- a real, valid symbol can have yfinance's
+        # name lookup come back empty (a known Yahoo India-coverage gap) while Screener still has
+        # real data. symbol_has_no_data widens the check to all three independent "this symbol is
+        # real" signals (name, cross-verified figures, promoter trend) so this hint is never shown
+        # in the same response where real per-symbol data was just fetched and used. Live-verified
+        # root cause: Page Industries trades as PAGEIND, not PAGE; typing the natural/common name
+        # resolves to nothing from ANY of the three signals. Telling the user to "research it
+        # first" would be actively misleading here -- doing so with the SAME wrong symbol fails
+        # there too, for the same reason.
+        symbol_unresolved = bool(sym_u) and symbol_has_no_data(
+            company, vf_doc is not None, pt_doc is not None)
         wrong_symbol_hint = (
             f"'{sym_u}' didn't resolve to any company data. This usually means the exact NSE "
             "trading symbol differs from the company's common name (e.g. Page Industries trades "
             "as PAGEIND, not PAGE). Double-check the exact symbol on NSE, BSE, or Screener.in, "
             "then try again.")
         if len(store) == 0:
-            if sym_u and not company:
+            if symbol_unresolved:
                 st.warning(wrong_symbol_hint)
             else:
                 st.warning("No sources to answer from. Enter a stock symbol so recent news can load.")
@@ -1118,7 +1127,7 @@ with tab_ask:
                 # rate-limited datacenter IP, on every random Ask query, degrading the Research
                 # tab and daily picks for everyone -- so Ask deliberately reuses, never triggers,
                 # a live fetch). Point the user at the fix instead of leaving a dead end.
-                if sym_u and not company:
+                if symbol_unresolved:
                     st.caption(wrong_symbol_hint)
                 elif sym_u and vf_doc is None:
                     st.caption(f"Tip: for questions about {sym_u}'s numbers (P/E, debt, profit, "

@@ -74,3 +74,20 @@ def promoter_trend_document(symbol: str, trend: str | None) -> FetchedDocument |
         return None
     return FetchedDocument(PROMOTER_TREND_SOURCE_ID, f"Promoter shareholding for {symbol}: {trend}",
                            url="", locator=f"{symbol} promoter shareholding trend")
+
+
+def symbol_has_no_data(company: str, verified_figures_found: bool,
+                       promoter_trend_found: bool) -> bool:
+    """True only when NONE of the independent "this symbol is real" signals resolved to
+    anything. Gates the Ask tab's "symbol didn't resolve" hint.
+
+    WHY (real money, honesty): `company` (yfinance's own name lookup) alone is a materially
+    weaker check than Report.no_data_found, which spans figures from BOTH yfinance AND Screener.
+    A real, valid NSE symbol can have yfinance's name lookup come back empty (a known Yahoo
+    India-coverage gap) while Screener still has real data for it. Gating the hint on `company`
+    alone would tell a real-money user "this symbol didn't resolve to any company data" in the
+    same response where real Screener data (promoter trend, or a cached cross-verified report)
+    was just fetched and used to answer their question -- a false claim about the app's own
+    findings. Only declare the symbol unresolved when every independent signal came up empty.
+    """
+    return not company and not verified_figures_found and not promoter_trend_found
