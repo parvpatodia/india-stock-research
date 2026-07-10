@@ -84,7 +84,9 @@ from src.research.annual_report_reader import read_filing  # noqa: E402
 from src.research.grounded_analyst import GroundedAnalyst  # noqa: E402
 from src.research.grounding import DocumentStore  # noqa: E402
 from src.research.verified_context import (  # noqa: E402
+    PROMOTER_TREND_SOURCE_ID,
     VERIFIED_FIGURES_SOURCE_ID,
+    promoter_trend_document,
     verified_figures_document,
 )
 from src.research.library import build_library  # noqa: E402
@@ -343,6 +345,10 @@ def get_curated_library(fingerprint: str):
         VERIFIED_FIGURES_SOURCE_ID, "This app's cross-verified figures", CredibilityTier.PRIMARY,
         notes="Only figures independently agreed by >=2 public sources (yfinance + Screener); "
               "see the Research tab for the full evidence."))
+    registry.add(Source(
+        PROMOTER_TREND_SOURCE_ID, "Promoter shareholding trend (Screener)", CredibilityTier.ANALYST,
+        notes="Single-source (Screener only), not cross-verified -- reported context, never a "
+              "fact, and never a buy/sell signal on its own."))
     store = DocumentStore(registry=registry)
     skipped: list[str] = []
     failed: list[str] = []
@@ -1076,6 +1082,13 @@ with tab_ask:
                 # exact chunk stating total debt). Pinning guarantees the model sees it; it still
                 # must be cited, and citation-tier + numeric-grounding checks still apply.
                 vf_pin = frozenset({VERIFIED_FIGURES_SOURCE_ID})
+            # WHY: promoter shareholding is a core Indian-investor signal the Research tab already
+            # fetches (single Screener page, cached 1hr, same call the Research tab's promoter
+            # expander already makes live) -- no heavier than the fetch_fundamentals/fetch_news
+            # calls just above, unlike a full re-research which Ask deliberately never triggers.
+            pt_doc = promoter_trend_document(sym_u, fetch_promoter_trend(sym_u))
+            if pt_doc is not None:
+                ingest_documents(store, [pt_doc])
         # WHY (real money, workflow): distinct from "haven't researched yet" -- an empty `company`
         # here (yfinance's own name lookup, no extra Screener load) is the same cheap signal used
         # in the Research tab's no_data_found check. Live-verified: Page Industries trades as

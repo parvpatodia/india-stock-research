@@ -15,6 +15,7 @@ from ..sources.adapters import FetchedDocument
 from .report import Report
 
 VERIFIED_FIGURES_SOURCE_ID = "verified_figures"
+PROMOTER_TREND_SOURCE_ID = "promoter_trend"
 
 # Human-readable labels for the framework's snake_case figure keys (src/data/figure_sources.py).
 _LABELS = {
@@ -58,3 +59,18 @@ def verified_figures_document(symbol: str, report: Report | None) -> FetchedDocu
             f"independently agreed by >=2 public sources):\n" + "\n".join(lines))
     return FetchedDocument(VERIFIED_FIGURES_SOURCE_ID, text, url="",
                            locator=f"{symbol} verified figures")
+
+
+def promoter_trend_document(symbol: str, trend: str | None) -> FetchedDocument | None:
+    """Wrap the Research tab's promoter-shareholding-trend sentence (see
+    screener_source.promoter_holding_trend, Screener-only, single-source) as a citable document
+    for the Ask tab, or None if no trend is available. Registered at ANALYST tier by the caller
+    (never PRIMARY/citable_as_fact) so it can only ever surface as reported context, matching the
+    "not cross-verified" caveat already embedded in the sentence itself. WHY: promoter behavior is
+    a core Indian-investor signal the Research tab already fetches, but until now the Ask tab had
+    no access to it at all, so a direct question ("has the promoter been selling?") could never
+    be grounded even when the app already had the answer sitting in cache."""
+    if not trend:
+        return None
+    return FetchedDocument(PROMOTER_TREND_SOURCE_ID, f"Promoter shareholding for {symbol}: {trend}",
+                           url="", locator=f"{symbol} promoter shareholding trend")

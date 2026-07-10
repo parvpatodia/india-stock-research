@@ -1,6 +1,11 @@
 from src.research.report import Report
 from src.research.verification import SourcedValue, VerificationStatus, VerifiedFigure
-from src.research.verified_context import VERIFIED_FIGURES_SOURCE_ID, verified_figures_document
+from src.research.verified_context import (
+    PROMOTER_TREND_SOURCE_ID,
+    VERIFIED_FIGURES_SOURCE_ID,
+    promoter_trend_document,
+    verified_figures_document,
+)
 
 
 def _verified(name, value, note="2 independent sources agree") -> VerifiedFigure:
@@ -63,3 +68,27 @@ def test_no_document_when_nothing_verified():
 
 def test_no_report_returns_none():
     assert verified_figures_document("RELIANCE", None) is None
+
+
+def test_promoter_trend_document_carries_the_sentence_and_source_id():
+    # WHY (research rigor): promoter behavior/shareholding-pattern signals are a core Indian-
+    # investor framework the Research tab already surfaces (Screener-only, single-source, always
+    # self-disclosed as "not cross-verified" inline) but the Ask tab had zero access to it, so a
+    # question like "has the promoter been selling?" could never be grounded even when the app had
+    # already fetched the answer. Wrap it the same way news is wrapped: a citable, attributed
+    # document, at ANALYST tier (never PRIMARY/citable_as_fact) so it can only ever be shown as
+    # reported context, matching the caveat already embedded in the sentence itself.
+    trend = ("Promoter holding has decreased from 55.0% (Mar 2023) to 48.0% (Mar 2026); a falling "
+            "promoter stake can reflect a stake sale, a merger/reclassification, or dilution; "
+            "check exchange filings or recent news for the actual reason (not cross-verified, "
+            "Screener only).")
+    doc = promoter_trend_document("RELIANCE", trend)
+    assert doc is not None
+    assert doc.source_id == PROMOTER_TREND_SOURCE_ID
+    assert "RELIANCE" in doc.text
+    assert trend in doc.text
+
+
+def test_promoter_trend_document_none_when_no_trend_available():
+    assert promoter_trend_document("RELIANCE", None) is None
+    assert promoter_trend_document("RELIANCE", "") is None
