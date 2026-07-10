@@ -8,6 +8,7 @@ from src.data.sheets_backend import (
     read_holdings,
     read_reports,
     record_from_report,
+    resolve_approved_stances,
     save_report,
 )
 from src.research.report import (
@@ -24,6 +25,48 @@ def _approved_report(company="BLS International") -> Report:
     v = Verdict(ValuationTier.CHEAP, QualityTier.STRONG, Leaning.CONSTRUCTIVE,
                 Confidence.MEDIUM, reasons=("P/E 14.6 vs median 32.7 reads cheap.",))
     return Report(company=company, verdict=v).approve("parv", note="looks right")
+
+
+def _persisted_approval(symbol="BLS", stance="favorable") -> ReportRecord:
+    return ReportRecord(symbol=symbol, company="BLS International", valuation="cheap",
+                        quality="strong", leaning="constructive", confidence="medium",
+                        stance=stance, status="approved", reviewer="parv",
+                        updated_at="2026-01-01T00:00:00Z")
+
+
+def _draft_report(company="BLS International") -> Report:
+    # WHY: a fresh re-research this session that has NOT (yet) been reviewed -- DRAFT, untrusted.
+    v = Verdict(ValuationTier.FAIR, QualityTier.MIXED, Leaning.NEUTRAL, Confidence.MEDIUM)
+    return Report(company=company, verdict=v)
+
+
+def test_resolve_approved_stances_persisted_only():
+    result = resolve_approved_stances([_persisted_approval()], {})
+    assert result == {"BLS": Stance.FAVORABLE}
+
+
+def test_resolve_approved_stances_fresh_trusted_session_report_supersedes_persisted():
+    persisted = [_persisted_approval(stance="unfavorable")]
+    fresh = _approved_report()   # FAVORABLE, trusted (see helper above: CONSTRUCTIVE leaning)
+    result = resolve_approved_stances(persisted, {"BLS (live/x)": fresh})
+    assert result == {"BLS": Stance.FAVORABLE}
+
+
+def test_resolve_approved_stances_fresh_untrusted_report_clears_stale_persisted_approval():
+    # WHY (real money, the actual bug): a symbol approved in a PAST session, re-researched THIS
+    # session into a fresh, not-yet-reviewed DRAFT, must not keep feeding suggest_allocation with
+    # the old approval -- the current (unreviewed) analysis supersedes it, dropping it entirely.
+    persisted = [_persisted_approval()]
+    result = resolve_approved_stances(persisted, {"BLS (live/x)": _draft_report()})
+    assert result == {}
+
+
+def test_resolve_approved_stances_untouched_symbol_keeps_persisted_approval():
+    persisted = [_persisted_approval("BLS"), _persisted_approval("HDFCBANK", stance="neutral")]
+    result = resolve_approved_stances(persisted, {"TCS (live/x)": _approved_report("TCS")})
+    assert result["BLS"] == Stance.FAVORABLE
+    assert result["HDFCBANK"] == Stance.NEUTRAL
+    assert result["TCS"] == Stance.FAVORABLE
 
 
 def test_record_from_report_captures_verdict_stance_reviewer():

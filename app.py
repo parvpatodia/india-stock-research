@@ -44,6 +44,7 @@ from src.data.figure_sources import (  # noqa: E402
     PERCENT_FIGURES,
     RATIO_FIGURES,
     YFinanceFigureSource,
+    format_figure_value,
 )
 from src.data.news_source import NewsSource, registry_with_news  # noqa: E402
 from src.data.nse_annual_reports import (  # noqa: E402
@@ -58,6 +59,7 @@ from src.data.sheets_backend import (  # noqa: E402
     read_holdings,
     read_reports,
     record_from_report,
+    resolve_approved_stances,
     save_report,
 )
 from src.data.yfinance_provider import YFinanceProvider  # noqa: E402
@@ -425,7 +427,9 @@ def build_pdf_report(title: str, report, stance: Stance, guidance=None) -> bytes
 
     line("Figures", size=12, style="B", h=7)
     for f in report.figures:
-        val = f"{f.value:,.2f}" if f.value is not None else "withheld (not cross-verified)"
+        # format_figure_value shows the figure in its actual unit (ratio/percent/rupees), not a
+        # bare number that could read as rupees for a ratio or percentage figure.
+        val = format_figure_value(f.name, f.value) if f.value is not None else "withheld (not cross-verified)"
         srcs = ", ".join(sorted({sv.source_id for sv in f.sources}))
         period = next((str(sv.locator) for sv in f.sources
                        if str(getattr(sv, "locator", "") or "").upper().startswith("FY")), "current")
@@ -759,7 +763,10 @@ with tab_research:
             fig_rows = [{
                 "Figure": f.name, "Status": f.status.value,
                 # WHY: all-string column; a mixed float/"withheld" column crashes st.dataframe.
-                "Value": (f"{f.value:,.2f}" if f.value is not None else "withheld"),
+                # format_figure_value shows the figure in its ACTUAL unit (ratio/percent/rupees):
+                # a bare "25.00" is genuinely ambiguous between a 25% pledge and Rs.25.
+                "Value": (format_figure_value(f.name, f.value) if f.value is not None
+                         else "withheld"),
                 "Period": _period(f),
                 "Sources": ", ".join(sorted({sv.source_id for sv in f.sources})),
             } for f in report.figures]
@@ -943,27 +950,15 @@ with tab_invest:
 
     amount = st.number_input(f"Amount to invest ({CURRENCY})", min_value=0, value=0, step=50000)
 
-    # Approved names = persisted (durable, from the Sheet/local store) + this session's approvals
-    # (fresher). Only APPROVED qualifies; unreviewed drafts never appear here, on purpose.
-    approved_stance: dict[str, Stance] = {}
+    # Approved names = persisted (durable, from the Sheet/local store) + this session's fresher
+    # research merged by resolve_approved_stances: a symbol re-researched THIS session that is
+    # NOT (yet) re-approved supersedes and clears an older persisted approval, rather than
+    # leaving a stale approval silently feeding suggest_allocation's real rupee math.
     try:
-        for r in read_reports(get_gateway()):
-            if r.status == "approved" and r.stance:
-                try:
-                    approved_stance[r.symbol] = Stance(r.stance)
-                except ValueError:
-                    pass
+        persisted_records = read_reports(get_gateway())
     except Exception:
-        pass
-    # WHY (real money): use the MOST RECENTLY researched report per symbol (see
-    # most_recent_by_symbol), not whichever key a dict-iteration happens to reach last. Re-running
-    # the SAME key in place does not reorder it in the dict, so a naive last-match pick can return
-    # a stale, differently-labeled report -- e.g. showing an approval that a fresh, not-yet-
-    # reviewed re-run should have superseded. Only the CURRENT (latest) report's approval counts.
-    for sym_key in {key.split(" ")[0] for key in st.session_state.reports}:
-        latest = most_recent_by_symbol(st.session_state.reports, sym_key)
-        if latest is not None and latest.is_trusted and latest.verdict is not None:
-            approved_stance[sym_key] = stance_from_verdict(latest.verdict)
+        persisted_records = []
+    approved_stance = resolve_approved_stances(persisted_records, st.session_state.reports)
 
     if not approved_stance:
         st.info("No approved research yet. Go to **Research a Stock**, review a report, and "

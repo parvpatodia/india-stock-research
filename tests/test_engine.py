@@ -204,6 +204,17 @@ def test_numbers_grounded_helper():
     assert not numbers_grounded("Revenue was 4000 cr", src)         # fabricated figure
 
 
+def test_numbers_grounded_ignores_timestamp_dates_as_figures():
+    # WHY (real money, regression): verified_figures_document embeds a fetch timestamp like
+    # "fetched 2026-07-09T09:00:00Z" so the Ask tab's answers self-disclose data freshness. The
+    # 4-digit YEAR in that timestamp must NOT be usable to "ground" an unrelated fabricated
+    # figure that happens to share those digits -- a date is metadata, not a citable fact.
+    src = ["Cross-verified research on RELIANCE, fetched 2026-07-09T09:00:00Z (each figure "
+           "independently agreed by >=2 public sources):\nCurrent P/E: 18.2x (cross-verified: agree)."]
+    assert not numbers_grounded("Net profit was Rs 2026 crore", src)     # matches only the DATE
+    assert numbers_grounded("Current P/E was 18.2", src)                 # real figure still grounds
+
+
 def test_build_user_prompt_fences_sources_as_untrusted_data():
     # WHY (prompt injection): news/filing text is third-party and ingested into the prompt. It must
     # be framed as untrusted DATA to quote, never instructions to obey, so a crafted headline like

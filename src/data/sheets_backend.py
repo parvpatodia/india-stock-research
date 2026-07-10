@@ -17,9 +17,10 @@ from pathlib import Path
 
 import pandas as pd
 
+from ..analysis.sizing import Stance, stance_from_verdict
 from ..portfolio.loader import load_holdings
 from ..portfolio.models import Holding
-from ..research.report import Report
+from ..research.report import Report, most_recent_by_symbol
 
 HOLDINGS_TAB = "Holdings"
 REPORTS_TAB = "Reports"
@@ -282,6 +283,39 @@ def save_report(gateway: SheetGateway, record: ReportRecord) -> None:
 
 def read_reports(gateway: SheetGateway) -> list[ReportRecord]:
     return [ReportRecord.from_row(r) for r in gateway.read(REPORTS_TAB)]
+
+
+def resolve_approved_stances(persisted: list[ReportRecord],
+                             session_reports: dict[str, Report]) -> dict[str, Stance]:
+    """Merge persisted (Sheet) approvals with this session's fresher research into one
+    {symbol: Stance} map for the Invest tab's real-money allocation.
+
+    WHY (real money): a symbol approved in a PAST session is durable via the Sheet, but if the
+    user re-researches it THIS session, that fresh report is the current state of the analysis.
+    If the fresh report is trusted, its stance supersedes the old one (already correct before this
+    fix). If the fresh report is NOT (yet) trusted -- a new DRAFT the user hasn't re-approved --
+    the OLD persisted approval must not silently keep feeding suggest_allocation: the current
+    analysis is what's now unreviewed, so the approval is dropped, not left stale. A symbol never
+    re-researched this session is untouched (nothing contradicts its persisted approval). Uses
+    most_recent_by_symbol so a re-run under a different key (e.g. an AR-URL override) is picked by
+    actual recency, not dict-iteration order.
+    """
+    approved: dict[str, Stance] = {}
+    for r in persisted:
+        if r.status == "approved" and r.stance:
+            try:
+                approved[r.symbol] = Stance(r.stance)
+            except ValueError:
+                pass
+    for sym_key in {key.split(" ")[0] for key in session_reports}:
+        latest = most_recent_by_symbol(session_reports, sym_key)
+        if latest is None:
+            continue
+        if latest.is_trusted and latest.verdict is not None:
+            approved[sym_key] = stance_from_verdict(latest.verdict)
+        else:
+            approved.pop(sym_key, None)
+    return approved
 
 
 def append_log(gateway: SheetGateway, action: str, symbol: str,

@@ -28,6 +28,11 @@ from .grounding import DocumentStore, RetrievedChunk
 _ALLOWED_KINDS = {FACT, OPINION, ESTIMATE}
 
 _NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
+# ISO date/timestamp shapes (e.g. "2026-07-09" or "2026-07-09T09:00:00Z"), used to self-disclose
+# WHEN a source was fetched (see verified_context.py, NewsItem.as_text). A date is metadata, not
+# a citable financial figure, so it must not contribute a digit sequence (e.g. the 4-digit year)
+# that a fabricated claim could coincidentally match and pass numeric grounding on.
+_DATE_LIKE = re.compile(r"\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}Z?)?")
 
 
 def numbers_grounded(text: str, source_texts: list[str]) -> bool:
@@ -39,13 +44,17 @@ def numbers_grounded(text: str, source_texts: list[str]) -> bool:
     wrongly-flagged true fact merely shows as 'reported, not independently verified' (safe),
     never a false green tick. Numbers under 3 digits (years, small counts, '5%') are skipped:
     too common to ground meaningfully and not the high-stakes misquote case. Digit-normalized
-    exact match (not substring), so '957' does not spuriously ground against '9575'."""
+    exact match (not substring), so '957' does not spuriously ground against '9575'. Date/
+    timestamp substrings are stripped before extraction (see _DATE_LIKE), so a source's own
+    fetch-date disclosure can never double as grounding for an unrelated fabricated figure."""
     def digits(token: str) -> str:
         return re.sub(r"\D", "", token)
-    material = [d for d in (digits(m) for m in _NUMBER.findall(text)) if len(d) >= 3]
+    def numbers_in(t: str) -> list[str]:
+        return _NUMBER.findall(_DATE_LIKE.sub(" ", t or ""))
+    material = [d for d in (digits(m) for m in numbers_in(text)) if len(d) >= 3]
     if not material:
         return True
-    source_digits = {digits(m) for t in source_texts for m in _NUMBER.findall(t or "")}
+    source_digits = {digits(m) for t in source_texts for m in numbers_in(t)}
     return all(d in source_digits for d in material)
 
 _SYSTEM = """You answer questions about Indian investments for a non-expert reader, using \

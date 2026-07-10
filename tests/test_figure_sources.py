@@ -3,6 +3,7 @@ from src.data.figure_sources import (
     PERCENT_FIGURES,
     RATIO_FIGURES,
     FigureSource,
+    format_figure_value,
 )
 from src.pipeline import build_report_for_symbol, gather_figures
 from src.research.report import Confidence, Leaning, QualityTier, ValuationTier
@@ -33,6 +34,16 @@ def test_ratio_and_percent_figures_are_disjoint_and_within_framework_figures():
     assert PERCENT_FIGURES <= set(FRAMEWORK_FIGURES)
     assert RATIO_FIGURES == {"current_pe", "median_pe"}
     assert PERCENT_FIGURES == {"promoter_pledge_pct", "dividend_yield_pct"}
+
+
+def test_format_figure_value_by_unit():
+    # WHY (real money): a bare '25.00' is genuinely ambiguous between a 25% pledge and Rs.25.
+    # Every display site (Research tab table, PDF export, Ask tab document) must agree on this.
+    assert format_figure_value("current_pe", 18.2) == "18.2x"
+    assert format_figure_value("median_pe", 24.0) == "24.0x"
+    assert format_figure_value("promoter_pledge_pct", 25.0) == "25.0%"
+    assert format_figure_value("dividend_yield_pct", 0.47) == "0.5%"
+    assert format_figure_value("net_profit", 79000.0) == "₹79,000.00"
 
 
 def test_gather_merges_by_source():

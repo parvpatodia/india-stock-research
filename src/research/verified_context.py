@@ -10,7 +10,7 @@ that has not already cleared the same bar as everything else in this app.
 """
 from __future__ import annotations
 
-from ..data.figure_sources import PERCENT_FIGURES, RATIO_FIGURES
+from ..data.figure_sources import format_figure_value
 from ..sources.adapters import FetchedDocument
 from .report import Report
 
@@ -33,14 +33,6 @@ _LABELS = {
 }
 
 
-def _format(name: str, value: float) -> str:
-    if name in RATIO_FIGURES:
-        return f"{value:.1f}x"
-    if name in PERCENT_FIGURES:
-        return f"{value:.1f}%"
-    return f"₹{value:,.0f}"
-
-
 def verified_figures_document(symbol: str, report: Report | None) -> FetchedDocument | None:
     """A citable document of ONLY cross-verified figures + derived insights for `symbol`, or
     None if there is no report or nothing on it cleared cross-verification. Registered at
@@ -52,7 +44,8 @@ def verified_figures_document(symbol: str, report: Report | None) -> FetchedDocu
     for fig in report.figures:
         if fig.is_trustworthy:
             label = _LABELS.get(fig.name, fig.name)
-            lines.append(f"{label}: {_format(fig.name, fig.value)} (cross-verified: {fig.note}).")
+            lines.append(f"{label}: {format_figure_value(fig.name, fig.value)} "
+                        f"(cross-verified: {fig.note}).")
     if not lines:
         return None
     # WHY (real money, honesty): the Ask tab stamps every citation's as_of with the CURRENT time

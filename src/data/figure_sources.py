@@ -35,6 +35,19 @@ POINT_FIGURES = ("current_pe", "median_pe", "promoter_pledge_pct", "dividend_yie
 RATIO_FIGURES = frozenset({"current_pe", "median_pe"})                       # e.g. "18.2x"
 PERCENT_FIGURES = frozenset({"promoter_pledge_pct", "dividend_yield_pct"})    # e.g. "0.5%"
 
+
+def format_figure_value(name: str, value: float) -> str:
+    """Render a figure's value in ITS actual unit (ratio / percent / rupees), not a bare number.
+    WHY: a bare '25.00' is genuinely ambiguous between a 25% pledge and Rs.25 -- every place that
+    displays a figure by name (the Research tab's evidence table, the PDF export, the Ask tab's
+    verified-figures document) must agree on this, so unit awareness is defined here ONCE."""
+    if name in RATIO_FIGURES:
+        return f"{value:.1f}x"
+    if name in PERCENT_FIGURES:
+        return f"{value:.1f}%"
+    return f"₹{value:,.2f}"
+
+
 _YEAR = re.compile(r"(\d{4})")
 
 
