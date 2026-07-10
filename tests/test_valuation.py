@@ -113,14 +113,35 @@ def test_valuation_unknown_without_median():
 
 
 def test_dividend_yield_cross_verifies_with_wider_tolerance():
-    # WHY: live-verified real-world cross-provider variance for dividend yield (2-17% typical,
-    # unlike the 2% default used for cleaner ratios like P/E), so this figure alone gets a wider
-    # band; a genuinely large disagreement still correctly conflicts (see the next test).
+    # WHY: live-verified real-world cross-provider variance for dividend yield (2-17% typical), so
+    # this figure gets a wider band; a genuinely large disagreement still correctly conflicts (see
+    # the next test).
     figs = {"dividend_yield_pct": [SourcedValue(5.0, "yfinance"), SourcedValue(5.8, "screener")]}
     r = build_company_report("X", figs)  # 16% apart -- would CONFLICT at the 2% default
     fig = next(f for f in r.figures if f.name == "dividend_yield_pct")
     assert fig.is_trustworthy
     assert fig.value == 5.4                          # median of the agreeing cluster
+
+
+def test_current_pe_cross_verifies_with_a_wider_tolerance_than_2pct():
+    # WHY (real money, live-verified across RELIANCE 3.4% / TCS 6.8% / HDFCBANK 9.3%): yfinance
+    # trailingPE and Screener's Stock P/E legitimately differ several percent (different
+    # trailing-EPS windows, consolidated-vs-standalone basis, price snapshot), NOT the parse/scale
+    # errors the 2% default guards. At 2% the current P/E was CONFLICTing for major stocks,
+    # withholding the WHOLE valuation tier (the core margin-of-safety signal) as "unknown".
+    figs = {"current_pe": [SourcedValue(18.41, "yfinance"), SourcedValue(16.70, "screener")]}
+    r = build_company_report("X", figs)   # ~9.3% apart -- would CONFLICT at the 2% default
+    fig = next(f for f in r.figures if f.name == "current_pe")
+    assert fig.is_trustworthy
+
+
+def test_current_pe_still_conflicts_on_a_gross_error():
+    # A scale/parse error (e.g. 22.7 misread as 227) is ~10x off -- must still be withheld, never
+    # blended into a fabricated "valuation" the wider band was meant to enable.
+    figs = {"current_pe": [SourcedValue(22.7, "yfinance"), SourcedValue(227.0, "screener")]}
+    r = build_company_report("X", figs)
+    fig = next(f for f in r.figures if f.name == "current_pe")
+    assert not fig.is_trustworthy
 
 
 def test_dividend_yield_still_conflicts_when_wildly_different():

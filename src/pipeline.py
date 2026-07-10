@@ -32,12 +32,19 @@ def build_company_report(company: str,
                          is_real_estate: bool = False,
                          trend_insights: tuple[str, ...] = (),
                          trend_improving: bool = False) -> Report:
-    # WHY: dividend_yield_pct gets a wider cross-verification tolerance than the 2% default.
-    # Live-verified across 6 real stocks: yfinance vs Screener typically differ 2-17% (different
-    # trailing-dividend windows/methodology), not the parsing/scale errors the tight default
-    # guards against elsewhere; a stock with a large recent special dividend (confirmed on TCS,
-    # a 48% gap) still correctly stays a CONFLICT even at this wider band.
-    _TOLERANCE = {"dividend_yield_pct": 0.25}
+    # WHY: some cross-source figures legitimately differ by more than the 2% default because the
+    # two sources compute them from different windows/bases, not because either is a parse/scale
+    # error -- those figures get a wider band, while a genuinely gross disagreement still
+    # CONFLICTs (see the per-figure tests).
+    #  - dividend_yield_pct (0.25): yfinance vs Screener differ 2-17% (different trailing-dividend
+    #    windows/methodology); a large special-dividend gap (TCS, 48%) still correctly conflicts.
+    #  - current_pe (0.15): live-verified that yfinance trailingPE vs Screener's Stock P/E differ
+    #    ~3-9% for major stocks (RELIANCE 3.4%, TCS 6.8%, HDFCBANK 9.3%) from different trailing-EPS
+    #    windows / consolidated-vs-standalone basis / price snapshot -- NOT the "clean ratio" the
+    #    old 2% band assumed. At 2% the current P/E was CONFLICTing for these names, withholding the
+    #    ENTIRE valuation tier (the core margin-of-safety signal); a scale/parse error (~10x) still
+    #    conflicts well within 0.15.
+    _TOLERANCE = {"dividend_yield_pct": 0.25, "current_pe": 0.15}
     verified = {name: verify_figure(name, values, rel_tolerance=_TOLERANCE.get(name, 0.02))
                for name, values in figures.items()}
 
