@@ -46,7 +46,22 @@ def test_format_figure_value_by_unit():
     assert format_figure_value("median_pe", 24.0) == "24.0x"
     assert format_figure_value("promoter_pledge_pct", 25.0) == "25.0%"
     assert format_figure_value("dividend_yield_pct", 0.47) == "0.5%"
-    assert format_figure_value("net_profit", 79000.0) == "₹79,000.00"
+
+
+def test_format_money_uses_indian_crore_lakh_units():
+    # WHY (real money, UI honesty, Ask answer quality): figures are stored in ABSOLUTE rupees, so
+    # a real net profit rendered raw is "₹790,000,000,000.00" -- a 12-digit string a parent has to
+    # count zeros on. Every Indian investor reads financials in crore (1e7) / lakh (1e5); showing
+    # them that way is how the reader (and the Ask model quoting the grounding doc) naturally
+    # states them. Trailing zeros are stripped so a whole-crore figure reads clean AND its digits
+    # match a model's "79,000 crore" phrasing under numbers_grounded.
+    assert format_figure_value("net_profit", 790000000000.0) == "₹79,000 crore"
+    assert format_figure_value("revenue", 10564995000000.0) == "₹10,56,499.5 crore"
+    assert format_figure_value("total_debt", 4004810000000.0) == "₹4,00,481 crore"
+    assert format_figure_value("net_profit", 500000000.0) == "₹50 crore"      # 50 cr
+    assert format_figure_value("net_profit", 150000.0) == "₹1.5 lakh"         # 1.5 lakh
+    assert format_figure_value("net_profit", 9000.0) == "₹9,000"             # below a lakh
+    assert format_figure_value("net_profit", -500000000.0) == "-₹50 crore"    # losses keep the sign
 
 
 def test_gather_merges_by_source():

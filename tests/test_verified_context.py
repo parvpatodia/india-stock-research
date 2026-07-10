@@ -33,8 +33,8 @@ def test_document_includes_only_cross_verified_figures():
     ))
     doc = verified_figures_document("RELIANCE", report)
     assert doc is not None
-    assert "958,000,000" in doc.text
-    assert "500,000,000" not in doc.text            # single-source figure withheld
+    assert "₹95.8 crore" in doc.text                 # rendered in the Indian crore convention
+    assert "50 crore" not in doc.text                # single-source figure withheld entirely
     assert doc.source_id == VERIFIED_FIGURES_SOURCE_ID
 
 

@@ -36,6 +36,46 @@ RATIO_FIGURES = frozenset({"current_pe", "median_pe"})                       # e
 PERCENT_FIGURES = frozenset({"promoter_pledge_pct", "dividend_yield_pct"})    # e.g. "0.5%"
 
 
+def _indian_group(int_digits: str) -> str:
+    """Group an integer digit-string in the Indian convention: the last 3 digits, then 2 at a
+    time (e.g. 1056499 -> '10,56,499'). WHY: the reader is an Indian investor; Western thousands
+    grouping of a crore figure reads wrong to them."""
+    if len(int_digits) <= 3:
+        return int_digits
+    head, last3 = int_digits[:-3], int_digits[-3:]
+    parts: list[str] = []
+    while len(head) > 2:
+        parts.insert(0, head[-2:])
+        head = head[:-2]
+    if head:
+        parts.insert(0, head)
+    return ",".join(parts) + "," + last3
+
+
+def _format_money(value: float) -> str:
+    """Rupees in the Indian crore/lakh convention. WHY (real money, UI honesty, Ask answer
+    quality): figures are stored in ABSOLUTE rupees, so a real net profit rendered raw is
+    '₹790,000,000,000.00' -- a 12-digit string a parent has to count zeros on. Indian investors
+    read financials in crore (1e7) / lakh (1e5); showing them that way is how the reader, and the
+    Ask model quoting the grounding document, naturally states them. Trailing zeros are stripped
+    so a whole-crore figure reads clean and its digits line up with a '79,000 crore' phrasing
+    under numbers_grounded."""
+    a = abs(value)
+    if a >= 1e7:
+        num, unit = value / 1e7, " crore"
+    elif a >= 1e5:
+        num, unit = value / 1e5, " lakh"
+    else:
+        num, unit = value, ""
+    s = f"{num:.2f}".rstrip("0").rstrip(".")   # up to 2 decimals, no trailing zeros
+    neg = s.startswith("-")
+    if neg:
+        s = s[1:]
+    int_part, _, dec_part = s.partition(".")
+    grouped = _indian_group(int_part) + (f".{dec_part}" if dec_part else "")
+    return f"{'-' if neg else ''}₹{grouped}{unit}"
+
+
 def format_figure_value(name: str, value: float) -> str:
     """Render a figure's value in ITS actual unit (ratio / percent / rupees), not a bare number.
     WHY: a bare '25.00' is genuinely ambiguous between a 25% pledge and Rs.25 -- every place that
@@ -45,7 +85,7 @@ def format_figure_value(name: str, value: float) -> str:
         return f"{value:.1f}x"
     if name in PERCENT_FIGURES:
         return f"{value:.1f}%"
-    return f"₹{value:,.2f}"
+    return _format_money(value)
 
 
 _YEAR = re.compile(r"(\d{4})")
