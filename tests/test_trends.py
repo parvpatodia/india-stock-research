@@ -159,3 +159,16 @@ def test_trend_points_falls_back_to_revenue_volatility_when_profit_data_is_thin(
     volatility_pts = [p for p in pts if "swung sharply" in p]
     assert len(volatility_pts) == 1
     assert "Revenue" in volatility_pts[0]
+
+
+def test_trend_points_does_not_fall_back_to_revenue_when_profit_is_confirmed_smooth():
+    # WHY (regression, adversarial review): the fallback must trigger ONLY when profit data is
+    # too THIN to judge (see the test above), not merely because profit turned out smooth. A
+    # confirmed-smooth bottom line despite one lumpy revenue year is a reasonable case to NOT
+    # caveat at all -- the business absorbed the swing before it reached earnings, and showing
+    # "steady profit growth" right next to "but revenue swung sharply, don't trust a single year"
+    # reads as contradictory guidance about the same business.
+    rev = {2022: 1000 * CR, 2023: 1300 * CR, 2024: 1000 * CR}   # a real ~30pp swing (one lumpy yr)
+    prof = {2022: 100 * CR, 2023: 108 * CR, 2024: 118 * CR, 2025: 127 * CR}  # steady ~8%/yr, ample data
+    pts = trend_points(rev, prof)
+    assert not any("swung sharply" in p for p in pts)   # profit had enough data and is smooth

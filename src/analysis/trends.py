@@ -168,10 +168,21 @@ def trend_points(revenue_series: dict[int, float],
             points.append("Profit has grown faster than sales, so margins have been improving.")
         elif prof[0] < rev[0] - _MARGIN_MIN:
             points.append("Profit has grown slower than sales, so margins have been under pressure.")
-    # Prefer the profit signal (the bottom line, more decision-relevant); fall back to revenue
-    # only when profit data is too thin to judge (see revenue_volatility_point's WHY). Never both,
-    # to avoid two near-duplicate sentences.
-    volatility = earnings_volatility_point(profit_series) or revenue_volatility_point(revenue_series)
+    # Prefer the profit signal (the bottom line, more decision-relevant) whenever there is ENOUGH
+    # profit data to judge it at all -- whether it turns out volatile or confirmed smooth. Fall
+    # back to revenue only when profit data ITSELF is too thin to compute a swing (see
+    # revenue_volatility_point's WHY). WHY this distinction matters (regression, adversarial
+    # review): `earnings_volatility_point(...) or revenue_volatility_point(...)` would ALSO fall
+    # back whenever profit merely came back smooth (swing under threshold), not just when it was
+    # thin -- both cases return None from earnings_volatility_point, so the `or` couldn't tell
+    # them apart. That showed "steady profit growth" right next to "but revenue swung sharply,
+    # don't trust a single year" for the SAME business: a confirmed-smooth bottom line despite one
+    # lumpy revenue year is a reasonable case to show NO caveat at all (the business absorbed the
+    # swing before it reached earnings), not a case to caveat on revenue's behalf.
+    if _yoy_swing(profit_series) is not None:
+        volatility = earnings_volatility_point(profit_series)
+    else:
+        volatility = revenue_volatility_point(revenue_series)
     if volatility:
         points.append(volatility)
     return points
