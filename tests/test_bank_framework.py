@@ -69,6 +69,18 @@ def test_industry_category_detects_financial_conglomerate_nbfcs():
     assert _industry_category("Financial Conglomerates") == "nbfc"
 
 
+def test_industry_category_bare_conglomerates_stays_industrial():
+    # WHY (regression, HIGH severity; found by adversarial review of the "conglomerate" fix
+    # above): "Conglomerates" (no "Financial" prefix) is yfinance's real, distinct Industrials-
+    # sector tag for genuine non-lending industrial holding companies -- live-verified: Godrej
+    # Industries (D/E ~4.6x), JSW Holdings, and Thermax all carry this exact tag. A bare
+    # "conglomerate" substring match wrongly swept these in alongside "Financial Conglomerates",
+    # hiding Godrej Industries' real ~4.6x leverage behind a meaningless ROA-only read instead of
+    # flagging it on the industrial D/E lens where it belongs -- the opposite failure mode from
+    # the one the NBFC fix was meant to close.
+    assert _industry_category("Conglomerates") == "other"
+
+
 def test_industry_category_other_financials_stay_industrial():
     # Insurance, asset management, capital markets/exchanges do NOT run a borrow-to-lend model;
     # they must stay on the industrial D/E lens, not be swept into the ROA-only framework.

@@ -63,7 +63,14 @@ def _industry_category(industry: str) -> str:
     # alarm. Checked other real Financial Services names for the same tag first (insurers, asset
     # managers, capital-markets firms all carry their OWN distinct yfinance industry tags, not
     # this one), so this does not sweep in a business that genuinely isn't a lender.
-    if "credit services" in ind or "mortgage" in ind or "conglomerate" in ind:
+    #
+    # WHY require BOTH words (regression, HIGH severity; found by adversarial review): a bare
+    # "conglomerate" substring also matches "Conglomerates" -- yfinance's real, distinct
+    # Industrials-sector tag for genuine non-lending holding companies (live-verified: Godrej
+    # Industries D/E ~4.6x, JSW Holdings, Thermax). That wrongly hid a real, meaningful leverage
+    # signal behind a meaningless ROA-only read -- the opposite failure mode from the one this
+    # NBFC mapping exists to close. Matching the full "financial conglomerate" phrase excludes it.
+    if "credit services" in ind or "mortgage" in ind or "financial conglomerate" in ind:
         return "nbfc"
     if "real estate" in ind:
         return "real_estate"
