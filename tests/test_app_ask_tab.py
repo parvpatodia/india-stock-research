@@ -34,3 +34,7 @@ def test_already_researched_but_nothing_cross_verified_does_not_claim_unresearch
     assert "research it in the 'Research a Stock' tab first" not in tip
     assert "already researched" in tip
     assert "evidence panel" in tip
+    # WHY (found by adversarial review): verified_figures_document also returns None when a
+    # figure was found by NEITHER source at all (UNVERIFIABLE), not just single-source/conflict --
+    # the message must not imply a figure necessarily exists somewhere, just unreconciled.
+    assert "unavailable" in tip or "not found" in tip

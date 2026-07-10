@@ -401,19 +401,21 @@ def ask_no_figures_tip(symbol: str, already_researched_this_session: bool) -> st
     figures for `symbol`. WHY (real money, workflow honesty): the tip used to be the SAME
     "research it in the Research tab first" message whether the stock was never researched this
     session at all, OR it WAS researched but simply produced no cross-verified figure (every
-    figure single-source or in genuine CONFLICT across sources) -- verified_figures_document
-    returns None in both cases, so vf_doc is None can't tell them apart on its own. Telling a user
-    who already researched the stock to "research it first" is a false claim about what they just
-    did, and re-researching will not resolve a genuine cross-source disagreement between yfinance
-    and Screener -- the fix there is to open the evidence panel, not click Research again."""
+    figure single-source, in genuine CONFLICT across sources, or found by NEITHER source at all)
+    -- verified_figures_document returns None in all these cases, so vf_doc is None can't tell
+    them apart on its own. Telling a user who already researched the stock to "research it first"
+    is a false claim about what they just did, and re-researching will not resolve a genuine
+    cross-source disagreement between yfinance and Screener -- the fix there is to open the
+    evidence panel, not click Research again."""
     if not already_researched_this_session:
         return (f"Tip: for questions about {symbol}'s numbers (P/E, debt, profit, dividend...), "
                 "research it in the 'Research a Stock' tab first — Ask can then ground answers "
                 "in its cross-verified figures.")
     return (f"{symbol} was already researched this session, but no figure cross-verified across "
-            "sources (each is either single-source or a genuine conflict). Re-researching won't "
-            "resolve a real disagreement between sources -- open the Research tab's evidence "
-            "panel to see which figures conflict or are single-source.")
+            "sources (each is either single-source, a genuine conflict, or not found by any "
+            "source at all). Re-researching won't resolve a real disagreement or a genuine gap "
+            "in coverage -- open the Research tab's evidence panel to see which figures conflict, "
+            "are single-source, or are simply unavailable.")
 
 
 def plain_summary(verdict, stance: Stance) -> str:

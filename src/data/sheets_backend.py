@@ -176,10 +176,13 @@ class GspreadGateway(SheetGateway):
         # history / daily-picks tab. Write the new data FIRST (a plain overwrite from A1 that
         # leaves the OLD data untouched if it fails), THEN trim any stale trailing rows beyond
         # the new grid's extent via resize -- a much lower-stakes secondary step: if THAT fails,
-        # the important data already landed safely; worst case is a few leftover stale rows,
-        # never a wiped tab.
+        # the important data already landed safely; worst case is a few leftover stale rows/cols,
+        # never a wiped tab. WHY both rows AND cols (found by adversarial review): a header can
+        # shrink too (REPORT_HEADER/TODAY_HEADER are plain code-derived lists that have changed
+        # before) -- trimming only rows would leave stale data in trailing columns from a wider
+        # previous write.
         ws.update(grid)   # gspread 6.x: update(values, range_name=None) -> writes from A1
-        ws.resize(rows=len(grid))
+        ws.resize(rows=len(grid), cols=len(header))
 
     def append(self, tab: str, header: list[str], row: dict) -> None:
         ws = self._worksheet(tab, header)

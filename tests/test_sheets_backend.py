@@ -192,7 +192,8 @@ class _FakeWorksheet:
     def __init__(self, update_should_fail: bool = False):
         self.cleared = False
         self.updated_grid: list | None = None
-        self.resized_to: int | None = None
+        self.resized_rows: int | None = None
+        self.resized_cols: int | None = None
         self._update_should_fail = update_should_fail
 
     def clear(self):
@@ -204,7 +205,8 @@ class _FakeWorksheet:
         self.updated_grid = grid
 
     def resize(self, rows=None, cols=None):
-        self.resized_to = rows
+        self.resized_rows = rows
+        self.resized_cols = cols
 
 
 def _gateway_with_fake_worksheet(ws: _FakeWorksheet) -> GspreadGateway:
@@ -227,15 +229,19 @@ def test_gspread_write_does_not_wipe_the_tab_if_the_update_fails():
     assert ws.cleared is False   # must NOT have wiped the tab before the failed write landed
 
 
-def test_gspread_write_succeeds_and_trims_stale_rows_after():
+def test_gspread_write_succeeds_and_trims_stale_rows_and_cols_after():
     # The new data must land via a plain overwrite (no preceding clear), and stale trailing rows
-    # from a previously-larger tab are trimmed AFTER the write succeeds, via resize -- a much
-    # lower-stakes secondary step than clearing before the write.
+    # AND columns from a previously-larger tab are trimmed AFTER the write succeeds, via resize --
+    # a much lower-stakes secondary step than clearing before the write. WHY cols too (found by
+    # adversarial review): a header can shrink (REPORT_HEADER/TODAY_HEADER are plain code-derived
+    # lists that have changed before) -- trimming only rows would leave stale data in trailing
+    # columns from a wider previous write.
     ws = _FakeWorksheet()
     gw = _gateway_with_fake_worksheet(ws)
     gw.write("Reports", ["symbol", "stance"], [{"symbol": "BLS", "stance": "favorable"}])
     assert ws.updated_grid == [["symbol", "stance"], ["BLS", "favorable"]]
-    assert ws.resized_to == 2   # header + 1 data row
+    assert ws.resized_rows == 2   # header + 1 data row
+    assert ws.resized_cols == 2   # 2 header columns
     assert ws.cleared is False
 
 
