@@ -131,3 +131,37 @@ def test_research_and_rank_skipped_is_optional_and_backward_compatible():
     picks = research_and_rank(["WRONG"], {}, 100.0, 0.25,
                               sources_factory=lambda: [_FakeSource("a", {})], throttle_seconds=0)
     assert picks == []
+
+
+class _RaisingSource(FigureSource):
+    """A source whose figures() call raises for one specific symbol -- mirrors a real network
+    blip (timeout, rate limit, malformed page) on a single watchlist name, distinct from the
+    no_data_found case (which is a clean, empty result, not an error)."""
+
+    def __init__(self, source_id: str, raise_for: str):
+        self.source_id = source_id
+        self._raise_for = raise_for
+
+    def figures(self, symbol: str) -> dict[str, float | None]:
+        if symbol == self._raise_for:
+            raise RuntimeError("network timeout")
+        return {name: None for name in FRAMEWORK_FIGURES}
+
+
+def test_research_and_rank_logs_symbols_that_raise_during_fetch():
+    # WHY (operator visibility): a network blip on ONE symbol must not silently vanish from the
+    # daily log -- it should show up in `skipped` with the actual exception message, so Parv can
+    # tell "transient network issue, retry tomorrow" apart from "check your watchlist spelling"
+    # (the no_data_found case) without digging through a stack trace he'd never see (this job
+    # runs headless via launchd).
+    def sources_factory():
+        return [_RaisingSource("a", raise_for="BROKEN"), _RaisingSource("b", raise_for="BROKEN")]
+
+    skipped: list[str] = []
+    picks = research_and_rank(["BROKEN"], {}, 100.0, 0.25,
+                              sources_factory=sources_factory, throttle_seconds=0, skipped=skipped)
+    assert picks == []
+    assert len(skipped) == 1
+    assert "BROKEN" in skipped[0]
+    assert "fetch failed" in skipped[0]
+    assert "network timeout" in skipped[0]
