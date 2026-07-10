@@ -370,10 +370,34 @@ def test_numbers_grounded_helper():
     src = ["Revenue was 1,234 cr and profit 957 cr in FY24."]
     assert numbers_grounded("Revenue was 1234 cr", src)             # digit-normalized match
     assert numbers_grounded("Profit was 957 cr", src)
-    assert numbers_grounded("It grew about 5% last year", src)      # <3 digits ignored
+    assert numbers_grounded("It grew about 5 times over 3 years", src)  # bare <3-digit non-% stays exempt
     assert numbers_grounded("The outlook is positive", src)         # no number -> grounded
     assert not numbers_grounded("Profit was 9575 cr", src)          # 9575 not in source (no substring)
     assert not numbers_grounded("Revenue was 4000 cr", src)         # fabricated figure
+
+
+def test_numbers_grounded_checks_short_percentages_too():
+    # WHY (real money, HIGH severity): ROE/ROCE/margins/dividend-yield/pledge/other-income-share
+    # are all formatted as whole- or 1-decimal percentages in this app's own generated source
+    # text (see deep_metrics.py, screener_source.py) -- routinely 1-2 digits. Before this fix, ANY
+    # percentage under 3 digits was exempt from grounding entirely (the old test above literally
+    # asserted "5%" grounds against a source that never mentions 5% at all), so a claim stating a
+    # materially wrong ROE ("8%" when the verified figure is "22%") would pass numbers_grounded
+    # and could render with a false green "verified fact" checkmark -- exactly the failure mode
+    # this function exists to catch. A bare short number that is NOT a percentage (a year, a
+    # small count) still correctly stays exempt; this only tightens percentages specifically.
+    src = ["Return on equity (ROE): 22% (cross-verified: 2 independent sources agree)."]
+    assert numbers_grounded("ROE is 22%, which is strong", src)
+    assert not numbers_grounded("ROE is 8%, which is weak", src)         # wrong, materially different
+
+
+def test_numbers_grounded_percentage_with_decimal_matches_exactly():
+    # WHY: "0.5%" and "5%" must NOT be treated as the same figure just because both are short --
+    # digit-normalizing preserves the distinction (05 vs 5), so a genuinely different value is
+    # still correctly flagged, not accidentally waved through by the percentage-materiality fix.
+    src = ["Dividend yield: 0.5% (cross-verified: 2 independent sources agree)."]
+    assert numbers_grounded("Dividend yield is 0.5%", src)
+    assert not numbers_grounded("Dividend yield is 5%", src)
 
 
 def test_numbers_grounded_ignores_timestamp_dates_as_figures():
