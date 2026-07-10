@@ -26,6 +26,25 @@ def test_verified_series_needs_two_sources_for_a_year():
     assert set(vs) == {2022}                # 2023 only from one source -> dropped
 
 
+def test_verified_series_chained_agreement_does_not_verify_a_pair_that_disagrees():
+    # WHY (real money, HIGH severity; same class of bug as verification.py's verify_figure,
+    # found alongside it): a real, live 3-source scenario (app.py wires yfinance + Screener + the
+    # annual report for figures_by_year too). A=100 (yfinance), B=101.9 (screener), C=103.8
+    # (annual_report): A-B agree (1.9 <= 2.04) and B-C agree (1.9 <= 2.08) at the default 2%
+    # tolerance, but A and C are themselves 3.8% apart -- genuinely beyond tolerance -- and were
+    # never checked against each other before this fix, so this year would wrongly read as "all
+    # 3 sources agree" with a chained median (101.9) instead of the genuine 2-source clique.
+    a_c_gap_pct = abs(100.0 - 103.8) / 103.8
+    assert a_c_gap_pct > 0.02
+    per_source = {
+        "yfinance": {2024: 100.0},
+        "screener": {2024: 101.9},
+        "annual_report": {2024: 103.8},
+    }
+    vs = verified_series(per_source)
+    assert vs.get(2024) != 101.9
+
+
 def test_cagr_basic_and_guards():
     rate, span = cagr({2020: 100, 2021: 110, 2022: 121})         # 100 -> 121 over 2 yrs = 10%/yr
     assert abs(rate - 10.0) < 1e-9 and span == 2

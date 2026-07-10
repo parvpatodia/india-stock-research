@@ -7,7 +7,7 @@ values that agree, never a single source's uncorroborated series. Deterministic,
 """
 from __future__ import annotations
 
-import statistics
+from ..research.verification import SourcedValue, verify_figure
 
 
 def verified_series(per_source: dict[str, dict[int, float]],
@@ -16,23 +16,26 @@ def verified_series(per_source: dict[str, dict[int, float]],
     >=2 distinct sources agree within rel_tol (median of the agreeing cluster); else drop the year.
 
     per_source: {source_id: {year: value}}.
+
+    WHY delegate to verify_figure (regression, HIGH severity): this used to run its own,
+    independent "star cluster around a pivot" clustering -- every value merely close to ONE
+    shared pivot, not mutually close to every OTHER member. That can chain together a pair of
+    sources that do NOT actually agree with each other (A close to B, B close to C, but A vs C
+    beyond tolerance), wrongly reporting "all sources agree" for a year they genuinely disagree
+    on. verify_figure's clique-based clustering already closes this; reusing it here (instead of
+    maintaining a second, divergence-prone copy of the same safety-critical logic) means a future
+    fix to the consensus rule can never apply to figures but silently miss year-by-year trends.
     """
     years: set[int] = set()
     for yearmap in per_source.values():
         years |= set(yearmap)
     out: dict[int, float] = {}
     for year in years:
-        values = [ym[year] for ym in per_source.values() if ym.get(year) is not None]
-        if len(values) < 2:
-            continue
-        best: list[float] | None = None
-        for pivot in values:
-            cluster = [v for v in values
-                       if abs(v - pivot) <= rel_tol * max(abs(v), abs(pivot), 1e-9)]
-            if len(cluster) >= 2 and (best is None or len(cluster) > len(best)):
-                best = cluster
-        if best:
-            out[year] = statistics.median(best)
+        values = [SourcedValue(ym[year], source_id) for source_id, ym in per_source.items()
+                  if ym.get(year) is not None]
+        result = verify_figure(f"fy{year}", values, rel_tolerance=rel_tol)
+        if result.is_trustworthy:
+            out[year] = result.value
     return out
 
 

@@ -64,6 +64,32 @@ def test_three_way_all_disagree_is_conflict():
     assert f.status == VerificationStatus.CONFLICT and f.value is None
 
 
+def test_chained_agreement_does_not_verify_a_pair_that_actually_disagrees():
+    # WHY (real money, HIGH severity): app.py's Research tab wires yfinance + Screener + the
+    # annual report (a real, live 3-source scenario, not hypothetical -- the annual report is
+    # auto-added "as a third source to break ties" whenever an LLM is configured). The old
+    # clustering picked the LARGEST "star" around a single pivot value (each member merely close
+    # to that ONE pivot), not a true clique where EVERY member is mutually close to EVERY other
+    # member. A=100, B=101.9, C=103.8 with the default 2% tolerance: A-B agree (1.9 <= 2.04) and
+    # B-C agree (1.9 <= 2.08), so the old code reported "3 independent sources agree" and took
+    # their median -- but A and C themselves are 3.8% apart, genuinely beyond tolerance (3.8 >
+    # 2.08), and never checked against each other. That is exactly the "independent sources
+    # disagree beyond tolerance" case this module exists to catch, smuggled through by chaining.
+    a_c_gap_pct = abs(100.0 - 103.8) / 103.8
+    assert a_c_gap_pct > 0.02   # confirms A and C genuinely disagree beyond the 2% tolerance
+    f = verify_figure("net_profit", [
+        SourcedValue(100.0, "yfinance"),
+        SourcedValue(101.9, "screener"),
+        SourcedValue(103.8, "annual_report"),
+    ])
+    # Must never claim all 3 agree -- that would only be true if A and C were also mutually
+    # close, which they are not. A real clique here can only be the 2-source pair {A,B} or
+    # {B,C} (median 100.95 or 102.85), never the old chained 3-way median of 101.9.
+    assert "3 independent sources agree" not in f.note
+    if f.status == VerificationStatus.VERIFIED:
+        assert f.value != 101.9
+
+
 def test_verify_identity_parts_sum_to_total():
     f = verify_identity(
         "segment revenue sums to total",

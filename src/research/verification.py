@@ -47,16 +47,31 @@ def _close(a: float, b: float, rel_tolerance: float) -> bool:
     return abs(a - b) <= rel_tolerance * max(abs(a), abs(b), _EPS)
 
 
+def _is_clique(vals: list[float], rel_tolerance: float) -> bool:
+    """True iff EVERY pair of vals is mutually within tolerance of each other -- a genuine
+    clique, not merely a 'star' of values each close to one shared pivot. WHY (real money, HIGH
+    severity): a star can chain together values that do not actually agree with each other (A
+    close to B, B close to C, but A vs C beyond tolerance), which would wrongly report "N sources
+    agree" while including a pair that genuinely disagrees -- exactly the failure this whole
+    module exists to catch. Real, live scenario, not hypothetical: app.py wires yfinance +
+    Screener + the annual report (a genuine 3rd source, auto-added "to break ties" whenever an
+    LLM is configured), so a 3-way chained (dis)agreement is a real production possibility."""
+    return all(_close(vals[i], vals[j], rel_tolerance)
+              for i in range(len(vals)) for j in range(i + 1, len(vals)))
+
+
 def verify_figure(name: str, values: list[SourcedValue],
                   rel_tolerance: float = 0.02) -> VerifiedFigure:
     """Cross-check a figure across sources using a consensus rule.
 
-    VERIFIED when the largest cluster of mutually-agreeing values covers >= 2 DISTINCT sources;
-    the value is that cluster's median and any disagreeing source is named as a withheld outlier.
-    This lets a third source break a two-source tie (e.g. the annual report confirms one of two
-    disagreeing aggregators) without ever loosening the 2% tolerance. One source -> SINGLE_SOURCE;
-    two or more with no agreeing pair -> CONFLICT. WHY 2%: gross errors (wrong scale/figure/
-    hallucination) are far larger than 2%; sub-2% deltas are rounding. Expert sign-off is final.
+    VERIFIED when the largest CLIQUE of mutually-agreeing values (every pair within tolerance of
+    every other, not just each close to one shared pivot -- see _is_clique) covers >= 2 DISTINCT
+    sources; the value is that clique's median and any disagreeing source is named as a withheld
+    outlier. This lets a third source break a two-source tie (e.g. the annual report confirms one
+    of two disagreeing aggregators) without ever loosening the 2% tolerance. One source ->
+    SINGLE_SOURCE; two or more with no agreeing clique -> CONFLICT. WHY 2%: gross errors (wrong
+    scale/figure/hallucination) are far larger than 2%; sub-2% deltas are rounding. Expert
+    sign-off is final.
     """
     usable = [v for v in values if v.value is not None]
     if not usable:
@@ -68,14 +83,17 @@ def verify_figure(name: str, values: list[SourcedValue],
         return VerifiedFigure(name, VerificationStatus.SINGLE_SOURCE, usable[0].value,
                               tuple(values), "only one independent source; not cross-verified")
 
+    from itertools import combinations
     best_sources: set[str] = set()
     best_values: list[float] = []
-    for pivot in usable:
-        members = [v for v in usable if _close(v.value, pivot.value, rel_tolerance)]
-        member_sources = {m.source_id for m in members}
-        if len(member_sources) > len(best_sources):
-            best_sources = member_sources
-            best_values = [m.value for m in members]
+    for size in range(2, len(usable) + 1):
+        for combo in combinations(usable, size):
+            sources = {v.source_id for v in combo}
+            if len(sources) < 2 or len(sources) <= len(best_sources):
+                continue
+            if _is_clique([v.value for v in combo], rel_tolerance):
+                best_sources = sources
+                best_values = [v.value for v in combo]
 
     if len(best_sources) >= 2:
         outliers = sorted(distinct_sources - best_sources)
