@@ -92,7 +92,7 @@ from src.research.verified_context import (  # noqa: E402
     symbol_has_no_data,
     verified_figures_document,
 )
-from src.research.library import build_library  # noqa: E402
+from src.research.library import build_library, resolve_curated_library_paths  # noqa: E402
 from src.research.report import ReviewStatus, most_recent_by_symbol  # noqa: E402
 from src.sip import sip_future_value  # noqa: E402
 from src.sources.adapters import HttpDocumentAdapter, ingest_documents  # noqa: E402
@@ -109,12 +109,24 @@ SAMPLE_CSV = _ROOT / "sample_data" / "sample_portfolio.csv"
 HOLDINGS_CSV = _ROOT / "holdings.csv"   # the owner's real portfolio (gitignored)
 EVAL_STORE = _ROOT / "data" / "eval_cases.jsonl"
 
-# Sources/documents: prefer the owner's real config, else fall back to the bundled sample.
-SOURCES_YAML = _ROOT / "config" / "sources.yaml"
-DOCS_DIR = _ROOT / "documents"
-if not SOURCES_YAML.exists():
-    SOURCES_YAML = _ROOT / "sample_data" / "sources.yaml"
-    DOCS_DIR = _ROOT / "sample_data" / "documents"
+
+def _secret(key: str, default=None):
+    """Read a Streamlit secret, tolerating no secrets file at all (local dev)."""
+    try:
+        return st.secrets.get(key, default)
+    except Exception:
+        return default
+
+
+# Sources/documents: prefer the owner's real config, else fall back to the bundled sample --
+# but ONLY when explicitly opted in (demo_sample_library secret). WHY: config/sources.yaml is
+# gitignored, so it can never exist in this app's git-based Streamlit Cloud deployment; without
+# this gate every deployed session would silently load synthetic sample data as if it were real
+# (live-verified real-money risk -- see resolve_curated_library_paths / sample_data/sources.yaml).
+SOURCES_YAML, DOCS_DIR = resolve_curated_library_paths(
+    _ROOT / "config" / "sources.yaml", _ROOT / "documents",
+    _ROOT / "sample_data" / "sources.yaml", _ROOT / "sample_data" / "documents",
+    demo_enabled=bool(_secret("demo_sample_library", False)))
 
 CURRENCY = "₹"
 
@@ -246,14 +258,6 @@ def fetch_published_holdings(url: str):
 @st.cache_resource
 def get_base_registry() -> SourceRegistry | None:
     return SourceRegistry.from_config(SOURCES_YAML) if SOURCES_YAML.exists() else None
-
-
-def _secret(key: str, default=None):
-    """Read a Streamlit secret, tolerating no secrets file at all (local dev)."""
-    try:
-        return st.secrets.get(key, default)
-    except Exception:
-        return default
 
 
 def _sheet_configured() -> bool:

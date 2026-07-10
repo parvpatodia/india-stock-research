@@ -15,6 +15,32 @@ from .grounding import DocumentStore
 _SUPPORTED = {".txt", ".md", ".pdf"}
 
 
+def resolve_curated_library_paths(config_yaml: Path, docs_dir: Path, sample_yaml: Path,
+                                  sample_docs_dir: Path,
+                                  demo_enabled: bool) -> tuple[Path, Path]:
+    """Decide which sources.yaml/documents dir the curated library should load.
+
+    Prefers the owner's real config if it exists. Otherwise falls back to the bundled
+    sample/demo library ONLY when explicitly opted in (demo_enabled).
+
+    WHY (real money, HIGH severity, live-verified): config/sources.yaml is gitignored, so it can
+    NEVER exist in this app's git-based Streamlit Cloud deployment. Without this gate, EVERY
+    deployed session would silently load synthetic sample data ("Acme Industries", "XYZ Fund")
+    into the Ask tab's curated library as if it were real -- live-verified that this fake data
+    scores well above the retrieval floor against ordinary questions about a real stock,
+    surfacing an unrelated, non-existent company's data in an answer about a real one. When
+    neither the real config exists nor demo mode is enabled, this returns the (missing)
+    config_yaml/docs_dir unchanged, so the caller ends up with "no curated library" -- an honest
+    empty state (the Ask tab already works fine on news + verified figures without one) -- never
+    a silent substitution.
+    """
+    if config_yaml.exists():
+        return config_yaml, docs_dir
+    if demo_enabled:
+        return sample_yaml, sample_docs_dir
+    return config_yaml, docs_dir
+
+
 def load_document_text(path: str | Path) -> str:
     p = Path(path)
     suffix = p.suffix.lower()

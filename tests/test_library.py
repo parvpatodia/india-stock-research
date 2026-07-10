@@ -1,6 +1,6 @@
 import pytest
 
-from src.research.library import build_library, load_document_text
+from src.research.library import build_library, load_document_text, resolve_curated_library_paths
 from src.sources.registry import CredibilityTier, Source, SourceRegistry
 
 
@@ -54,3 +54,48 @@ def test_build_library_unreadable_file_degrades_not_crashes(tmp_path):
     assert "acme_ar_fy24" in store.source_ids()       # good file still ingested
     assert "acme_ar_fy24_v2.pdf" in failed            # bad file degraded, did not crash
     assert "acme_ar_fy24_v2" not in store.source_ids()
+
+
+def test_resolve_curated_library_paths_prefers_real_config(tmp_path):
+    real_yaml = tmp_path / "config" / "sources.yaml"
+    real_yaml.parent.mkdir()
+    real_yaml.write_text("primary: []")
+    real_docs = tmp_path / "documents"
+    sample_yaml = tmp_path / "sample_data" / "sources.yaml"
+    sample_docs = tmp_path / "sample_data" / "documents"
+
+    yaml_path, docs_path = resolve_curated_library_paths(
+        real_yaml, real_docs, sample_yaml, sample_docs, demo_enabled=False)
+    assert yaml_path == real_yaml and docs_path == real_docs
+
+
+def test_resolve_curated_library_paths_no_real_config_and_demo_disabled_is_honest_empty(tmp_path):
+    # WHY (real money, HIGH severity, live-verified): config/sources.yaml is gitignored, so it
+    # can never exist in this app's git-based Streamlit Cloud deployment -- without this gate,
+    # EVERY deployed session would silently load synthetic sample data (Acme Industries, XYZ
+    # Fund) into the Ask tab's curated library, indistinguishable from a real one. Live-verified
+    # that this fake data scores well above the retrieval floor against ordinary questions about
+    # a REAL stock, surfacing an unrelated fake company's data in a real answer. When there's no
+    # real config AND demo mode isn't explicitly enabled, the caller must get back the (missing)
+    # real-config path, so downstream code sees "no curated library" -- an honest empty state --
+    # never a silent substitution.
+    real_yaml = tmp_path / "config" / "sources.yaml"           # does not exist
+    real_docs = tmp_path / "documents"
+    sample_yaml = tmp_path / "sample_data" / "sources.yaml"
+    sample_docs = tmp_path / "sample_data" / "documents"
+
+    yaml_path, docs_path = resolve_curated_library_paths(
+        real_yaml, real_docs, sample_yaml, sample_docs, demo_enabled=False)
+    assert yaml_path == real_yaml and docs_path == real_docs
+    assert not yaml_path.exists()
+
+
+def test_resolve_curated_library_paths_falls_back_to_sample_only_when_demo_enabled(tmp_path):
+    real_yaml = tmp_path / "config" / "sources.yaml"           # does not exist
+    real_docs = tmp_path / "documents"
+    sample_yaml = tmp_path / "sample_data" / "sources.yaml"
+    sample_docs = tmp_path / "sample_data" / "documents"
+
+    yaml_path, docs_path = resolve_curated_library_paths(
+        real_yaml, real_docs, sample_yaml, sample_docs, demo_enabled=True)
+    assert yaml_path == sample_yaml and docs_path == sample_docs
