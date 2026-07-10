@@ -47,16 +47,21 @@ def return_on_assets(net_profit: float | None,
 
 
 def _industry_category(industry: str) -> str:
-    """Classify a yfinance industry string into 'bank', 'nbfc', or 'other'. Pure and unit-tested
-    (the network fetch that supplies `industry` is not, matching is_bank's existing pattern).
-    Deliberately narrow: 'Financial Services' broadly also covers insurance, asset management,
-    and capital markets/exchanges, businesses that do NOT run a borrow-to-lend model and belong
-    on the industrial D/E framework, not swept into the ROA-only lens."""
+    """Classify a yfinance industry string into 'bank', 'nbfc', 'real_estate', or 'other'. Pure
+    and unit-tested (the network fetch that supplies `industry` is not, matching is_bank's
+    existing pattern). Deliberately narrow: 'Financial Services' broadly also covers insurance,
+    asset management, and capital markets/exchanges, businesses that do NOT run a borrow-to-lend
+    model and belong on the industrial D/E framework, not swept into the ROA-only lens.
+    'real_estate' still uses the industrial D/E lens (unlike bank/nbfc, this is not a
+    borrow-to-lend business) but gets an added leverage caveat -- see
+    framework.REAL_ESTATE_LEVERAGE_CAVEAT."""
     ind = industry.lower()
     if "bank" in ind:
         return "bank"
     if "credit services" in ind or "mortgage" in ind:
         return "nbfc"
+    if "real estate" in ind:
+        return "real_estate"
     return "other"
 
 
@@ -82,6 +87,15 @@ def is_nbfc(symbol: str) -> bool:
     'Financial - Mortgages'). Routes to the same ROA-based framework as a bank: see module
     docstring for why the industrial D/E lens is wrong for a borrow-to-lend business."""
     return _industry_category(_yfinance_industry(symbol)) == "nbfc"
+
+
+def is_real_estate(symbol: str) -> bool:
+    """Detect a real-estate developer from its yfinance industry (e.g. 'Real Estate -
+    Development', 'Real Estate - Diversified'; live-verified across DLF, Godrej Properties,
+    Oberoi Realty, Prestige, Brigade, Sobha, Lodha, Phoenix Mills). Unlike is_bank/is_nbfc, this
+    does NOT change the analysis framework (real estate still uses the industrial D/E lens); it
+    only adds a leverage caveat -- see framework.REAL_ESTATE_LEVERAGE_CAVEAT for why."""
+    return _industry_category(_yfinance_industry(symbol)) == "real_estate"
 
 
 def assemble_bank_verdict(valuation: MetricResult, roa: MetricResult) -> Verdict:

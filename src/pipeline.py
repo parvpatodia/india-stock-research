@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 
 from .analysis.framework import (
+    REAL_ESTATE_LEVERAGE_CAVEAT,
     assemble_verdict,
     earnings_quality,
     leverage_health,
@@ -28,6 +29,7 @@ def build_company_report(company: str,
                          claims: tuple[Claim, ...] = (),
                          median_pe: float | None = None,
                          is_bank: bool = False,
+                         is_real_estate: bool = False,
                          trend_insights: tuple[str, ...] = (),
                          trend_improving: bool = False) -> Report:
     # WHY: dividend_yield_pct gets a wider cross-verification tolerance than the 2% default.
@@ -57,7 +59,8 @@ def build_company_report(company: str,
             leverage_health(tv("total_debt"), tv("equity"), tv("ebit"), tv("interest_expense")),
             promoter_pledge(tv("promoter_pledge_pct")),
         ]
-        verdict = assemble_verdict(valuation, quality_signals)
+        extra_caveats = (REAL_ESTATE_LEVERAGE_CAVEAT,) if is_real_estate else ()
+        verdict = assemble_verdict(valuation, quality_signals, extra_caveat_reasons=extra_caveats)
 
     # Plain-language "why" points from the ratio suite + core figures (cross-verified only).
     from .analysis.deep_metrics import compute_deep_metrics, plain_points
@@ -162,7 +165,7 @@ def build_report_for_symbol(symbol: str, sources: list[FigureSource],
     """Real-data entry point: gather fiscal-year-aligned figures across sources, compute the
     historical median P/E for the valuation baseline, add cross-verified multi-year trends, then
     run the pipeline. A single source stays single-source (low confidence); agreeing sources verify."""
-    from .analysis.bank_framework import is_bank, is_nbfc
+    from .analysis.bank_framework import is_bank, is_nbfc, is_real_estate
     from .analysis.trends import trend_improving, trend_points, verified_series
     from .analysis.valuation import compute_median_pe
     series = gather_series(symbol, sources)
@@ -170,9 +173,12 @@ def build_report_for_symbol(symbol: str, sources: list[FigureSource],
     prof_series = verified_series(series.get("net_profit", {}))
     # WHY (sector-aware analysis): an NBFC borrows to lend, just like a bank, so its leverage is
     # the business model, not a risk signal, penalizing it under the industrial D/E lens is a
-    # real analytical error. Route it through the same ROA-based framework as a bank.
+    # real analytical error. Route it through the same ROA-based framework as a bank. A real-estate
+    # developer stays on the industrial D/E lens (it is not a borrow-to-lend business) but gets an
+    # added leverage caveat -- see framework.REAL_ESTATE_LEVERAGE_CAVEAT for why.
     return build_company_report(symbol, gather_aligned_figures(symbol, sources),
                                 claims=claims, median_pe=compute_median_pe(symbol),
                                 is_bank=is_bank(symbol) or is_nbfc(symbol),
+                                is_real_estate=is_real_estate(symbol),
                                 trend_insights=tuple(trend_points(rev_series, prof_series)),
                                 trend_improving=trend_improving(rev_series, prof_series))

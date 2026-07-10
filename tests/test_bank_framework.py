@@ -1,5 +1,5 @@
 from src.analysis.bank_framework import _industry_category, assemble_bank_verdict, return_on_assets
-from src.analysis.framework import valuation_vs_history
+from src.analysis.framework import REAL_ESTATE_LEVERAGE_CAVEAT, valuation_vs_history
 from src.pipeline import build_company_report
 from src.research.report import QualityTier
 from src.research.verification import SourcedValue
@@ -53,6 +53,21 @@ def test_industry_category_other_financials_stay_industrial():
     assert _industry_category("") == "other"
 
 
+def test_industry_category_detects_real_estate():
+    # WHY (sector-aware analysis, live-verified): DLF, Godrej Properties, Oberoi Realty, Sobha,
+    # Lodha all tag "Real Estate - Development"; Prestige and Phoenix Mills tag "Real Estate -
+    # Diversified". Real-estate developers still run a genuine D/E lens (unlike banks/NBFCs, this
+    # is not a borrow-to-lend model) but commonly carry higher leverage funded against project
+    # collections/RERA-escrow, so the generic industrial bands can misread a normally-financed
+    # developer as stretched. Live-verified D/E across 8 real names: DLF 0.01, Oberoi 0.16, Sobha
+    # 0.22, Lodha 0.42, Phoenix 0.48 (all already read "healthy"/"moderate" fine); but Godrej
+    # Properties 0.83, Brigade 0.93, and Prestige 1.09 sit right at or above the generic
+    # "stretched" (>1.0) threshold despite being large, established developers, not distressed
+    # ones -- exactly the mislabeling this caveat exists to flag.
+    assert _industry_category("Real Estate - Development") == "real_estate"
+    assert _industry_category("Real Estate - Diversified") == "real_estate"
+
+
 def test_non_bank_still_uses_industrial_framework():
     figs = {
         "total_debt": [SourcedValue(20, "a"), SourcedValue(20, "b")],
@@ -65,3 +80,21 @@ def test_non_bank_still_uses_industrial_framework():
     r = build_company_report("X", figs, is_bank=False)   # D/E 0.2 healthy + OCF 90% -> strong
     assert r.verdict.quality == QualityTier.STRONG
     assert not any("GNPA" in x for x in r.verdict.reasons)
+    assert not any(x == REAL_ESTATE_LEVERAGE_CAVEAT for x in r.verdict.reasons)
+
+
+def test_build_report_real_estate_carries_leverage_caveat():
+    # WHY (sector-aware analysis): a real-estate developer at D/E 0.93 (Brigade's live-verified
+    # figure) reads "high, worth watching" under the generic industrial band, but that leverage
+    # is commonly normal for a developer funded against project collections/RERA-escrow. Rather
+    # than silently loosen the band with an invented number, disclose the sector context (same
+    # honesty-first pattern as the bank/NBFC caveat) so the reader checks sector peers and
+    # collections momentum instead of reading this as a generic solvency red flag.
+    figs = {
+        "total_debt": [SourcedValue(93, "a"), SourcedValue(93, "b")],
+        "equity": [SourcedValue(100, "a"), SourcedValue(100, "b")],
+        "operating_cash_flow": [SourcedValue(90, "a"), SourcedValue(90, "b")],
+        "net_profit": [SourcedValue(100, "a"), SourcedValue(100, "b")],
+    }
+    r = build_company_report("BRIGADE", figs, is_bank=False, is_real_estate=True)
+    assert any(x == REAL_ESTATE_LEVERAGE_CAVEAT for x in r.verdict.reasons)

@@ -33,6 +33,24 @@ _COVERAGE_MIN = 3.0     # interest coverage (EBIT/interest) below this is a conc
 _PLEDGE_HIGH = 25.0     # promoter pledge above 25% is a serious red flag
 _MIN_SIGNALS_FOR_STRONG = 2  # "strong" needs >=2 verified quality dimensions, not one lucky one
 
+# WHY (sector-aware analysis, live-verified 2026-07-09): real-estate developers commonly carry
+# higher debt funded against project collections and RERA-escrow accounts, so the generic
+# industrial D/E bands above can misread a normally-financed developer as stretched. Live D/E
+# across 8 real names: DLF 0.01, Oberoi Realty 0.16, Sobha 0.22, Lodha 0.42, Phoenix Mills 0.48
+# (all already read fine under the generic bands) but Godrej Properties 0.83, Brigade 0.93, and
+# Prestige 1.09 sit at or above the generic "stretched" (>1.0) threshold despite being large,
+# established developers, not distressed ones. Rather than invent a replacement sector-specific
+# threshold with no authoritative basis (the same trap this app avoids everywhere else), disclose
+# the sector context as an explicit caveat -- the same honesty-first pattern already used for the
+# bank/NBFC framework -- so the reader compares against sector peers and checks collections/
+# pre-sales momentum and RERA compliance, rather than reading this as a generic solvency concern.
+REAL_ESTATE_LEVERAGE_CAVEAT = (
+    "Real estate/construction: developers commonly run higher debt funded against project "
+    "collections and RERA-escrow accounts, so the industrial D/E benchmark above may read a "
+    "normally-financed developer as more leveraged than it really is. Compare against sector "
+    "peers and check collections/pre-sales momentum and RERA compliance in the annual report "
+    "before treating this as a solvency concern.")
+
 
 @dataclass(frozen=True)
 class MetricResult:
@@ -140,13 +158,17 @@ def promoter_pledge(pledge_pct: float | None) -> MetricResult:
 
 def assemble_verdict(valuation: MetricResult,
                      quality_signals: list[MetricResult],
-                     min_signals_for_strong: int = _MIN_SIGNALS_FOR_STRONG) -> Verdict:
+                     min_signals_for_strong: int = _MIN_SIGNALS_FOR_STRONG,
+                     extra_caveat_reasons: tuple[str, ...] = ()) -> Verdict:
     """Turn the metrics into a caveated Verdict. Confidence reflects how much was actually
     known; a thinly-evidenced verdict is low confidence, not a confident guess.
 
     min_signals_for_strong: how many verified, concern-free quality dimensions are needed to read
     STRONG. Default 2 for the industrial framework (don't call a balance sheet strong on one lucky
     metric with debt unverified); banks pass 1 because ROA is their single designated quality lens.
+
+    extra_caveat_reasons: sector-specific context appended verbatim after the computed reasons
+    (e.g. REAL_ESTATE_LEVERAGE_CAVEAT) -- never changes any tier or score, only adds disclosure.
     """
     valuation_tier = {
         "cheap": ValuationTier.CHEAP, "fair": ValuationTier.FAIR,
@@ -194,6 +216,6 @@ def assemble_verdict(valuation: MetricResult,
     if confidence == Confidence.HIGH and any(m.critical and not m.known for m in all_metrics):
         confidence = Confidence.MEDIUM
 
-    reasons = tuple(m.detail for m in all_metrics if m.known)
+    reasons = tuple(m.detail for m in all_metrics if m.known) + extra_caveat_reasons
     return Verdict(valuation=valuation_tier, quality=quality_tier, leaning=leaning,
                    confidence=confidence, reasons=reasons, valuation_ratio=valuation.magnitude)
