@@ -104,6 +104,32 @@ def test_numeric_grounding_rejects_concatenated_digit_spoof():
     assert parse_extraction(real, text)["net_profit"] == 1262 * 1e7   # a real token is accepted
 
 
+def test_quote_grounding_rejects_a_real_but_numberless_quote_with_a_fabricated_value():
+    # WHY (real money, HIGH severity): quote_grounded only checked that the QUOTE STRING was a
+    # real substring of the report -- not that the quoted excerpt actually CONTAINS the claimed
+    # number. A model could attach a genuine, numberless narrative sentence from the report (e.g.
+    # management commentary with no digits at all) to a completely FABRICATED value, and it would
+    # pass as "grounded" via quote_grounded alone, since quote_grounded OR numeric_grounded is
+    # sufficient. Confirmed live: this exact shape returned a fabricated 999999cr net_profit
+    # instead of None. The report's own cross-verification layer happens to catch this in the
+    # common 3-source case (the fabricated value becomes a withheld CONFLICT/outlier against
+    # yfinance+Screener agreeing), but this source's OWN grounding check should not depend on a
+    # separate layer to catch what it should reject outright.
+    text = ("Management commentary: Profit for the year has grown significantly compared to "
+            "last year, driven by strong demand.")
+    payload = {"net_profit": {"value": 999999, "unit": "crore",
+                              "quote": "Profit for the year has grown significantly"}}
+    assert parse_extraction(payload, text)["net_profit"] is None
+
+
+def test_quote_grounding_still_accepts_a_quote_that_genuinely_contains_the_value():
+    # The legitimate case this fix must not break: a real quote that DOES contain the number.
+    text = "Profit for the year was 80,775 crore, up from the prior year."
+    payload = {"net_profit": {"value": 80775, "unit": "crore",
+                              "quote": "Profit for the year was 80,775 crore"}}
+    assert parse_extraction(payload, text)["net_profit"] == 80775 * 1e7
+
+
 # --- source behavior ---
 
 def test_ar_source_no_llm_returns_all_none():

@@ -104,9 +104,17 @@ def parse_extraction(payload: dict, source_text: str) -> dict[str, float | None]
     """Pure: turn the model's JSON into grounded, unit-converted values.
 
     A figure survives only if its value parses, its unit is known, AND it is grounded: either
-    its quote is a real substring of the report, OR the reported number's digits actually appear
-    in the report (numeric grounding, robust to garbled PDF-table text). A number absent from the
-    report is rejected as a hallucination. Value is converted to absolute rupees in code.
+    its quote is a real substring of the report AND itself contains the claimed value's digits,
+    OR the reported number's digits actually appear anywhere in the report (numeric grounding,
+    robust to garbled PDF-table text). A number absent from the report is rejected as a
+    hallucination. Value is converted to absolute rupees in code.
+
+    WHY (real money, HIGH severity): a quote being a real substring of the report is not enough
+    on its own -- a model could attach a genuine, numberless narrative sentence (e.g. management
+    commentary with no digits at all) to a completely fabricated value, and the old check would
+    accept it via quote-grounding alone, since it never verified the quote actually CONTAINS the
+    claimed number. Requiring the value's digits to appear WITHIN the quote itself closes that
+    gap while still accepting the legitimate case (a real quote that genuinely states the figure).
     """
     result: dict[str, float | None] = {}
     norm_source = _norm(source_text)
@@ -130,8 +138,14 @@ def parse_extraction(payload: dict, source_text: str) -> dict[str, float | None]
         if value is None or scale is None:
             result[name] = None
             continue
-        quote_grounded = bool(quote) and _norm(quote) in norm_source
         value_digits = re.sub(r"\D", "", str(obj.get("value")))
+        # WHY: match whole NUMBER TOKENS within the quote (same spoof-resistant approach as
+        # report_num_digits above), not a substring of the quote's concatenated digits -- a
+        # quote with multiple numbers could otherwise coincidentally spoof an unrelated value
+        # the same way the full-report substring check could before it was fixed.
+        quote_number_digits = {re.sub(r"\D", "", tok) for tok in _REPORT_NUM.findall(quote)}
+        quote_grounded = (bool(quote) and _norm(quote) in norm_source
+                         and bool(value_digits) and value_digits in quote_number_digits)
         numeric_grounded = len(value_digits) >= 3 and value_digits in report_num_digits
         if not (quote_grounded or numeric_grounded):
             result[name] = None
