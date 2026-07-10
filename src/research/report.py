@@ -128,6 +128,16 @@ class Report:
 
     def approve(self, reviewer: str, note: str = "",
                 acknowledge_conflicts: bool = False) -> "Report":
+        if self.no_data_found:
+            # WHY (real money, UI honesty): unlike a CONFLICT, there's no legitimate override --
+            # zero data from any source almost always means the ticker itself is wrong (e.g.
+            # Page Industries trades as PAGEIND, not PAGE), not a judgment call to sign off on.
+            # Approving anyway would create a nonsensical "reviewed" audit entry for a thesis
+            # built on nothing, and persist that same emptiness to the Sheet and the eval loop.
+            raise ValueError(
+                "no data at all was found for this symbol from any source; this usually means "
+                "the exact ticker is wrong (e.g. Page Industries trades as PAGEIND, not PAGE) -- "
+                "double-check the symbol and re-research before approving.")
         if self.conflicts and not acknowledge_conflicts:
             raise ValueError(
                 f"{len(self.conflicts)} figure(s) in CONFLICT; resolve them, or approve with "

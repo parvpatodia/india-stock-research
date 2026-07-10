@@ -19,12 +19,14 @@ from src.research.report import (
     ValuationTier,
     Verdict,
 )
+from src.research.verification import SourcedValue, verify_figure
 
 
 def _approved_report(company="BLS International") -> Report:
     v = Verdict(ValuationTier.CHEAP, QualityTier.STRONG, Leaning.CONSTRUCTIVE,
                 Confidence.MEDIUM, reasons=("P/E 14.6 vs median 32.7 reads cheap.",))
-    return Report(company=company, verdict=v).approve("parv", note="looks right")
+    fig = verify_figure("net_profit", [SourcedValue(100, "yfinance"), SourcedValue(101, "screener")])
+    return Report(company=company, figures=(fig,), verdict=v).approve("parv", note="looks right")
 
 
 def _persisted_approval(symbol="BLS", stance="favorable") -> ReportRecord:
@@ -91,8 +93,10 @@ def test_save_report_upserts_by_symbol():
 
     # re-save BLS with a different stance -> replaces, does not duplicate
     v = Verdict(ValuationTier.FAIR, QualityTier.MIXED, Leaning.NEUTRAL, Confidence.MEDIUM)
-    save_report(gw, record_from_report(Report(company="BLS International", verdict=v).approve("parv"),
-                                       "BLS", Stance.NEUTRAL.value))
+    fig = verify_figure("net_profit", [SourcedValue(100, "yfinance"), SourcedValue(101, "screener")])
+    save_report(gw, record_from_report(
+        Report(company="BLS International", figures=(fig,), verdict=v).approve("parv"),
+        "BLS", Stance.NEUTRAL.value))
     records = {r.symbol: r for r in read_reports(gw)}
     assert len(records) == 2
     assert records["BLS"].stance == "neutral"       # updated in place

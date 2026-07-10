@@ -93,6 +93,24 @@ def test_no_data_found_false_when_anything_resolved_at_all():
     assert r2.no_data_found is False
 
 
+def test_approve_blocked_when_no_data_found():
+    # WHY (real money, UI honesty): approving a report where NOTHING was found for the symbol
+    # from any source would create a nonsensical audit-trail entry -- "APPROVED by X. Reviewed."
+    # on a thesis built on zero data -- and persist that same emptiness to the Sheet and the eval
+    # loop. Unlike a CONFLICT (a judgment call the human can resolve by hand), there is no
+    # legitimate reason to override this: zero data almost always means the ticker itself is
+    # wrong (live-verified: Page Industries trades as PAGEIND, not PAGE), not a call to make.
+    r = Report(company="PAGE", figures=(_unverifiable_fig("net_profit"), _unverifiable_fig("revenue")))
+    with pytest.raises(ValueError):
+        r.approve(reviewer="expert")
+
+
+def test_approve_blocked_when_figures_are_completely_empty():
+    r = Report(company="X", figures=())
+    with pytest.raises(ValueError):
+        r.approve(reviewer="expert")
+
+
 def test_approve_blocked_while_conflicts_unless_acknowledged():
     r = Report(company="Acme", figures=(_verified_fig(), _conflict_fig()))
     assert len(r.conflicts) == 1
@@ -105,7 +123,7 @@ def test_approve_blocked_while_conflicts_unless_acknowledged():
 
 
 def test_audit_trail_preserves_order():
-    r = Report(company="Acme", verdict=_verdict())
+    r = Report(company="Acme", figures=(_verified_fig(),), verdict=_verdict())
     r2 = r.reject(reviewer="expert", note="fix x")
     r3 = r2.approve(reviewer="expert", note="fixed now")
     assert [e.status for e in r3.audit] == [ReviewStatus.REJECTED, ReviewStatus.APPROVED]
