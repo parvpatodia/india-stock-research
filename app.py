@@ -717,6 +717,19 @@ with tab_research:
         stance = stance_from_verdict(report.verdict)
         icon, headline = _STANCE_UI[stance]
 
+        # WHY (real money, workflow): distinct from ordinary thin coverage -- when EVERY figure
+        # is unverifiable (or there are none at all), that usually means the symbol itself is
+        # wrong, not that the business has weak disclosure. Live-verified: Page Industries trades
+        # as PAGEIND, not PAGE; typing the natural/common name "PAGE" returns zero data from
+        # either source with no other signal why. Give an actionable hint instead of leaving the
+        # generic "insufficient data" message to look identical for a real company with
+        # genuinely poor data, which offers no way to tell the two situations apart.
+        if report.no_data_found:
+            st.warning(f"No data at all was found for '{sym}' from either source. This usually "
+                       "means the exact NSE trading symbol differs from the company's common "
+                       "name (e.g. Page Industries trades as PAGEIND, not PAGE). Double-check "
+                       "the exact symbol on NSE, BSE, or Screener.in, then try again.")
+
         # status banner
         if report.is_trusted:
             last = report.audit[-1]

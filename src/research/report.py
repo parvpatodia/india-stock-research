@@ -113,6 +113,19 @@ class Report:
         these so the expert never signs off blind."""
         return tuple(f for f in self.figures if not f.is_trustworthy)
 
+    @property
+    def no_data_found(self) -> bool:
+        """True when NOTHING was found for this symbol from ANY source (every figure is
+        UNVERIFIABLE, or there are no figures at all -- all() on an empty tuple is True, which
+        correctly counts as "found nothing" here too). WHY: distinct from ordinary thin coverage
+        (some figures cross-verify, others don't) -- this specifically signals the SYMBOL itself
+        is likely wrong, e.g. a company's common name differs from its exact trading ticker
+        (live-verified: Page Industries trades as PAGEIND, not PAGE; typing PAGE returns zero
+        data from either source, not just weak data). The UI uses this to show an actionable hint
+        ("check the exact symbol") instead of the generic "insufficient data" message, which
+        would otherwise look identical for a real company with genuinely poor disclosure."""
+        return all(f.status == VerificationStatus.UNVERIFIABLE for f in self.figures)
+
     def approve(self, reviewer: str, note: str = "",
                 acknowledge_conflicts: bool = False) -> "Report":
         if self.conflicts and not acknowledge_conflicts:

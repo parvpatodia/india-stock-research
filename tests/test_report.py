@@ -11,7 +11,7 @@ from src.research.report import (
     Verdict,
     most_recent_by_symbol,
 )
-from src.research.verification import SourcedValue, verify_figure
+from src.research.verification import SourcedValue, VerificationStatus, verify_figure
 
 
 def _verdict():
@@ -62,6 +62,35 @@ def test_review_requires_named_reviewer():
     r = Report(company="Acme")
     with pytest.raises(ValueError):
         r.approve(reviewer="")
+
+
+def _unverifiable_fig(name="net_profit"):
+    return verify_figure(name, [])   # no sources at all -> UNVERIFIABLE
+
+
+def test_no_data_found_true_when_every_figure_is_unverifiable():
+    # WHY (real money, workflow): live-verified with a real, plausible mistake -- typing "PAGE"
+    # instead of Page Industries' actual ticker "PAGEIND" returns UNVERIFIABLE for every single
+    # figure from both sources. This is the exact shape that should trigger a "check the exact
+    # symbol" hint instead of the generic "insufficient data" message.
+    r = Report(company="PAGE", figures=(_unverifiable_fig("net_profit"), _unverifiable_fig("revenue")))
+    assert r.no_data_found is True
+
+
+def test_no_data_found_true_when_figures_is_completely_empty():
+    # all() on an empty tuple is True -- zero figures at all is ALSO "found nothing", not
+    # something that should slip through the check unnoticed.
+    r = Report(company="X", figures=())
+    assert r.no_data_found is True
+
+
+def test_no_data_found_false_when_anything_resolved_at_all():
+    # Even a single-source or conflicting figure means the symbol IS real and has SOME data --
+    # ordinary thin coverage, not the "likely wrong symbol" case.
+    r = Report(company="X", figures=(_verified_fig(),))
+    assert r.no_data_found is False
+    r2 = Report(company="X", figures=(_conflict_fig(), _unverifiable_fig("revenue")))
+    assert r2.no_data_found is False
 
 
 def test_approve_blocked_while_conflicts_unless_acknowledged():
