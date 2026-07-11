@@ -314,6 +314,22 @@ def test_plain_points_price_reads_as_valuation_not_a_share_price():
     assert "cheaper" in price                                        # 18/24 = 0.75 < 0.8 -> cheaper
 
 
+def test_plain_points_cheap_valuation_is_hedged_as_a_research_cue_not_a_bargain():
+    # WHY (real money, THE #1 value trap): "cheaper than its own history" is SELF-relative -- the
+    # market can permanently re-rate a company's multiple lower when its growth slows or quality
+    # fades, so a below-usual multiple is a de-rating trap as often as a bargain. A non-expert reads
+    # "cheaper than usual" as "buy"; the cheap read must be hedged as a cue to research WHY, not
+    # proof. Only the CHEAP tier carries it (a fair/expensive multiple has no de-rating trap to warn).
+    cheap = next(p for p in plain_points({"current_pe": 15.0, "median_pe": 30.0}, [])
+                 if p.startswith("Price:"))                            # 0.5 -> cheap
+    assert "cheaper" in cheap                                          # the cheap read is still shown
+    assert "research" in cheap.lower()                                 # ...hedged as a research cue
+    assert "re-rate" in cheap.lower() or "bargain" in cheap.lower()    # ...naming the de-rating trap
+    fair = next(p for p in plain_points({"current_pe": 25.0, "median_pe": 24.0}, [])
+                if p.startswith("Price:"))                            # ~1.04 -> in line
+    assert "re-rate" not in fair.lower() and "research" not in fair.lower()  # no hedge when not cheap
+
+
 def test_plain_points_flags_a_dividend_paid_during_a_net_loss():
     # WHY (real money, quality of earnings): a dividend paid in a LOSS year is funded from past
     # reserves or borrowing, NOT current profit -- a real sustainability question a professional

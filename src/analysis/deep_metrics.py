@@ -289,15 +289,26 @@ def plain_points(v: dict, deep: list[MetricResult], is_real_estate: bool = False
         # price -- confusing next to the real (e.g. ₹1,400) price the parent sees for the same
         # holding elsewhere. Keep the intuitive "₹ paid per ₹1 of profit" explanation, but tag the
         # comparison as the valuation level versus the company's OWN history, never a "price".
+        # WHY the cheap read is HEDGED (real money, THE #1 value trap): "cheaper than its own
+        # history" is SELF-relative. The market can permanently RE-RATE a company's multiple lower
+        # when its growth slows or quality fades, so a below-usual multiple is a de-rating trap as
+        # often as a bargain -- and a non-expert reads "cheaper than usual" as "buy". Name it as a
+        # cue to research WHY, not proof of a bargain. Kept INSIDE the "Price:" insight so it is
+        # excluded from the Ask PRIMARY-fact doc with the rest of the (single-source-median) valuation
+        # opinion (see verified_context / PRICE_INSIGHT_PREFIX). Only the CHEAP tier carries it.
+        hedge = ""
         if ratio < 0.8:
             tag = f"cheaper than usual versus its own history (about {ratio:.0%} of its normal)"
+            hedge = (" A below-usual multiple is a cue to research WHY, not a bargain on its own: "
+                     "the market can permanently re-rate a business lower when its growth slows or "
+                     "quality fades, so its old higher multiple may never return.")
         elif ratio > 1.2:
             tag = f"pricier than usual versus its own history ({ratio:.1f}x its normal)"
         else:
             tag = "about in line with its own history"
         points.append(f"{PRICE_INSIGHT_PREFIX}you pay about ₹{cpe:.0f} for every ₹1 of yearly "
                       f"profit (P/E {cpe:.0f}); historically you'd have paid about ₹{mpe:.0f} for "
-                      f"that same ₹1 of profit — {tag}.")
+                      f"that same ₹1 of profit — {tag}.{hedge}")
 
     np_, ocf = v.get("net_profit"), v.get("operating_cash_flow")
     if not is_bank and np_ and ocf and np_ > 0:
