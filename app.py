@@ -10,6 +10,7 @@ Run:  streamlit run app.py
 from __future__ import annotations
 
 import os
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -442,6 +443,27 @@ def ask_no_figures_tip(symbol: str, already_researched_this_session: bool) -> st
             "source at all). Re-researching won't resolve a real disagreement or a genuine gap "
             "in coverage -- open the Research tab's evidence panel to see which figures conflict, "
             "are single-source, or are simply unavailable.")
+
+
+_ASK_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def ask_source_caption(citations, registry) -> str:
+    """The 'Source:' line for an Ask-tab claim: each cited source's name, and -- for a DATED news
+    item -- the publisher + article date from the citation locator so the reader can judge how
+    recent a news-backed claim is. De-duplicated (a claim citing two chunks of one source shows it
+    once). WHY only append a dated locator: the app's own figure/filing documents carry redundant
+    internal locators ("RELIANCE verified figures"); appending those would be noise, whereas a
+    news locator ("Reuters, 2026-05-15") adds the freshness signal the reader actually needs."""
+    labels: list[str] = []
+    for c in citations:
+        src = registry.get(c.source_id)
+        name = src.name if src else c.source_id
+        loc = str(getattr(c, "locator", "") or "").split(" chunk ")[0].strip()
+        label = f"{name} — {loc}" if loc and _ASK_ISO_DATE.search(loc) else name
+        if label not in labels:
+            labels.append(label)
+    return ", ".join(labels) or "no source"
 
 
 def plain_summary(verdict, stance: Stance) -> str:
@@ -1343,9 +1365,7 @@ with tab_ask:
                     st.caption(ask_no_figures_tip(sym_u, cached_report is not None))
             else:
                 for claim in result.claims:
-                    cited = ", ".join(
-                        (registry.get(c.source_id).name if registry.get(c.source_id) else c.source_id)
-                        for c in claim.citations) or "no source"
+                    cited = ask_source_caption(claim.citations, registry)
                     if claim.kind == FACT and claim.is_verified_fact:
                         st.success(f"✓ {claim.text}")
                     elif claim.kind == OPINION:

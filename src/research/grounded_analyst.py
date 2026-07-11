@@ -208,7 +208,14 @@ def _assemble_result(question: str, payload: dict, retrieved: list[RetrievedChun
             chunk = chunk_by_id.get(cid)
             if chunk is None:
                 continue  # model cited a chunk it was not given -> drop
-            citation = build_citation(chunk.source_id, chunk.chunk_id, registry, as_of)
+            # WHY chunk.locator, not chunk.chunk_id (real money, Ask-tab freshness): the locator is
+            # human-readable provenance -- for a news item the PUBLISHER and article DATE (e.g.
+            # "Reuters, 2026-05-15"), which the reader needs to judge how recent a news-backed claim
+            # is -- whereas the chunk_id is an opaque internal handle ("news_google#3"). Chunk
+            # resolution already happened above (hallucinated ids were dropped), so the value passed
+            # here is purely the descriptive locator shown to the reader.
+            citation = build_citation(chunk.source_id, chunk.locator or chunk.chunk_id,
+                                      registry, as_of)
             if citation is not None:
                 citations.append(citation)
                 cited_texts.append(chunk.text)

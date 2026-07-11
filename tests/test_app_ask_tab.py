@@ -63,3 +63,24 @@ def test_conflict_values_line_formats_ratios_and_percents_correctly():
                         (SourcedValue(22.7, "yfinance"), SourcedValue(2.27, "screener")), "")
     line = app.conflict_values_line(pe)
     assert "22.7x" in line and "2.3x" in line          # ratio unit, not rupees -- catches a 10x gap
+
+
+def test_ask_source_caption_shows_publisher_date_for_news_and_dedups():
+    # WHY (real money, Ask-tab freshness): a news-backed claim's "Source:" line must let the reader
+    # judge how recent it is. For a dated news item, surface the publisher + article date; the app's
+    # own figure/filing documents keep just their name (their internal locator is redundant noise).
+    app = _import_app_with_clean_env()
+    from src.research.claims import Citation
+    from src.sources.registry import CredibilityTier, Source, SourceRegistry
+    reg = SourceRegistry([
+        Source("news_google", "Google News", CredibilityTier.ANALYST),
+        Source("verified_figures", "This app's cross-verified figures", CredibilityTier.PRIMARY),
+    ])
+    news = Citation("news_google", CredibilityTier.ANALYST, "Reuters, 2026-05-15 chunk 0")
+    fig = Citation("verified_figures", CredibilityTier.PRIMARY, "RELIANCE verified figures chunk 0")
+    assert app.ask_source_caption([news], reg) == "Google News — Reuters, 2026-05-15"
+    assert app.ask_source_caption([fig], reg) == "This app's cross-verified figures"
+    # two chunks of the same source de-duplicate to one label:
+    news2 = Citation("news_google", CredibilityTier.ANALYST, "Reuters, 2026-05-15 chunk 1")
+    assert app.ask_source_caption([news, news2], reg) == "Google News — Reuters, 2026-05-15"
+    assert app.ask_source_caption([], reg) == "no source"

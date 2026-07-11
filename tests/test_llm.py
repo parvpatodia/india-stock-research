@@ -58,6 +58,23 @@ def test_grounded_analyst_abstains_without_llm():
     assert res.abstained and "configured" in (res.abstain_reason or "").lower()
 
 
+def test_citation_locator_carries_source_provenance_for_freshness():
+    # WHY (real money, Ask-tab freshness): a news-backed claim must let the reader judge how recent
+    # it is. The citation's locator carries the human-readable provenance -- for a news item, the
+    # publisher and article DATE ("Reuters, 2026-05-15") -- not the opaque internal chunk id
+    # ("news_google#0"), so the Ask tab can show the date beside the claim.
+    reg = SourceRegistry([Source("news_google", "Google News", CredibilityTier.ANALYST)])
+    store = DocumentStore(registry=reg)
+    store.add_document("news_google", "Reliance Q3 profit rose 12 percent on refining margins.",
+                       locator_prefix="Reuters, 2026-05-15")
+    payload = ('{"abstain": false, "claims": [{"text": "Reliance Q3 profit rose 12 percent.", '
+               '"chunk_ids": ["news_google#0"], "kind": "opinion"}]}')
+    res = GroundedAnalyst(client=FakeClient(payload)).answer("Reliance profit", store, reg)
+    assert not res.abstained
+    assert "2026-05-15" in res.claims[0].citations[0].locator
+    assert res.claims[0].citations[0].locator.startswith("Reuters")   # not an opaque chunk id
+
+
 def test_answer_uses_the_retrieval_hint_to_surface_company_news():
     # WHY (real money, Ask-tab answer quality): a natural question like "what is the recent news"
     # shares NO words with a specific headline ("Reliance Q3 profit rises..."), so TF-IDF scored the
