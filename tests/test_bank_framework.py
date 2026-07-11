@@ -6,6 +6,7 @@ from src.analysis.bank_framework import (
     sector_category,
 )
 from src.analysis.framework import REAL_ESTATE_LEVERAGE_CAVEAT, valuation_vs_history
+from src.analysis.sizing import Stance, stance_from_verdict
 from src.pipeline import build_company_report
 from src.research.report import Confidence, QualityTier
 from src.research.verification import SourcedValue
@@ -66,6 +67,26 @@ def test_bank_confidence_capped_at_medium_because_asset_quality_is_unavailable()
                               return_on_assets(150, 10000))       # ROA 1.5% -> strong
     assert v.quality == QualityTier.STRONG
     assert v.confidence == Confidence.MEDIUM
+
+
+def test_bank_with_unverified_roa_reads_insufficient_not_a_suggestible_neutral():
+    # WHY (real money, over-confidence; bank-specific safety-net gap): ROA is a lender's SINGLE
+    # critical quality lens, and a bank verdict carries only two metrics (ROA + valuation). When ROA
+    # cannot be cross-verified but valuation can, the generic confidence math reads known_frac 1/2 =
+    # MEDIUM -> a NEUTRAL stance eligible for the daily suggestions/allocation, leaning on PRICE
+    # alone with nothing verified about the bank's quality. An equivalently thin INDUSTRIAL
+    # (valuation known, all four quality signals unknown) correctly reads INSUFFICIENT_DATA because
+    # its extra metrics dilute known_frac below 0.5; the bank slips the same net only for having
+    # fewer metrics. A bank with no verified ROA must read INSUFFICIENT_DATA too, never a suggestible
+    # NEUTRAL, so it can't out-safety (or out-rank) a thin industrial on conviction it hasn't earned.
+    v = assemble_bank_verdict(valuation_vs_history(10, 15),          # cheap, KNOWN
+                              return_on_assets(None, None))          # ROA UNVERIFIED (critical)
+    assert v.confidence == Confidence.LOW
+    assert stance_from_verdict(v) == Stance.INSUFFICIENT_DATA
+    # A verified ROA is unaffected: a normal bank still leans, capped at MEDIUM (never LOW here).
+    ok = assemble_bank_verdict(valuation_vs_history(10, 15), return_on_assets(150, 10000))
+    assert ok.confidence == Confidence.MEDIUM
+    assert stance_from_verdict(ok) != Stance.INSUFFICIENT_DATA
 
 
 def test_bank_mixed_roa_is_not_strong_quality():

@@ -126,14 +126,24 @@ def assemble_bank_verdict(valuation: MetricResult, roa: MetricResult) -> Verdict
     # leverage/coverage metrics do not apply), so one verified strong ROA is the intended STRONG.
     verdict = assemble_verdict(valuation, [roa], min_signals_for_strong=1,
                                sector_caveats=(_BANK_CAVEAT,))
-    # WHY (real money, honesty): a bank is only ever assessed on ROA + valuation here -- its single
-    # most important risk, asset quality (GNPA/NNPA) and capital adequacy (CRAR), is STRUCTURALLY
-    # absent from the free structured feeds (see _BANK_CAVEAT). With both metrics known the generic
-    # confidence math reads HIGH (2/2), which would imply a comprehensive check when a core
-    # dimension was never even attempted. Cap at MEDIUM so the structured confidence signal matches
-    # what the caveat already says in words, and so a bank never out-ranks a fully cross-verified
-    # industrial on conviction it structurally cannot earn. There is no bank scenario where HIGH is
-    # warranted from these feeds, so the cap is unconditional for the bank/NBFC path.
+    # WHY (real money, over-confidence; bank-specific safety-net gap): ROA is the lender's SINGLE
+    # critical quality lens, and a bank verdict carries only two metrics (ROA + valuation). When ROA
+    # can't be cross-verified but valuation can, the generic confidence math reads known_frac 1/2 =
+    # MEDIUM -> a NEUTRAL stance that is ELIGIBLE for the daily suggestions/allocation, leaning on
+    # PRICE alone with nothing verified about the bank's quality. An equivalently thin INDUSTRIAL
+    # (valuation known, all four quality signals unknown) correctly reads INSUFFICIENT_DATA -- its
+    # extra metrics dilute known_frac below 0.5 -- so the bank slips that same net only for having
+    # fewer metrics. Force LOW when ROA is unknown so a no-quality-verified bank reads INSUFFICIENT_
+    # DATA like the industrial, never a suggestible NEUTRAL on valuation alone. (ROA unknown AND
+    # valuation unknown already reads LOW; this only newly catches the valuation-known sub-case.)
+    if not roa.known:
+        return replace(verdict, confidence=Confidence.LOW, is_bank=True)
+    # WHY (real money, honesty): with BOTH metrics known the generic math reads HIGH (2/2), which
+    # would imply a comprehensive check when a bank's single most important risk -- asset quality
+    # (GNPA/NNPA) and capital adequacy (CRAR) -- is STRUCTURALLY absent from the free feeds (see
+    # _BANK_CAVEAT). Cap at MEDIUM so the structured confidence signal matches what the caveat
+    # already says in words, and so a bank never out-ranks a fully cross-verified industrial on
+    # conviction it structurally cannot earn. No bank scenario warrants HIGH from these feeds.
     # is_bank=True lets the display layer use lender-appropriate phrasing (ROA-based profitability,
     # never "balance sheet", which this framework cannot assess for a lender).
     capped = Confidence.MEDIUM if verdict.confidence == Confidence.HIGH else verdict.confidence
