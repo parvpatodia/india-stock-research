@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ..constants import PROMOTER_PLEDGE_HIGH_PCT
 from ..research.report import (
     Confidence,
     Leaning,
@@ -30,7 +31,7 @@ _OCF_WEAK = 0.50        # below 50% = a quality-of-earnings concern
 _DE_HEALTHY = 0.50      # debt/equity below this is comfortable
 _DE_STRETCHED = 1.00    # above this is stretched
 _COVERAGE_MIN = 3.0     # interest coverage (EBIT/interest) below this is a concern
-_PLEDGE_HIGH = 25.0     # promoter pledge above 25% is a serious red flag
+_PLEDGE_HIGH = PROMOTER_PLEDGE_HIGH_PCT  # promoter pledge above this % is a serious red flag
 _MIN_SIGNALS_FOR_STRONG = 2  # "strong" needs >=2 verified quality dimensions, not one lucky one
 
 # WHY (sector-aware analysis, live-verified 2026-07-09): real-estate developers commonly carry

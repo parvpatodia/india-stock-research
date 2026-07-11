@@ -69,6 +69,19 @@ def test_promoter_pledge():
     assert promoter_pledge(None).known is False
 
 
+def test_pledge_threshold_is_the_single_shared_constant():
+    # WHY (one source of truth, real money): the "serious pledge" threshold was duplicated as
+    # literals in framework and screener_source. Both now derive from constants -- guard against a
+    # future re-duplication that could let the framework metric and the Screener signal wording
+    # disagree on a real-money red-flag threshold.
+    from src.analysis import framework
+    from src.constants import PROMOTER_PLEDGE_HIGH_PCT
+    assert framework._PLEDGE_HIGH is PROMOTER_PLEDGE_HIGH_PCT
+    # the framework metric flags "high" exactly above the shared threshold, "watch" at/below it
+    assert promoter_pledge(PROMOTER_PLEDGE_HIGH_PCT + 1).verdict == "high"
+    assert promoter_pledge(PROMOTER_PLEDGE_HIGH_PCT - 1).verdict == "watch"
+
+
 def test_assemble_verdict_constructive_high_confidence():
     v = assemble_verdict(
         valuation_vs_history(15, 25),  # cheap

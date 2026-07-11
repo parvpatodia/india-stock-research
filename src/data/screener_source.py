@@ -15,6 +15,7 @@ from typing import Callable
 
 import pandas as pd
 
+from ..constants import PROMOTER_PLEDGE_HIGH_PCT
 from .figure_sources import FRAMEWORK_FIGURES, FigureSource
 
 _CRORE = 1e7
@@ -220,9 +221,6 @@ def parse_screener_figures(html: str) -> dict[str, float | None]:
 # 73.0% of their holding." Live-verified it appears only when the pledge is material (JPPOWER
 # 73%), and is absent for unpledged names -- so absence means "not flagged", NOT zero pledge.
 _PLEDGE_RE = re.compile(r"promoter[s]?\s+have\s+pledged\s+([\d.]+)\s*%", re.IGNORECASE)
-# At/above this % of promoter holding pledged reads as a serious red flag (mirrors
-# framework._PLEDGE_HIGH, the industrial-metric threshold, so the two never drift).
-_PLEDGE_SERIOUS_PCT = 25.0
 
 
 def parse_promoter_pledge(html: str) -> float | None:
@@ -240,16 +238,17 @@ def promoter_pledge_point(pct: float | None) -> str | None:
 
     WHY (real money): pledged promoter shares are collateral a lender can SELL on a margin call if
     the price falls, forcing more selling and often signalling promoter cash stress -- a top-tier
-    Indian-market red flag. Wording escalates above _PLEDGE_SERIOUS_PCT and always self-discloses
-    'not cross-verified, Screener only' so the caveat travels with the text; context for the
-    reader, never a buy/sell signal and never mixed into the cross-verified figures."""
+    Indian-market red flag. Wording escalates above PROMOTER_PLEDGE_HIGH_PCT (the shared threshold
+    the framework's own pledge metric uses) and always self-discloses 'not cross-verified, Screener
+    only' so the caveat travels with the text; context for the reader, never a buy/sell signal and
+    never mixed into the cross-verified figures."""
     if pct is None:
         return None
     base = (f"Screener flags that promoters have pledged {pct:.0f}% of their holding. Pledged "
             "shares can be sold by the lender if the price falls (a forced-selling risk) and often "
             "reflect promoter cash stress")
     tail = (" -- at this level a serious red flag; verify against the latest shareholding filing"
-            if pct >= _PLEDGE_SERIOUS_PCT
+            if pct >= PROMOTER_PLEDGE_HIGH_PCT
             else "; worth checking against the latest shareholding filing")
     return f"{base}{tail} (not cross-verified, Screener only)."
 
