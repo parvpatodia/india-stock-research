@@ -89,7 +89,7 @@ def return_on_capital(ebit: float | None, equity: float | None,
     verb = f"loses about ₹{abs(roce):.0f}" if roce < 0 else f"earns about ₹{roce:.0f}"
     return MetricResult(name, True, v,
                         f"It {verb} a year for every ₹100 of capital it uses "
-                        f"(ROCE {roce:.0f}%{basis}) — {v}.", concern)
+                        f"(ROCE {roce:.0f}%{basis}) — {v}.", concern, positive=(v == "strong"))
 
 
 def return_on_assets(net_profit: float | None, total_assets: float | None,

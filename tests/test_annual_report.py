@@ -248,15 +248,20 @@ def test_annual_report_and_yfinance_crossverify():
         "equity": 9.0403e12, "ebit": 1.47218e12, "interest_expense": 2.4056e11,
         "current_pe": 21.84,
     })
+    # WHY the profit_before_tax line (real report shape): the AR source DERIVES EBIT as PBT +
+    # interest (annual reports don't print an "EBIT" line), so a realistic filing must carry a PBT
+    # figure. With it, EBIT cross-verifies too, so the verdict can compute ROCE (a quality signal),
+    # and 3 of the verdict's dimensions are verified -> MEDIUM confidence.
+    ar_text = AR_TEXT + " Profit before tax for the year was 1,23,162 crore."
     ar_json = json.dumps({
         "net_profit": {"value": 80775, "unit": "crore", "quote": "Profit for the year was 80,775 crore"},
         "operating_cash_flow": {"value": 192113, "unit": "crore", "quote": "operating activities was 1,92,113 crore"},
         "total_debt": {"value": 398000, "unit": "crore", "quote": "Total borrowings stood at 3,98,000 crore"},
         "equity": {"value": 904030, "unit": "crore", "quote": "Total equity was 9,04,030 crore"},
-        "ebit": {"value": 147218, "unit": "crore", "quote": "(EBIT) was 1,47,218 crore"},
+        "profit_before_tax": {"value": 123162, "unit": "crore", "quote": "Profit before tax for the year was 1,23,162 crore"},
         "interest_expense": {"value": 24056, "unit": "crore", "quote": "interest expense) were 24,056 crore"},
     })
-    ar = AnnualReportFigureSource(lambda s: AR_TEXT, client=FakeClient(ar_json))
+    ar = AnnualReportFigureSource(lambda s: ar_text, client=FakeClient(ar_json))
 
     r = build_report_for_symbol("RELIANCE", [yf, ar])
     net_profit = next(f for f in r.figures if f.name == "net_profit")

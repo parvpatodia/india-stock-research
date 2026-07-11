@@ -67,9 +67,24 @@ def build_company_report(company: str,
     else:
         leverage = leverage_health(tv("total_debt"), tv("equity"), tv("ebit"),
                                    tv("interest_expense"))
+        # WHY (CA-level rigor, real money): return on capital employed is the dimension the best
+        # Indian quality-investors weigh most -- a business that earns poorly on the capital it
+        # deploys is not "strong quality" no matter how clean its cash conversion or how light its
+        # debt. The verdict previously judged quality from cash + leverage + pledge only, so a
+        # weak-ROCE business could read STRONG. Add ROCE: weak (<10%, below the cost of capital) is
+        # a concern, strong (>=15%) an affirmative strength. Uses the SAME averaged capital as the
+        # displayed ROCE insight (prior_year_figures, already gated to same-latest-year debt/equity
+        # in build_report_for_symbol), so verdict and insight agree. Unknown ROCE simply doesn't
+        # count -- not critical (leverage stays the sole solvency gate) -- and, like every other
+        # dimension, a missing one lowers the "how much did we verify" confidence honestly.
+        from .analysis.deep_metrics import return_on_capital
+        p_eq = prior_year_figures.get("equity") if prior_year_figures else None
+        p_debt = prior_year_figures.get("total_debt") if prior_year_figures else None
         quality_signals = [
             earnings_quality(tv("operating_cash_flow"), tv("net_profit")),
             leverage,
+            return_on_capital(tv("ebit"), tv("equity"), tv("total_debt"),
+                              prior_equity=p_eq, prior_total_debt=p_debt),
             promoter_pledge(tv("promoter_pledge_pct")),
         ]
         # WHY: only attach the sector caveat when leverage actually reads "stretched" -- a
