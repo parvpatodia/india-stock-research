@@ -54,6 +54,15 @@ class EvalStore:
         cases = []
         for line in self.path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
-            if line:
+            if not line:
+                continue
+            # WHY skip, don't crash (resilience, real money): append-only writes are not atomic, so a
+            # crash mid-add (or a manual edit) can leave a corrupt/partial line. load() runs on every
+            # Research-tab render, so a single bad line must not crash the tab a parent is viewing --
+            # skip it and keep the valid cases (the app's skip-bad-lines pattern, as in the AMFI
+            # parser). TypeError/ValueError also cover a line whose fields no longer match the schema.
+            try:
                 cases.append(GroundTruth.from_dict(json.loads(line)))
+            except (json.JSONDecodeError, TypeError, ValueError):
+                continue
         return cases

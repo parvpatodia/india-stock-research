@@ -58,6 +58,23 @@ def test_trusted_accuracy_is_one_when_nothing_was_trusted():
     assert res.matches == 0 and res.withheld == 1 and res.trusted_accuracy == 1.0
 
 
+def test_eval_store_skips_a_corrupt_line(tmp_path):
+    # WHY (resilience, real money): the store is append-only JSONL; a crash mid-write (writes are not
+    # atomic) or a manual edit can leave a corrupt/partial line. load() is called on every Research-
+    # tab render (the "learning loop" caption), so it must SKIP a bad line and return the valid cases,
+    # never crash the tab a parent is viewing -- matching the app's skip-bad-lines pattern (AMFI).
+    p = tmp_path / "cases.jsonl"
+    store = EvalStore(p)
+    report = _report_with_net_profit([(80000, "a"), (80100, "b")])
+    store.add(ground_truth_from_report(report, "net_profit", 80050))
+    with p.open("a", encoding="utf-8") as f:
+        f.write('{"company": "X", "figure": \n')          # corrupt/partial JSON line
+    store.add(ground_truth_from_report(report, "net_profit", 80050, note="second"))
+    loaded = store.load()
+    assert len(loaded) == 2                                # both valid cases; the corrupt line skipped
+    assert all(c.figure == "net_profit" for c in loaded)
+
+
 def test_store_roundtrip_and_replay(tmp_path):
     store = EvalStore(tmp_path / "cases.jsonl")
     report = _report_with_net_profit([(80000, "a"), (80100, "b")])
