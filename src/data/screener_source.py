@@ -488,9 +488,26 @@ def other_income_share_point(series: dict[int, float]) -> str | None:
                 "entirely on non-operating income. A serious quality-of-earnings concern; check how "
                 "repeatable that income is (not cross-verified, Screener only).")
     if pct >= _OTHER_INCOME_NOTABLE_PCT:
+        # WHY (CA-level quality of earnings): the latest year alone can't tell a CHRONIC structural
+        # reliance on non-operating income (the business habitually needs treasury/one-off gains to
+        # post its profit -- a deep quality-of-earnings problem) from a ONE-OFF spike (a single asset
+        # sale). The multi-year series is already parsed, so report how OFTEN the share has been this
+        # high and interpret the pattern -- a recurring pattern is a far stronger red flag than a
+        # single year. Needs >=3 years to call a pattern; below that the latest-year read stands.
+        pattern = ""
+        if len(series) >= 3:
+            elevated = sum(1 for v in series.values() if v >= _OTHER_INCOME_NOTABLE_PCT)
+            if elevated * 2 >= len(series):
+                pattern = (f"; and it has topped {_OTHER_INCOME_NOTABLE_PCT:.0f}% of profit before "
+                           f"tax in {elevated} of the last {len(series)} years -- a recurring, "
+                           "structural reliance on non-operating income rather than a one-off")
+            else:
+                pattern = (f"; though it has topped {_OTHER_INCOME_NOTABLE_PCT:.0f}% of profit "
+                           f"before tax in only {elevated} of the last {len(series)} years, so this "
+                           "reads more like a one-off than a recurring pattern")
         return (f"{pct:.0f}% of FY{year}'s profit before tax came from non-operating \"other "
                 "income\" (investment gains, interest income, or one-off items) rather than the "
-                "core business -- worth checking how repeatable that income is (not "
+                f"core business{pattern} -- worth checking how repeatable that income is (not "
                 "cross-verified, Screener only).")
     return (f"{pct:.0f}% of FY{year}'s profit before tax came from non-operating \"other "
             "income\"; the bulk of profit is driven by the core operating business (not "

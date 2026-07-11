@@ -433,6 +433,32 @@ def test_other_income_share_point_does_not_flag_a_low_share():
     assert "worth checking" not in point.lower()
 
 
+def test_other_income_share_point_flags_chronic_reliance_across_years():
+    # WHY (CA-level quality of earnings): a single latest-year read can't tell a CHRONIC structural
+    # reliance on non-operating income (the business habitually needs treasury/one-off gains to make
+    # its profit -- a deep quality-of-earnings problem) from a ONE-OFF spike (an asset sale). The
+    # multi-year series is already parsed, so surface how often the share has been this high. Here it
+    # is elevated in most years -> a recurring, structural pattern, not a blip.
+    series = {2020: 30.0, 2021: 35.0, 2022: 12.0, 2023: 40.0, 2024: 45.0}   # >=25% in 4 of 5 years
+    point = other_income_share_point(series)
+    assert point is not None
+    assert "45%" in point and "FY2024" in point               # still leads with the latest year
+    assert "4 of the last 5 years" in point                    # the multi-year frequency
+    assert "recurring" in point.lower() and "structural" in point.lower()
+
+
+def test_other_income_share_point_reads_a_latest_year_spike_as_more_one_off():
+    # The mirror: elevated ONLY in the latest year across a multi-year history -> reads as a likely
+    # one-off, not a structural reliance, so a non-expert doesn't over-read a single spike as a
+    # chronic quality-of-earnings problem.
+    series = {2020: 8.0, 2021: 9.0, 2022: 7.0, 2023: 10.0, 2024: 40.0}      # >=25% in only 1 of 5
+    point = other_income_share_point(series)
+    assert point is not None
+    assert "40%" in point
+    assert "only 1 of the last 5 years" in point
+    assert "one-off" in point.lower()
+
+
 def test_other_income_share_point_over_100pct_reads_as_a_pre_tax_loss_without_it():
     # WHY (quality of earnings, honesty; mirrors the negative-share fix): when non-operating "other
     # income" is LARGER than the entire profit before tax (share > 100%), the reported profit exists
