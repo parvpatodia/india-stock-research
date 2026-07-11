@@ -1193,7 +1193,7 @@ with tab_research:
 with tab_invest:
     st.subheader("Invest a lump sum")
 
-    # Today's picks: shown instantly from the Sheet; refreshed on demand by the button below.
+    # Today's research shortlist: shown instantly from the Sheet; refreshed on demand by the button below.
     # The refresh runs from THIS app (Streamlit Cloud can reach Screener; a scheduler's datacenter
     # IP can't), so it's full cross-verification. Reading the tab is one fast call.
     if "today_rows" not in st.session_state:
@@ -1203,19 +1203,24 @@ with tab_invest:
             st.session_state.today_rows = []
     today_rows = st.session_state.today_rows
     if today_rows:
-        st.markdown(f"**📌 Today's long-term picks** ({len(today_rows)})")
+        # WHY "research shortlist", not "picks" (real money, hard "never a buy/sell call"): a bold
+        # "Today's picks" header reads as a buy list to a non-expert, drawing the eye before the
+        # caveat below -- the same framing concern fixed in the daily push notification. Frame it as
+        # a shortlist to research, matching the notification and the app's non-advice stance.
+        st.markdown(f"**📌 Today's research shortlist** ({len(today_rows)})")
         for r in today_rows:
             st.markdown(f"- **{r.get('symbol', '')}** ({r.get('stance', '')}) — "
                         f"{r.get('reason', '')}")
         # WHY: Sheets coerces the date string into a datetime on round-trip; show only the date.
         as_of = str(today_rows[0].get("date", "")).split("T")[0]
-        st.caption(f"As of {as_of}. Cross-verified and within your per-stock cap. Not a buy order.")
+        st.caption(f"As of {as_of}. Cross-verified and within your per-stock cap — a shortlist to "
+                   "research, not a buy or sell call.")
     else:
-        st.caption("No picks yet. They're prepared automatically each day.")
+        st.caption("No shortlist yet. It's prepared automatically each day.")
     # WHY: display-only reload, NOT a re-research. The batch runs on the owner's Mac (residential
     # IP, full cross-verification); running it here from the datacenter IP would come back thin and
     # overwrite the good picks. So the app just pulls the latest the Mac computed.
-    if _sheet_configured() and st.button("🔄 Reload latest picks"):
+    if _sheet_configured() and st.button("🔄 Reload latest shortlist"):
         # WHY: only rerun on success; an unconditional st.rerun() after st.error() immediately
         # wipes the error, so a failed reload would look like the button did nothing.
         try:
