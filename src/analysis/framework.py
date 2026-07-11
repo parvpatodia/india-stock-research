@@ -67,6 +67,10 @@ class MetricResult:
     positive: bool = False  # True = an AFFIRMATIVELY strong dimension (not merely concern-free); a
     #                         # STRONG quality verdict requires at least one of these, so a lone
     #                         # middling-but-not-bad signal (e.g. a bank's "mixed" ROA) can't read STRONG
+    severe: bool = False    # True = a concern grave enough to stand ALONE (e.g. negative operating
+    #                         # cash flow despite a reported profit -- the textbook quality-of-earnings
+    #                         # red flag); a single severe concern drags quality to WEAK, not MIXED.
+    #                         # Always set together with concern=True.
 
 
 def value_if_trustworthy(figure: VerifiedFigure | None) -> float | None:
@@ -128,12 +132,15 @@ def earnings_quality(operating_cash_flow: float | None,
     # (e.g. ratio 10%) understates a much more severe, textbook earnings-quality red flag (working
     # capital stress, or aggressive revenue recognition); it must read as distinctly more serious.
     if ratio < 0:
+        # severe=True: cash actually LEFT the business while it reported a profit -- grave enough to
+        # read WEAK on its own (a lone ordinary concern is only MIXED), so a cash-burning-but-
+        # "profitable" name is never surfaced as a NEUTRAL suggestion. See assemble_verdict.
         return MetricResult(
             name, True, "red_flag",
             f"operating cash flow was NEGATIVE ({ratio:.0%} of net profit) despite a reported "
             "profit -- a serious quality-of-earnings red flag: the business consumed cash from "
             "operations while claiming to be profitable. Check receivables, working capital, "
-            "and revenue recognition before trusting the profit figure.", concern=True)
+            "and revenue recognition before trusting the profit figure.", concern=True, severe=True)
     if ratio >= _OCF_STRONG:
         v, concern = "strong", False
     elif ratio < _OCF_WEAK:
@@ -240,9 +247,17 @@ def assemble_verdict(valuation: MetricResult,
     # metric's own "mixed" label and overstating a whole swath of mid-ROA banks into FAVORABLE.
     # earnings_quality "strong" / leverage_health "healthy" / a bank's "strong" ROA set positive.
     has_affirmative_strength = any(m.positive for m in known_quality)
+    # WHY (real money, CA-level rigor): a SEVERE concern is grave enough to read WEAK on its own,
+    # not merely MIXED. The one such signal today is negative operating cash flow despite a reported
+    # profit (earnings_quality's red_flag) -- the textbook quality-of-earnings failure. As an
+    # ordinary lone concern it only reached MIXED -> a NEUTRAL leaning -> a NEUTRAL stance, which the
+    # suggestion ranker and allocator both treat as eligible, so a cash-burning-but-"profitable" name
+    # could be surfaced for research or funded. Treating one severe concern like two ordinary ones
+    # forces WEAK -> CAUTIOUS -> UNFAVORABLE, excluding it, which is the safe real-money direction.
+    severe_concern = any(m.severe for m in known_quality)
     if not known_quality:
         quality_tier = QualityTier.UNKNOWN
-    elif len(concerns) >= 2:
+    elif severe_concern or len(concerns) >= 2:
         quality_tier = QualityTier.WEAK
     elif len(concerns) == 1:
         quality_tier = QualityTier.MIXED

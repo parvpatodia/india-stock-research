@@ -6,6 +6,7 @@ from src.analysis.framework import (
     valuation_vs_history,
     value_if_trustworthy,
 )
+from src.analysis.sizing import Stance, stance_from_verdict
 from src.research.report import Confidence, Leaning, QualityTier, ValuationTier
 from src.research.verification import SourcedValue, verify_figure
 
@@ -52,6 +53,39 @@ def test_earnings_quality_flags_negative_operating_cash_flow_as_a_distinct_red_f
     assert r.verdict != "weak"
     assert "negative" in r.detail.lower()
     assert "red flag" in r.detail.lower()
+    assert r.severe is True                    # standalone-disqualifying, not a mild concern
+
+
+def test_a_lone_negative_ocf_red_flag_reads_weak_not_mixed_so_it_is_never_suggested():
+    # WHY (real money, CA-level rigor): negative operating cash flow despite a REPORTED profit is
+    # the textbook quality-of-earnings red flag (BHEL FY2024, SAIL FY2023, VAKRANGEE). earnings_quality
+    # already labels it a "serious red flag", but assemble_verdict collapsed every concern to a plain
+    # count, so a LONE such red flag reached only MIXED quality -> NEUTRAL leaning -> a NEUTRAL stance
+    # -- and rank_picks/suggest_allocation both treat NEUTRAL as ELIGIBLE. A cash-burning-but-
+    # "profitable" name could therefore enter the daily research shortlist and receive an allocation,
+    # even with a cheap price and clean debt. A SEVERE concern must stand on its own: WEAK quality ->
+    # CAUTIOUS leaning -> UNFAVORABLE stance, excluded from every suggestion.
+    v = assemble_verdict(
+        valuation_vs_history(15, 25),                       # cheap (would otherwise pull constructive)
+        [earnings_quality(-40, 100),                        # NEGATIVE OCF despite profit -> severe
+         leverage_health(20, 100, 50, 5),                   # healthy, clean (non-concern)
+         promoter_pledge(0)],                               # none
+    )
+    assert v.quality == QualityTier.WEAK                    # severe red flag ALONE -> WEAK, not MIXED
+    assert v.leaning == Leaning.CAUTIOUS                    # leans unfavorable despite the cheap price
+    assert stance_from_verdict(v) == Stance.UNFAVORABLE     # -> excluded from shortlist + allocation
+
+
+def test_a_single_ordinary_concern_still_reads_mixed_not_weak():
+    # Guard the boundary: a NON-severe lone concern (merely-thin cash conversion) must stay MIXED --
+    # the severe path must not sweep every single concern into WEAK.
+    v = assemble_verdict(
+        valuation_vs_history(15, 25),                       # cheap
+        [earnings_quality(40, 100),                         # "weak" (thin, but positive OCF) -> ordinary
+         leverage_health(20, 100, 50, 5),                   # healthy
+         promoter_pledge(0)],                               # none
+    )
+    assert v.quality == QualityTier.MIXED                   # one ordinary concern -> still MIXED
 
 
 def test_leverage_health():
