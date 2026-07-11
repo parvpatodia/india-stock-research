@@ -231,13 +231,26 @@ def build_report_for_symbol(symbol: str, sources: list[FigureSource],
     # ROCE, ROA). Only the exact year before the latest cross-verified year counts, so we never
     # average across a gap; absent -> the ratio falls back to the closing value. Computed for all
     # sectors (banks use average total assets for ROA too).
-    def _opening_balance(figure: str) -> float | None:
-        vseries = verified_series(series.get(figure, {}))
-        if len(vseries) < 2:
-            return None
-        return vseries.get(max(vseries) - 1)
+    def _series(figure: str) -> dict[int, float]:
+        return verified_series(series.get(figure, {}))
 
-    prior_year_figures = {k: _opening_balance(k) for k in ("equity", "total_debt", "total_assets")}
+    def _opening(vseries: dict[int, float]) -> float | None:
+        return vseries.get(max(vseries) - 1) if len(vseries) >= 2 else None
+
+    eq_series, debt_series = _series("equity"), _series("total_debt")
+    prior_year_figures: dict[str, float | None] = {
+        "equity": _opening(eq_series),
+        "total_assets": _opening(_series("total_assets")),
+    }
+    # WHY (found by adversarial review): ROCE averages a TWO-item sum (equity + debt), and each
+    # leg's opening is anchored to its own series' latest year. yfinance/Screener often cover
+    # equity and Total Debt through DIFFERENT latest years (yfinance frequently leaves the newest
+    # Total Debt cell empty), which would blend equity's (Y, Y-1) window with debt's (Y-1, Y-2)
+    # window yet label it a clean "average capital". Only pair the debt opening when both series
+    # share the same latest cross-verified year (which also makes the closings a clean Y+Y per
+    # gather_aligned_figures); otherwise ROCE keeps point capital, no misleading "average" label.
+    if eq_series and debt_series and max(eq_series) == max(debt_series):
+        prior_year_figures["total_debt"] = _opening(debt_series)
     return build_company_report(symbol, gather_aligned_figures(symbol, sources),
                                 claims=claims, median_pe=compute_median_pe(symbol),
                                 is_bank=category in ("bank", "nbfc"),

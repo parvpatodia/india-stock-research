@@ -410,3 +410,60 @@ def test_return_ratios_use_average_equity_end_to_end(monkeypatch):
     roe_line = next((i for i in report.insights if "ROE" in i), "")
     assert "on average equity" in roe_line       # averaged, not the closing snapshot
     assert "ROE 22%" in roe_line                  # 20 / ((80+100)/2) = 22.2%, not 20%
+
+
+def _two_sources_from_series(fseries):
+    """Two agreeing sources built from an explicit {figure: {year: value}} map (scalar = each
+    figure's latest year), for exercising the pipeline's prior-year / averaging wiring offline."""
+    from src.data.figure_sources import FRAMEWORK_FIGURES, FigureSource
+    scalar = {fig: ys[max(ys)] for fig, ys in fseries.items() if ys}
+
+    class _S(FigureSource):
+        def __init__(self, sid):
+            self.source_id = sid
+
+        def figures(self, symbol):
+            return {n: scalar.get(n) for n in FRAMEWORK_FIGURES}
+
+        def figures_by_year(self, symbol):
+            return fseries
+
+    return [_S("yfinance"), _S("screener")]
+
+
+def test_roce_averaging_gated_when_equity_and_debt_latest_years_diverge(monkeypatch):
+    # WHY (found by adversarial review): ROCE averages equity + debt; if their latest cross-verified
+    # years diverge (yfinance often leaves the newest Total Debt empty), pairing their independent
+    # openings would blend an equity (Y, Y-1) window with a debt (Y-1, Y-2) window while labeling it
+    # a clean "average capital". Gate it: divergent coverage -> point capital, no misleading label.
+    import src.pipeline as pipeline
+    monkeypatch.setattr(pipeline, "compute_median_pe", lambda s: None, raising=False)
+    from src.analysis import bank_framework
+    monkeypatch.setattr(bank_framework, "_yfinance_industry", lambda s: "Auto Components")
+    divergent = {
+        "net_profit": {2023: 18 * CR, 2024: 20 * CR},
+        "ebit": {2023: 25 * CR, 2024: 30 * CR},
+        "equity": {2023: 80 * CR, 2024: 100 * CR},         # latest FY2024
+        "total_debt": {2022: 30 * CR, 2023: 40 * CR},      # latest FY2023 -- diverges
+    }
+    insights = pipeline.build_report_for_symbol("DIVCO", _two_sources_from_series(divergent)).insights
+    roce = next((i for i in insights if "ROCE" in i), "")
+    roe = next((i for i in insights if "ROE" in i), "")
+    assert roce and "on average capital" not in roce       # point capital when years diverge
+    assert "on average equity" in roe                        # ROE (single figure) still averages
+
+
+def test_roce_averaging_applies_when_equity_and_debt_share_latest_year(monkeypatch):
+    import src.pipeline as pipeline
+    monkeypatch.setattr(pipeline, "compute_median_pe", lambda s: None, raising=False)
+    from src.analysis import bank_framework
+    monkeypatch.setattr(bank_framework, "_yfinance_industry", lambda s: "Auto Components")
+    aligned = {
+        "net_profit": {2023: 18 * CR, 2024: 20 * CR},
+        "ebit": {2023: 25 * CR, 2024: 30 * CR},
+        "equity": {2023: 80 * CR, 2024: 100 * CR},
+        "total_debt": {2023: 30 * CR, 2024: 40 * CR},      # same latest year as equity -> clean
+    }
+    insights = pipeline.build_report_for_symbol("ALGNCO", _two_sources_from_series(aligned)).insights
+    roce = next((i for i in insights if "ROCE" in i), "")
+    assert "on average capital" in roce
