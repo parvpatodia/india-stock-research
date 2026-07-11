@@ -9,6 +9,7 @@ automatically. Nothing here fakes a second source to manufacture confidence.
 """
 from __future__ import annotations
 
+import math
 import re
 from abc import ABC, abstractmethod
 
@@ -71,7 +72,12 @@ def _num(value) -> float | None:
         if value is None:
             return None
         f = float(value)
-        return f if f == f else None  # reject NaN
+        # WHY math.isfinite (real money, cross-verification safety): reject NaN AND +/-inf. The old
+        # `f == f` caught only NaN; an inf figure (a source's divide-by-zero, e.g. a P/E on ~0
+        # earnings) then spuriously CROSS-VERIFIES against any finite value (abs(inf - x) = inf <=
+        # tol*inf = inf is True) and lands as a "verified" inf -- a fabricated number as fact. Mirrors
+        # the CSV loader's _to_float, which already rejects non-finite. Non-finite -> treat as missing.
+        return f if math.isfinite(f) else None
     except (TypeError, ValueError):
         return None
 

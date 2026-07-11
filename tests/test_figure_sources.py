@@ -181,3 +181,19 @@ def test_ebit_pairing_falls_back_to_a_synonym_row_when_the_first_is_entirely_emp
     figs = YFinanceFigureSource().figures("X")
 
     assert figs["ebit"] == 990.0
+
+
+def test_num_rejects_infinity_not_just_nan():
+    # WHY (real money, cross-verification safety): a non-finite value must never enter the pipeline.
+    # _num already rejected NaN, but +/-INF slipped through -- and an inf figure spuriously
+    # CROSS-VERIFIES against any finite value (abs(inf - x) = inf <= tol*inf = inf is True), producing
+    # a "verified" figure of inf: a fabricated number reaching a parent as fact. A source can yield inf
+    # from a divide-by-zero (e.g. a P/E computed on ~0 earnings). Treat a non-finite value as missing,
+    # exactly as the CSV loader's _to_float already does.
+    from src.data.figure_sources import _num
+    assert _num(float("inf")) is None
+    assert _num(float("-inf")) is None
+    assert _num(float("nan")) is None      # unchanged
+    assert _num(45.6) == 45.6              # a finite value still passes
+    assert _num("123.5") == 123.5          # finite string still passes
+    assert _num(None) is None
