@@ -911,8 +911,11 @@ with tab_portfolio:
                 if thin_note:
                     st.caption(thin_note)
                 risk_cols = st.columns(3)
+                # n/a (not "0.0%"/"nan%") when the shared window is too short for a std to be
+                # computable -- a fabricated number is worse than an honest "n/a" (mirrors beta below).
+                _vol = annualized_volatility(port_returns)
                 risk_cols[0].metric("Annualized volatility",
-                                    f"{annualized_volatility(port_returns) * 100:.1f}%",
+                                    f"{_vol * 100:.1f}%" if _vol is not None else "n/a",
                                     help=explain("Volatility"))
                 # beta needs the benchmark's OWN history; the index fetch can fail while stock
                 # history succeeds, so beta() returns None (not a fabricated 0.00 that would read as

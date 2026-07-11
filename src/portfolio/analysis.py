@@ -152,10 +152,16 @@ def daily_returns(close: pd.Series) -> pd.Series:
     return close.pct_change().dropna()
 
 
-def annualized_volatility(returns: pd.Series) -> float:
-    if returns is None or returns.empty:
-        return 0.0
-    return float(returns.std() * math.sqrt(TRADING_DAYS_PER_YEAR))
+def annualized_volatility(returns: pd.Series) -> float | None:
+    # WHY None (not 0.0) when not computable (real money, "never a fabricated number"; mirrors beta's
+    # None contract below): a std needs >=2 return points. Fewer -- an empty book, or a just-listed
+    # holding that shrinks the shared return window to a single day -- leaves std undefined, and
+    # pandas returns NaN, which rendered as a nonsensical "nan%" in the risk panel; a 0.0 would read
+    # as a real "0% volatility". None lets the caller show "n/a", exactly as it does for beta.
+    if returns is None or len(returns) < 2:
+        return None
+    v = returns.std() * math.sqrt(TRADING_DAYS_PER_YEAR)
+    return float(v) if math.isfinite(v) else None
 
 
 # Below this many overlapping trading days, annualizing volatility (x sqrt(252)) or estimating beta

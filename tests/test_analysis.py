@@ -182,7 +182,13 @@ def test_thin_risk_window_note_flags_a_short_shared_window():
 
 def test_volatility_and_empty_guards():
     assert annualized_volatility(pd.Series([0.01, -0.01, 0.02, -0.02, 0.0])) > 0
-    assert annualized_volatility(pd.Series(dtype=float)) == 0.0
+    # WHY None (not 0.0) when not computable (real money, "never a fabricated number"; mirrors beta's
+    # None contract): a std needs >=2 return points. An empty book, OR a just-listed holding that
+    # shrinks the shared return window to a single day, leaves std undefined -- pandas returns NaN,
+    # which rendered as a nonsensical "nan%"; a 0.0 would read as a real "0% volatility". Return None
+    # so the caller shows "n/a", exactly as it already does for a not-computable beta.
+    assert annualized_volatility(pd.Series(dtype=float)) is None        # empty -> not computable
+    assert annualized_volatility(pd.Series([0.012])) is None            # single point -> std undefined
     assert max_drawdown(pd.Series(dtype=float)) == 0.0
 
 
