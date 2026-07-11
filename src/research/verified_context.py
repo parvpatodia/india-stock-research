@@ -56,7 +56,20 @@ def verified_figures_document(symbol: str, report: Report | None) -> FetchedDocu
     bar the rest of the app requires before a figure counts as fact, so it is safe to cite."""
     if report is None:
         return None
-    lines: list[str] = list(report.insights)
+    # WHY exclude the valuation/"Price:" insight (real money, THE cross-verification invariant):
+    # this document is registered at PRIMARY tier (citable_as_fact), so anything in it can render as
+    # a green VERIFIED FACT in the Ask tab. The figures loop below already admits only is_trustworthy
+    # (>=2-source) figures -- but the "Price:" insight embeds the HISTORICAL MEDIAN P/E, which
+    # valuation.py computes SINGLE-SOURCE (yfinance only) and documents as "never presented as a
+    # verified fact", and the cheap/fair/expensive read is an OPINION, not a figure. Prepending it
+    # wholesale let a single-source number, and a valuation opinion, be citable as fact -- the exact
+    # confident-but-unverified failure this app exists to prevent. The cross-verified CURRENT P/E is
+    # still carried by the figures loop; every other insight is derived only from cross-verified
+    # figures/series (pipeline.py), so only this one line is dropped. Prefix is a shared constant so a
+    # future rename can't silently re-open the leak.
+    from ..analysis.deep_metrics import PRICE_INSIGHT_PREFIX
+    lines: list[str] = [ins for ins in report.insights
+                        if not ins.startswith(PRICE_INSIGHT_PREFIX)]
     for fig in report.figures:
         if fig.is_trustworthy:
             label = _LABELS.get(fig.name, fig.name)

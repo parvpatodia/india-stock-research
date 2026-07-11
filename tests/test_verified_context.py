@@ -72,6 +72,31 @@ def test_document_carries_insights_and_readable_labels():
     assert "0.0%" in doc.text or "0%" in doc.text             # pledge formatted as a percentage
 
 
+def test_document_excludes_the_single_source_median_pe_valuation_insight():
+    # WHY (real money, THE cross-verification invariant): this document is registered at PRIMARY tier
+    # (citable_as_fact), and the figures loop correctly admits only is_trustworthy (>=2-source)
+    # figures. But report.insights was prepended WHOLESALE -- and the "Price:" insight embeds the
+    # HISTORICAL MEDIAN P/E, which valuation.py computes SINGLE-SOURCE (yfinance only) and documents
+    # as "never presented as a verified fact". It is also an opinion (a cheap/fair/expensive tier),
+    # not a figure. So an Ask answer citing it could render a single-source median P/E, and the
+    # "cheaper than usual vs its own history" call, as a green ticked VERIFIED FACT -- exactly the
+    # confident-but-not-cross-verified number this app exists to prevent. The valuation insight must
+    # not enter the PRIMARY doc; the cross-verified CURRENT P/E is still carried by the figures loop,
+    # and every other (cross-verified-derived) insight stays.
+    report = Report(company="X", insights=(
+        "Price: you pay about ₹18 for every ₹1 of yearly profit (P/E 18); historically "
+        "you'd have paid about ₹25 for that same ₹1 of profit — cheaper than usual "
+        "versus its own history (about 72% of its normal).",
+        "Cash quality: for every ₹1 of reported profit it actually collected ₹0.95 of "
+        "cash — profits are well backed by real cash.",
+    ), figures=(_verified("current_pe", 18.2),))
+    doc = verified_figures_document("RELIANCE", report)
+    assert "historically you'd have paid" not in doc.text        # single-source median P/E withheld
+    assert "cheaper than usual versus its own history" not in doc.text   # the opinion is not a fact
+    assert "Cash quality:" in doc.text                            # cross-verified-derived insight kept
+    assert "18.2" in doc.text                                     # cross-verified CURRENT P/E still shown
+
+
 def test_document_formats_dividend_yield_as_a_percentage():
     report = Report(company="X", figures=(_verified("dividend_yield_pct", 0.47),))
     doc = verified_figures_document("RELIANCE", report)

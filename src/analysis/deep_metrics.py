@@ -30,6 +30,14 @@ _OCF_WORD = {"strong": "well backed by real cash", "mixed": "reasonably backed b
             "red_flag": "NOT backed by cash -- a red flag (it consumed cash while reporting a "
                         "profit)"}
 
+# The label the plain-language valuation line starts with. Shared (not a bare literal) because the
+# Ask tab's PRIMARY-tier verified-figures document must EXCLUDE this one insight: it embeds the
+# historical median P/E, which is computed SINGLE-SOURCE (valuation.py) and is an opinion (a
+# cheap/fair/expensive tier), not a cross-verified fact -- so it must never be citable as fact.
+# verified_context.verified_figures_document filters on this exact prefix; keeping it in one place
+# means renaming the line can't silently re-open that cross-verification leak (a test guards it too).
+PRICE_INSIGHT_PREFIX = "Price: "
+
 # Documented heuristic thresholds (expert-tunable).
 _ROE_GOOD, _ROE_WEAK = 15.0, 8.0          # % return on shareholders' equity
 _ROCE_GOOD, _ROCE_WEAK = 15.0, 10.0       # % return on capital employed
@@ -269,9 +277,9 @@ def plain_points(v: dict, deep: list[MetricResult], is_real_estate: bool = False
             tag = f"pricier than usual versus its own history ({ratio:.1f}x its normal)"
         else:
             tag = "about in line with its own history"
-        points.append(f"Price: you pay about ₹{cpe:.0f} for every ₹1 of yearly profit "
-                      f"(P/E {cpe:.0f}); historically you'd have paid about ₹{mpe:.0f} for that "
-                      f"same ₹1 of profit — {tag}.")
+        points.append(f"{PRICE_INSIGHT_PREFIX}you pay about ₹{cpe:.0f} for every ₹1 of yearly "
+                      f"profit (P/E {cpe:.0f}); historically you'd have paid about ₹{mpe:.0f} for "
+                      f"that same ₹1 of profit — {tag}.")
 
     np_, ocf = v.get("net_profit"), v.get("operating_cash_flow")
     if not is_bank and np_ and ocf and np_ > 0:
