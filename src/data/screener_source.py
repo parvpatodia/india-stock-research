@@ -257,6 +257,24 @@ def promoter_pledge_point(pct: float | None) -> str | None:
 # direction from ordinary quarter-to-quarter noise.
 _HOLDING_STEADY_BAND = 0.5
 
+_MONTHS = {m: i for i, m in enumerate(
+    ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), start=1)}
+# A "Mon YYYY" shareholding period label (e.g. "Mar 2024", "Jun 2023") -> a sortable (year, month).
+_PERIOD_RE = re.compile(r"([A-Za-z]{3})[A-Za-z]*[\s'\-]*(\d{4})")
+
+
+def _period_sort_key(label: str) -> tuple[int, int] | None:
+    """Parse a shareholding period label like 'Mar 2024' into (year, month) for chronological
+    ordering, or None if it doesn't parse. WHY (resilience): the promoter-holding DIRECTION
+    (buying vs selling -- a real signal) must be read oldest->newest by actual period date, not by
+    the order Screener happens to render its columns; a scrape-layout change that reversed the
+    columns would otherwise flip the reported direction into its opposite."""
+    m = _PERIOD_RE.search(str(label))
+    if not m:
+        return None
+    month = _MONTHS.get(m.group(1).lower())
+    return (int(m.group(2)), month) if month is not None else None
+
 
 def parse_promoter_holding_series(html: str) -> dict[str, float]:
     """{period_label: promoter_holding_pct} from the Shareholding Pattern table, in the SAME
@@ -288,7 +306,14 @@ def promoter_holding_trend_point(series: dict[str, float]) -> str | None:
     mixed into the app's cross-verified 'insights' without that disclosure attached."""
     if len(series) < 2:
         return None
-    periods = list(series.items())
+    # Read oldest -> newest by ACTUAL period date, not by dict/column order (see _period_sort_key):
+    # a scrape-layout change that reversed the columns must not flip the reported direction. Fall
+    # back to insertion order only if a label doesn't parse, preserving the prior behaviour.
+    keys = {label: _period_sort_key(label) for label in series}
+    if all(k is not None for k in keys.values()):
+        periods = sorted(series.items(), key=lambda kv: keys[kv[0]])
+    else:
+        periods = list(series.items())
     (first_label, first_val), (last_label, last_val) = periods[0], periods[-1]
     delta = last_val - first_val
     if abs(delta) < _HOLDING_STEADY_BAND:

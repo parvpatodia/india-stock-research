@@ -203,6 +203,18 @@ def test_promoter_holding_trend_point_decreasing():
     assert point is not None and "decreased" in point
 
 
+def test_promoter_holding_trend_reads_by_period_date_not_column_order():
+    # WHY (real money, resilience): promoters buying vs selling is a real signal. The direction must
+    # be read oldest -> newest by ACTUAL period date, not by the order Screener happens to render its
+    # columns. Scraping layout can change; a reversed column order would flip "promoters increased
+    # their stake" into "decreased", the OPPOSITE signal. A newest-first dict (a plausible layout
+    # change) must still report the true chronological INCREASE from Mar 2023 to Dec 2024.
+    reversed_cols = {"Dec 2024": 55.0, "Sep 2024": 53.0, "Mar 2023": 50.0}
+    point = promoter_holding_trend_point(reversed_cols)
+    assert point is not None and "increased" in point
+    assert "50.0% (Mar 2023)" in point and "55.0% (Dec 2024)" in point
+
+
 def test_promoter_holding_trend_point_decrease_wording_does_not_presume_alarm():
     # WHY (real money, honesty): live-verified against HDFC Bank's real Screener data, promoter
     # holding steps from 25.59% to EXACTLY 0.00% at Mar 2024 -- not a parsing bug, this matches
