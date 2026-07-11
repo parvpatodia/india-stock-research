@@ -747,7 +747,9 @@ with tab_portfolio:
     rows = [{
         "Symbol": p.symbol, "Sector": p.sector, "Qty": p.quantity,
         "Avg cost": round(p.avg_cost, 2), "Price": round(p.current_price, 2),
-        "Value": round(p.market_value, 2), "P&L %": round(p.pnl_pct, 2),
+        "Value": round(p.market_value, 2),
+        # None (a zero-cost bonus/IPO lot has an undefined % return) -> blank cell, not a misleading 0.0
+        "P&L %": round(p.pnl_pct, 2) if p.pnl_pct is not None else None,
         "Weight %": round(p.weight * 100, 2),
     } for p in sorted(analysis.positions, key=lambda x: -x.market_value)]
     st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)

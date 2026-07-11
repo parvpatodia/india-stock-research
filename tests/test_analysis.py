@@ -102,12 +102,16 @@ def test_missing_price_symbol_listed_once_even_with_multiple_unpriced_lots():
     assert a.missing_symbols == ["B"]                  # not ["B", "B"]
 
 
-def test_zero_cost_lot_does_not_divide_by_zero():
+def test_zero_cost_lot_pnl_pct_is_undefined_not_a_misleading_zero():
+    # WHY (real money, honesty): a bonus/IPO lot bought at 0 cost is ALL gain (free shares now worth
+    # something), so its PERCENT return is UNDEFINED, not 0% -- "0.0%" reads as break-even and hides
+    # the gain from a non-expert. pnl_pct returns None (the holdings table then shows a blank, not a
+    # misleading 0.0); the rupee gain (pnl_abs) is still correct and shown. No div-by-zero either way.
     holdings = [Holding("A", 10, 0.0, "Tech")]
-    prices = {"A": 50.0}
-    a = analyze_portfolio(holdings, prices)
-    assert a.positions[0].pnl_pct == 0.0
-    assert a.total_pnl_pct == 0.0
+    a = analyze_portfolio(holdings, {"A": 50.0})
+    assert a.positions[0].pnl_pct is None            # undefined percent, not a misleading 0.0
+    assert a.positions[0].pnl_abs == 500.0           # the actual rupee gain is correct
+    assert a.total_pnl_pct == 0.0                    # portfolio-level guard still prevents div-by-zero
 
 
 def test_max_drawdown():

@@ -36,9 +36,12 @@ class PositionAnalysis:
         return self.market_value - self.invested
 
     @property
-    def pnl_pct(self) -> float:
-        # WHY: guard zero-cost lots (bonus/IPO allotment at 0) against div-by-zero.
-        return (self.pnl_abs / self.invested * 100.0) if self.invested else 0.0
+    def pnl_pct(self) -> float | None:
+        # WHY None (not 0.0) for a zero-cost lot (real money, honesty): a bonus/IPO lot at 0 cost is
+        # ALL gain, so its PERCENT return is undefined, not 0% -- "0.0%" reads as break-even and hides
+        # the gain. Return None (the holdings table shows a blank); pnl_abs still carries the real
+        # rupee gain. Also guards the div-by-zero the old code prevented.
+        return (self.pnl_abs / self.invested * 100.0) if self.invested else None
 
 
 @dataclass(frozen=True)
