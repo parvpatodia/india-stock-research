@@ -127,10 +127,25 @@ HOLDINGS_CSV = _ROOT / "holdings.csv"   # the owner's real portfolio (gitignored
 EVAL_STORE = _ROOT / "data" / "eval_cases.jsonl"
 
 
+def _clean_secret(val, default):
+    """Trim a string secret (blank/whitespace-only -> the default, i.e. treated as absent); pass a
+    non-string secret (the service-account dict, a bool) through unchanged.
+
+    WHY (config hygiene): env vars / .env files / Streamlit TOML secrets very commonly carry a
+    trailing space or newline (a quoted-with-space value or a copy-paste). An untrimmed URL / token /
+    sheet key / model / password then silently fails its fetch / lookup / compare -- the same class
+    that locked the parents out on a padded app_password and broke the Ask tab on a padded LLM_MODEL.
+    Centralizing it here means every secret read gets the hygiene, so a new call site can't reopen it."""
+    if isinstance(val, str):
+        return val.strip() or default
+    return val
+
+
 def _secret(key: str, default=None):
-    """Read a Streamlit secret, tolerating no secrets file at all (local dev)."""
+    """Read a Streamlit secret, tolerating no secrets file at all (local dev). String values are
+    whitespace-trimmed (blank -> the default); see _clean_secret."""
     try:
-        return st.secrets.get(key, default)
+        return _clean_secret(st.secrets.get(key, default), default)
     except Exception:
         return default
 
