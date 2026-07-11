@@ -172,6 +172,30 @@ def test_trend_points_growth_and_margin_direction():
     assert "sales have been growing" in joined
     assert "profit has been growing" in joined
     assert "margins have been improving" in joined
+    assert "outpaced sales" in joined                           # direction-agnostic margin wording
+
+
+def test_trend_points_shrinking_shows_positive_magnitude_not_a_double_negative():
+    # WHY (real money, clarity): a declining company's CAGR is negative, so "shrinking about -13%
+    # a year" is a confusing double negative -- the word "shrinking" already carries the direction.
+    # Show the magnitude (13%), never "-13%".
+    rev = {2021: 200 * CR, 2022: 170 * CR, 2023: 150 * CR}       # ~-13%/yr
+    prof = {2021: 40 * CR, 2022: 30 * CR, 2023: 22 * CR}          # ~-26%/yr
+    joined = " ".join(trend_points(rev, prof))
+    assert "shrinking about -" not in joined
+    assert "shrinking about 13%" in joined and "shrinking about 26%" in joined
+
+
+def test_margin_direction_wording_is_not_grown_when_the_company_is_declining():
+    # WHY (real money, clarity/correctness): when BOTH sales and profit are FALLING, "Profit has
+    # grown slower than sales" is wrong -- profit didn't grow, it shrank faster. Use direction-
+    # agnostic wording ("lagged sales") so the sentence is true whether the business grew or shrank.
+    rev = {2021: 200 * CR, 2022: 180 * CR, 2023: 160 * CR}       # ~-11%/yr
+    prof = {2021: 40 * CR, 2022: 30 * CR, 2023: 20 * CR}          # ~-29%/yr, margin compressed
+    joined = " ".join(trend_points(rev, prof))
+    assert "margins have been under pressure" in joined
+    assert "has grown slower" not in joined
+    assert "lagged sales" in joined
 
 
 def test_trend_points_empty_when_insufficient_history():

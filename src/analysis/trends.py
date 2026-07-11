@@ -289,22 +289,28 @@ def trend_points(revenue_series: dict[int, float],
     points: list[str] = []
     rev = cagr(revenue_series)
     prof = cagr(profit_series)
+    # WHY abs(rate) (real money, clarity): the direction is already carried by _word
+    # (growing/shrinking/roughly flat), so a negative CAGR must show its MAGNITUDE -- "shrinking
+    # about 13% a year", never the double-negative "shrinking about -13% a year".
     if rev:
         rate, span = rev
-        points.append(f"Track record: sales have been {_word(rate)} about {rate:.0f}% a year over "
-                      f"the last {span} years (cross-verified).")
+        points.append(f"Track record: sales have been {_word(rate)} about {abs(rate):.0f}% a year "
+                      f"over the last {span} years (cross-verified).")
     if prof:
         rate, span = prof
-        points.append(f"Track record: profit has been {_word(rate)} about {rate:.0f}% a year over "
-                      f"the last {span} years.")
+        points.append(f"Track record: profit has been {_word(rate)} about {abs(rate):.0f}% a year "
+                      f"over the last {span} years.")
     # Margin direction compares the two growth rates over their COMMON window (see
     # margins_improving) so a revenue/profit year-coverage mismatch can't read two different eras
     # against each other. The per-series CAGR lines above keep each figure's own full window.
+    # WHY "outpaced/lagged" not "grown faster/slower" (clarity/correctness): when BOTH sales and
+    # profit are FALLING, "profit grew slower than sales" is wrong -- profit shrank faster. Outpaced/
+    # lagged is true whether the business grew or shrank (it's about the ratio, i.e. the margin).
     margin = margins_improving(revenue_series, profit_series)
     if margin is True:
-        points.append("Profit has grown faster than sales, so margins have been improving.")
+        points.append("Profit has outpaced sales, so margins have been improving.")
     elif margin is False:
-        points.append("Profit has grown slower than sales, so margins have been under pressure.")
+        points.append("Profit has lagged sales, so margins have been under pressure.")
     # Prefer the profit signal (the bottom line, more decision-relevant) whenever there is ENOUGH
     # profit data to judge it at all -- whether it turns out volatile or confirmed smooth. Fall
     # back to revenue only when profit data ITSELF is too thin to compute a swing (see
