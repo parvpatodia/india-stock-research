@@ -4,6 +4,7 @@ from src.analysis import valuation
 from src.analysis.valuation import (
     _price_by_fiscal_year,
     compute_median_pe,
+    median_pe_from_annual_shares,
     median_pe_from_annuals,
     median_pe_from_eps,
 )
@@ -91,6 +92,59 @@ def test_median_pe_from_eps_uses_period_eps():
     assert median_pe_from_eps({2022: 100}, {2022: 10}) is None           # <2 years
     assert median_pe_from_eps({2022: 100, 2023: 120},
                               {2022: -5, 2023: 10}) is None               # only 1 positive-EPS yr
+
+
+def test_median_pe_from_annual_shares_uses_each_years_own_share_count():
+    # WHY (real money, margin-of-safety accuracy): a diluting company had FEWER shares in the past,
+    # so its past EPS was HIGHER than net_profit / TODAY's shares. Using each year's OWN weighted
+    # share count (yfinance's "Average Shares" rows) computes the correct per-year EPS -> the correct
+    # historical median P/E. The current-shares fallback (median_pe_from_annuals) instead understates
+    # past EPS, inflating the historical median so the stock reads CHEAPER than it was -- the
+    # dangerous direction for a margin-of-safety call.
+    net_profit = {2022: 1000.0, 2023: 1200.0, 2024: 1500.0}
+    price = {2022: 100.0, 2023: 120.0, 2024: 150.0}
+    shares = {2022: 100.0, 2023: 110.0, 2024: 125.0}             # share count grew (dilution)
+    m = median_pe_from_annual_shares(net_profit, price, shares)  # EPS 10/10.9/12 -> P/E 10/11/12.5
+    assert round(m, 2) == 11.0
+    biased = median_pe_from_annuals(net_profit, price, 125.0)    # current-shares fallback
+    assert biased > m                                           # reads a higher median (looks cheaper)
+
+
+def test_median_pe_from_annual_shares_guards_bad_years():
+    # A year missing its share count, or with a non-positive share/profit/price, is skipped; <2 -> None.
+    assert median_pe_from_annual_shares({2024: 100.0}, {2024: 2000.0}, {2024: 10.0}) is None   # 1 year
+    assert median_pe_from_annual_shares(
+        {2023: 100.0, 2024: 100.0}, {2023: 2000.0, 2024: 2000.0},
+        {2023: 0.0, 2024: 10.0}) is None            # zero shares in 2023 -> only 1 usable year
+
+
+def test_compute_median_pe_prefers_per_year_shares_over_current_shares(monkeypatch):
+    # WHY (real money): with no per-year EPS row, prefer per-year AVERAGE SHARES (correct per-year
+    # EPS, no dilution bias) over the current-shares fallback. A diluting company must not read
+    # cheaper than it was because past profit got divided by today's larger share count.
+    import yfinance as yf
+    idx = pd.to_datetime(["2023-03-31", "2024-03-31"])
+    hist = pd.DataFrame({"Close": [100.0, 150.0]}, index=idx)
+    income = pd.DataFrame(
+        {pd.Timestamp("2024-03-31"): [1500.0, 125.0], pd.Timestamp("2023-03-31"): [1000.0, 100.0]},
+        index=["Net Income", "Diluted Average Shares"])   # NO EPS row; per-year shares present
+
+    class FakeTicker:
+        @property
+        def income_stmt(self):
+            return income
+
+        @property
+        def info(self):
+            return {"sharesOutstanding": 125.0}   # the biased current-shares fallback basis
+
+        def history(self, period=None, auto_adjust=True, **kw):
+            return hist
+
+    monkeypatch.setattr(yf, "Ticker", lambda *a, **k: FakeTicker())
+    # per-year: 2023 EPS 1000/100=10 -> P/E 10; 2024 EPS 1500/125=12 -> P/E 12.5; median 11.25.
+    # The current-shares (125) fallback would read 12.5 for both years -> median 12.5 (cheaper-looking).
+    assert compute_median_pe("X") == 11.25
 
 
 def _cur_pe(value):

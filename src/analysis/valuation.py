@@ -26,6 +26,28 @@ def median_pe_from_eps(price_by_year: dict[int, float],
     return statistics.median(pes) if len(pes) >= 2 else None
 
 
+def median_pe_from_annual_shares(net_profit_by_year: dict[int, float],
+                                 price_by_year: dict[int, float],
+                                 shares_by_year: dict[int, float]) -> float | None:
+    """Median P/E using EACH year's OWN weighted average share count (that year's net profit / that
+    year's shares = that year's EPS). WHY (real money, margin-of-safety accuracy): unlike
+    median_pe_from_annuals, which divides every past year's profit by TODAY's share count, this does
+    not understate a diluting company's past EPS -- so it does not inflate the historical median P/E
+    and make the stock read cheaper than it was (the dangerous direction for a margin-of-safety
+    call). Used when yfinance carries no per-year EPS row but does carry per-year average-share rows.
+    A year missing any input, or with a non-positive value, is skipped; needs >=2 usable years."""
+    pes: list[float] = []
+    for year, net_profit in net_profit_by_year.items():
+        price = price_by_year.get(year)
+        shares = shares_by_year.get(year)
+        if (price is None or net_profit is None or shares is None
+                or net_profit <= 0 or price <= 0 or shares <= 0):
+            continue
+        eps = net_profit / shares
+        pes.append(price / eps)
+    return statistics.median(pes) if len(pes) >= 2 else None
+
+
 def median_pe_from_annuals(net_profit_by_year: dict[int, float],
                            price_by_year: dict[int, float],
                            shares: float | None) -> float | None:
@@ -112,6 +134,16 @@ def compute_median_pe(symbol: str) -> float | None:
     # Prefer period-correct EPS (no dilution error); fall back to net profit / current shares.
     if eps_series:
         m = median_pe_from_eps(prices, eps_series)
+        if m is not None:
+            return m
+    # No per-year EPS row: use each year's OWN weighted average share count if yfinance carries it
+    # (correct per-year EPS, no dilution bias) BEFORE the current-shares fallback below -- which
+    # understates a diluting company's past EPS and reads the stock cheaper than it was, the
+    # dangerous direction for a margin-of-safety call. Falls through if the average-share rows are
+    # absent too.
+    shares_by_year = _series_from_statement(income, ["Diluted Average Shares", "Basic Average Shares"])
+    if shares_by_year:
+        m = median_pe_from_annual_shares(net_profit, prices, shares_by_year)
         if m is not None:
             return m
     info = _safe(lambda: ticker.info) or {}
