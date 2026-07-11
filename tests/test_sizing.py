@@ -197,6 +197,21 @@ def test_allocation_over_cap_name_excluded_others_absorb_its_share():
     assert plan.uninvested == 0.0
 
 
+def test_allocation_explains_a_name_skipped_because_it_is_already_over_cap():
+    # WHY (real money, clarity): a FAVORABLE, approved name the user already holds AT/OVER the
+    # per-stock cap correctly gets nothing (adding more would over-concentrate) -- but it then
+    # vanishes from the suggested spread with NO reason, so a user wonders why their approved
+    # favorite got zero. Name it and say the cap comes first. A name that simply wasn't reached
+    # (money ran out while still under cap) must NOT be labeled over-cap.
+    cands = [AllocationCandidate("AAA", Stance.FAVORABLE, current_value=500000),   # already over cap
+             AllocationCandidate("BBB", Stance.FAVORABLE, current_value=0)]
+    plan = suggest_allocation(300000, cands, portfolio_value=700000, cap_pct=0.25)  # cap_value 250k
+    assert not any(a.symbol == "AAA" for a in plan.allocations)     # correctly gets nothing
+    joined = " ".join(plan.notes)
+    assert "AAA" in joined and "cap" in joined.lower()               # and it's explained
+    assert "BBB" not in joined                                       # BBB got the money; not mislabeled
+
+
 def test_allocation_near_cap_absorber_caps_out_rest_reported_uninvested():
     # A near-cap name (small real room) plus an over-cap name, asked for far more than the
     # available room: A is filled up to (exactly) its cap of the TOTAL money considered (pv +

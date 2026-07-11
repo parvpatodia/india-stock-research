@@ -240,6 +240,22 @@ def suggest_allocation(amount: float,
                 "the cap is measured against your total money considered, cash included, not "
                 "just today's trade. It settles toward the cap as the rest gets invested.")
 
+    # WHY (real money, clarity): an eligible (favorable/neutral), APPROVED name the user already
+    # holds AT or ABOVE the per-stock cap correctly receives nothing here -- adding more would
+    # over-concentrate -- but it then vanishes from the suggested spread with no reason, so a user
+    # wonders why their approved favorite got zero. Name it and say the cap comes first. This is
+    # measured on current_value >= the cap of the total money considered, so a name that merely
+    # wasn't reached (still under cap, money ran out) is NOT wrongly labeled over-cap.
+    cap_value = cap_pct * base
+    placed_symbols = {a.symbol for a in allocations}
+    at_cap = [c.symbol for c in eligible
+              if c.symbol not in placed_symbols and c.current_value >= cap_value]
+    if at_cap:
+        notes.append(
+            f"Nothing was suggested for {', '.join(at_cap)}: you already hold at or above your "
+            f"{cap_pct:.0%} per-stock cap there, so adding more would over-concentrate -- the cap "
+            "comes first.")
+
     return AllocationPlan(amount=amount, allocations=tuple(allocations),
                           uninvested=max(remaining, 0.0), notes=tuple(notes))
 
