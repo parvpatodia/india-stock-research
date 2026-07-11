@@ -131,7 +131,18 @@ def return_on_assets(net_profit: float | None, total_assets: float | None,
     # own reason -- otherwise a non-expert reads a bank-normal 1.1% ROA as an unqualified "strong"
     # with no idea why 1% counts as strong. The verdict TIER (v/concern) is unchanged; only the
     # displayed sentence gains the qualifier. Industrial ROA stays unqualified.
-    verdict_word = f"{v} for a lender" if for_lender else v
+    # WHY escalate a lender LOSS above "weak" (real money, honesty; matches bank_framework.
+    # return_on_assets's severe "loss" tier and the _OCF_WORD/_LEVERAGE_WORD coupling): a NEGATIVE
+    # lender ROA is a NET LOSS, which the bank verdict escalates ABOVE the merely-"weak" band (a
+    # loss-making lender must never read as a suggestible "weak"). Deriving this display word from
+    # _rate alone said "weak for a lender" for a money-LOSING bank -- underselling, in the line the
+    # parent reads first, exactly the severe case the verdict calls "a NET LOSS, a serious concern".
+    # The tier field (v) is display-only for a bank (the verdict comes from bank_framework), so this
+    # changes wording only, never verdict logic; a positive lender ROA is unchanged.
+    if for_lender:
+        verdict_word = "a net loss for a lender" if roa < 0 else f"{v} for a lender"
+    else:
+        verdict_word = v
     return MetricResult(name, True, v,
                         f"For every ₹100 of everything it owns, it {verb} "
                         f"(ROA {roa:.1f}%{basis}) — {verdict_word}.", concern)

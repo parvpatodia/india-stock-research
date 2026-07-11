@@ -172,6 +172,26 @@ def test_bank_roa_insight_says_for_a_lender():
     assert "for a lender" in roa_line.detail
 
 
+def test_bank_roa_display_escalates_a_net_loss_above_weak():
+    # WHY (real money, honesty; the same summary-vs-verdict coupling _OCF_WORD / _LEVERAGE_WORD give
+    # the debt and cash lines): bank_framework.return_on_assets escalates a NEGATIVE ROA to a severe
+    # "loss" tier -- a loss-making lender must never read as a suggestible merely-"weak". But the
+    # ALWAYS-VISIBLE ROA line (deep_metrics, for_lender) computed its word independently via _rate and
+    # said "weak for a lender" for a money-LOSING bank, underselling exactly the severe case the
+    # verdict escalates, in the line the parent reads FIRST. The displayed word must reflect the loss.
+    from src.analysis.bank_framework import _ROA_STRONG
+    from src.analysis.bank_framework import _ROA_WEAK as _BANK_ROA_WEAK
+    loss = return_on_assets(-500 * CR, 100000 * CR, good=_ROA_STRONG, weak=_BANK_ROA_WEAK, for_lender=True)
+    assert "loses about" in loss.detail                  # the negative figure is still shown as a loss
+    assert "weak for a lender" not in loss.detail         # NOT undersold as merely weak
+    assert "net loss for a lender" in loss.detail         # escalated, matching the verdict's "loss" tier
+    # a genuinely thin-but-POSITIVE bank ROA still reads "weak for a lender" (unchanged)
+    thin = return_on_assets(300 * CR, 100000 * CR, good=_ROA_STRONG, weak=_BANK_ROA_WEAK, for_lender=True)
+    assert "weak for a lender" in thin.detail
+    # an INDUSTRIAL loss is unaffected (no lender qualifier at all)
+    assert "for a lender" not in return_on_assets(-500 * CR, 100000 * CR).detail
+
+
 def test_compute_deep_metrics_bank_skips_margins():
     v = {"net_profit": 10 * CR, "equity": 100 * CR, "total_assets": 1000 * CR,
          "ebit": 30 * CR, "total_debt": 50 * CR, "revenue": 80 * CR}
