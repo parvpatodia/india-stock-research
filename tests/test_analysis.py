@@ -10,6 +10,7 @@ from src.portfolio.analysis import (
     historical_cagr,
     max_drawdown,
     portfolio_daily_returns,
+    sector_concentration_note,
     thin_risk_window_note,
 )
 from src.portfolio.models import Holding
@@ -112,6 +113,30 @@ def test_zero_cost_lot_pnl_pct_is_undefined_not_a_misleading_zero():
     assert a.positions[0].pnl_pct is None            # undefined percent, not a misleading 0.0
     assert a.positions[0].pnl_abs == 500.0           # the actual rupee gain is correct
     assert a.total_pnl_pct == 0.0                    # portfolio-level guard still prevents div-by-zero
+
+
+def test_sector_concentration_note_flags_a_dominant_sector():
+    # WHY (real money, sector-aware diversification): a book heavy in ONE sector is undiversified
+    # even when NO single NAME dominates -- 5 bank stocks at 14% each is diversified by name (top
+    # name 14% < the 25% name-concentration flag, and HHI stays moderate) but 70% in Financials; a
+    # sector-wide downturn (an RBI shock, a credit cycle) would hit most of the book at once. The
+    # per-name concentration checks (top holding, HHI) miss this class of risk entirely.
+    note = sector_concentration_note({"Financials": 0.70, "IT": 0.20, "Energy": 0.10})
+    assert note is not None
+    assert "70%" in note and "Financials" in note and "sector" in note.lower()
+
+
+def test_sector_concentration_note_silent_on_a_diversified_book():
+    # No single sector over the threshold (largest is 35%, roughly a broad index's own top sector).
+    note = sector_concentration_note({"Financials": 0.35, "IT": 0.30, "Energy": 0.20, "Pharma": 0.15})
+    assert note is None
+
+
+def test_sector_concentration_note_ignores_unknown_sector():
+    # WHY (honesty): "Unknown" is unresolved data, not a real sector -- a book that's 60% Unknown
+    # (sectors not backfilled) must not read as a 60% single-sector concentration.
+    note = sector_concentration_note({"Unknown": 0.60, "IT": 0.25, "Energy": 0.15})
+    assert note is None
 
 
 def test_max_drawdown():

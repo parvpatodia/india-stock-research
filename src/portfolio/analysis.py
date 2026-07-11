@@ -11,8 +11,28 @@ from typing import Callable
 
 import pandas as pd
 
-from ..constants import TRADING_DAYS_PER_YEAR
+from ..constants import CONCENTRATION_SECTOR_WARN, TRADING_DAYS_PER_YEAR
 from .models import Holding, PortfolioAnalysis, PositionAnalysis
+
+
+def sector_concentration_note(sector_weights: dict[str, float],
+                              threshold: float = CONCENTRATION_SECTOR_WARN) -> str | None:
+    """A plain-language flag when ONE real sector dominates the book. WHY (real money, sector-aware
+    diversification): heavy single-sector weight is undiversified risk that the per-NAME
+    concentration checks (top holding %, HHI) miss entirely -- 5 bank stocks at 14% each is
+    diversified by name (no name over 25%, HHI moderate) yet 70% in Financials, so a sector-wide
+    downturn hits most of the book at once. 'Unknown' is excluded: unresolved sectors are missing
+    data, not a real concentration, so a book that's mostly Unknown must not read as one-sector.
+    Returns None when no single real sector exceeds the threshold. An observation about structure,
+    never advice (the caller frames it so)."""
+    real = {s: w for s, w in sector_weights.items() if str(s).strip().lower() != "unknown"}
+    if not real:
+        return None
+    top_sector, top_w = max(real.items(), key=lambda kv: kv[1])
+    if top_w <= threshold:
+        return None
+    return (f"{top_w * 100:.0f}% of the book is in a single sector ({top_sector}); a sector-wide "
+            "downturn would hit a large part of it at once.")
 
 
 def enrich_sectors(holdings: list[Holding],

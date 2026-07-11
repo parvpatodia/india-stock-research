@@ -79,6 +79,7 @@ from src.portfolio.analysis import (  # noqa: E402
     historical_cagr,
     max_drawdown,
     portfolio_daily_returns,
+    sector_concentration_note,
     thin_risk_window_note,
 )
 from src.portfolio.loader import load_holdings  # noqa: E402
@@ -789,6 +790,13 @@ with tab_portfolio:
             flags.append(f"One name is over {CONCENTRATION_TOP_HOLDING_WARN * 100:.0f}% of the book.")
         if analysis.hhi > CONCENTRATION_HHI_WARN:
             flags.append("HHI reads as concentrated (few names drive the book).")
+        # WHY (sector-aware diversification): a heavy single-SECTOR weight is undiversified even when
+        # no single NAME trips the checks above (5 bank names at 14% each = 70% Financials). Excludes
+        # 'Unknown' (unresolved sectors, not a real concentration). The same coverage caveat above
+        # applies -- weights are of the priced subset -- so a missing-price book doesn't over-read.
+        sector_flag = sector_concentration_note(analysis.sector_weights)
+        if sector_flag:
+            flags.append(sector_flag)
         if flags:
             st.warning(" ".join(flags) + " An observation about structure, not advice.")
         else:

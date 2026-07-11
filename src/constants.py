@@ -22,6 +22,12 @@ DEFAULT_HISTORY_PERIOD = "1y"
 # Concentration flags (advisory display only, never advice)
 CONCENTRATION_TOP_HOLDING_WARN = 0.25  # one name > 25% of the book
 CONCENTRATION_HHI_WARN = 0.20          # Herfindahl index above this reads as concentrated
+# One SECTOR above this share of the book reads as concentrated -- undiversified sector risk that
+# the per-name checks above miss (5 bank stocks at 14% each is diversified by name but 70% in one
+# sector). Set above the ~35% a broad Indian index (Nifty) carries in its largest sector
+# (Financials), so a roughly index-like book doesn't flag while a genuinely sector-heavy retail
+# portfolio (often 50-70% Financials) does. Advisory display only; expert-tunable.
+CONCENTRATION_SECTOR_WARN = 0.40
 
 # Promoter pledge AT OR ABOVE this % of promoter holding reads as a serious red flag. ONE source of
 # truth: shared by the framework's promoter-pledge metric (analysis, >=) and the Screener pledge
