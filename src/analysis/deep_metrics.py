@@ -338,6 +338,16 @@ def plain_points(v: dict, deep: list[MetricResult], is_real_estate: bool = False
                 line += (" A yield this high often reflects a fallen share price as much as a "
                          "generous dividend, and can flag a payout the market expects to be cut -- "
                          "check it's covered by earnings and cash flow before relying on it.")
+            # WHY (real money, quality of earnings): a dividend paid in a LOSS year is funded from
+            # past reserves or borrowing, NOT current profit -- a sustainability question a
+            # professional flags, and a bare "3% yield" reads as a clean positive without it.
+            # Non-alarmist ("check"): a strong balance sheet can carry a dividend through a cyclical
+            # loss, so this warns without asserting the payout will be cut.
+            np_now = v.get("net_profit")
+            if np_now is not None and np_now < 0:
+                line += (" Note it's paying this while reporting a net LOSS this year, so the "
+                         "dividend is coming from past reserves or borrowing, not current profit -- "
+                         "check it's sustainable before relying on it.")
             points.append(line)
 
     for m in deep:

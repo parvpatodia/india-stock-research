@@ -269,6 +269,20 @@ def test_plain_points_price_reads_as_valuation_not_a_share_price():
     assert "cheaper" in price                                        # 18/24 = 0.75 < 0.8 -> cheaper
 
 
+def test_plain_points_flags_a_dividend_paid_during_a_net_loss():
+    # WHY (real money, quality of earnings): a dividend paid in a LOSS year is funded from past
+    # reserves or borrowing, NOT current profit -- a real sustainability question a professional
+    # flags. Showing a bare "3% yield" as a clean positive is misleading-by-omission for a loss-maker
+    # (cyclicals in a down year, some PSUs). Non-alarmist ("check"): a strong balance sheet can carry
+    # a dividend through a cyclical loss, so it warns without asserting a cut. A profitable payer
+    # gets no such caveat.
+    loss = " ".join(plain_points({"dividend_yield_pct": 3.0, "net_profit": -50 * CR}, []))
+    assert "3.0%" in loss
+    assert "net loss" in loss.lower() and "sustainab" in loss.lower()   # sustainability flagged
+    profitable = " ".join(plain_points({"dividend_yield_pct": 3.0, "net_profit": 50 * CR}, []))
+    assert "net loss" not in profitable.lower()                         # profitable payer: no caveat
+
+
 def test_plain_points_no_dividend_point_when_unknown():
     assert plain_points({}, []) == []
 
