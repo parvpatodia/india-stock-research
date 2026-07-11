@@ -106,7 +106,12 @@ from src.research.library import (  # noqa: E402
     resolve_curated_library_paths,
 )
 from src.research.report import ReviewStatus, most_recent_by_symbol  # noqa: E402
-from src.sip import DEFAULT_INFLATION_PCT, real_value, sip_future_value  # noqa: E402
+from src.sip import (  # noqa: E402
+    DEFAULT_INFLATION_PCT,
+    real_value,
+    sip_future_value,
+    sip_return_context,
+)
 from src.sources.adapters import HttpDocumentAdapter, ingest_documents  # noqa: E402
 from src.sources.registry import CredibilityTier, Source, SourceRegistry  # noqa: E402
 from src.data.amfi_provider import AMFIProvider  # noqa: E402
@@ -1543,18 +1548,14 @@ with st.expander("Mutual funds & SIP projection"):
                "assumption, not a prediction.")
     # WHY (honesty): the slider allows up to 30%/40 years, which compounds into an absurd,
     # misleading corpus if taken literally (a real risk for a non-expert reading a bare number).
-    # Ground the assumption against SENSEX's own real, live-computed long-term price return, not
-    # a "typical equity return" claim from memory, so the reader can judge how aggressive their
-    # assumption is against actual history rather than an arbitrary cap.
+    # The downside disclosure (returns can be negative -> a SIP can LOSE money) is ALWAYS shown by
+    # sip_return_context, never gated on the live SENSEX fetch: when that fetch fails (a real
+    # network/rate-limit case here), the projection must still carry it, or a parent sees a rosy
+    # projected gain with no downside. When the benchmark IS available it grounds the assumption
+    # against SENSEX's own real, live-computed long-term price return so the reader can judge how
+    # aggressive it is, rather than an arbitrary cap or a "typical equity return" claim from memory.
     bench_hist = historical_cagr(fetch_long_history_close(SENSEX_SYMBOL))
-    if bench_hist is not None:
-        bench_cagr, bench_years = bench_hist
-        note = ("well above" if sip_return > bench_cagr + 3 else
-                "well below" if sip_return < bench_cagr - 3 else "in line with")
-        st.caption(f"For context: SENSEX's own price return over the last {bench_years:.0f} "
-                   f"years (live data, price only, excludes dividends) works out to about "
-                   f"{bench_cagr:.1f}%/yr. Your {sip_return:.1f}% assumption is {note} that; "
-                   "real fund returns vary year to year and can be negative.")
+    st.caption(sip_return_context(sip_return, bench_hist))
 
 with st.expander("Glossary"):
     for term, meaning in GLOSSARY.items():

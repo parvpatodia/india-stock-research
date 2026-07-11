@@ -42,3 +42,22 @@ def test_positive_return_grows_above_invested():
 def test_one_year_zero_rate():
     p = sip_future_value(monthly=1000, annual_return_pct=0, years=1)
     assert p.invested == 12000 and p.projected_value == 12000
+
+
+def test_sip_return_context_always_states_the_downside_even_without_a_benchmark():
+    # WHY (real money, honesty; enforces this module's own docstring mandate "real fund returns ...
+    # can be negative. The UI must say so"): the downside disclosure was gated on the LIVE SENSEX
+    # benchmark fetch. When that fetch fails (a real network/rate-limit case on the hosted app), the
+    # projection would show a rosy "projected gain" with NO statement a SIP can lose money -- exactly
+    # the implies-guaranteed-returns failure this must prevent. The downside must be UNCONDITIONAL;
+    # the benchmark only ADDS the comparison-to-history context when it happens to be available.
+    from src.sip import sip_return_context
+    no_bench = sip_return_context(10.0, None)                 # SENSEX fetch failed / unavailable
+    assert "can be negative" in no_bench.lower()
+    assert "lose money" in no_bench.lower()
+    # benchmark available -> downside STILL present, PLUS the SENSEX comparison
+    with_bench = sip_return_context(25.0, (13.0, 30.0))       # SENSEX ~13%/yr over 30y
+    assert "can be negative" in with_bench.lower() and "lose money" in with_bench.lower()
+    assert "13.0%/yr" in with_bench and "well above" in with_bench
+    assert "in line with" in sip_return_context(12.0, (13.0, 30.0))
+    assert "well below" in sip_return_context(5.0, (13.0, 30.0))
