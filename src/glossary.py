@@ -29,6 +29,9 @@ GLOSSARY: dict[str, str] = {
     "Dividend yield": "The yearly dividend a stock pays, as a percent of its price.",
     "P/E ratio": "Price divided by earnings per share. A rough gauge of how expensive a stock "
                  "is versus its profits. It needs context, not a number to chase.",
+    "Confidence": "How much of the data behind this verdict could be cross-checked across two or "
+                  "more independent sources, NOT how likely the stock is to go up. High means most "
+                  "figures were confirmed; low means much of it could not be, so lean on it less.",
     "Verified fact": "A statement taken straight from a primary source (an annual report, "
                      "filing, or exchange/AMFI data) and cited. The strongest kind of claim here.",
     "Opinion": "An attributed view from an analyst or commentator, not a hard fact. Weigh it, "

@@ -1013,7 +1013,11 @@ with tab_research:
                 vc[1].metric("Quality", report.verdict.quality.value)
                 vc2 = st.columns(2)
                 vc2[0].metric("Leaning", report.verdict.leaning.value)
-                vc2[1].metric("Confidence", report.verdict.confidence.value)
+                # WHY help= (real money, comprehension): a non-expert can read "Confidence: high" as
+                # "high chance of gains" when it means how much of the data cross-verified. Explain it
+                # the same way every other technical metric card here already does (HHI/Beta/etc.).
+                vc2[1].metric("Confidence", report.verdict.confidence.value,
+                              help=explain("Confidence"))
                 if report.verdict.reasons:
                     st.markdown("**Why (each from cross-verified figures):**")
                     for reason in report.verdict.reasons:
