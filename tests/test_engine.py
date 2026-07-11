@@ -14,6 +14,7 @@ from src.research.claims import (
 from src.research.grounded_analyst import (
     _assemble_result,
     _build_user_prompt,
+    estimate_has_numeric_basis,
     numbers_grounded,
 )
 from src.research.grounding import Chunk, DocumentStore, RetrievedChunk
@@ -398,6 +399,43 @@ def test_estimate_with_a_derived_number_is_not_number_checked():
     ]}
     res = _assemble_result("q", payload, retrieved, reg, None)
     assert res.claims[0].kind == ESTIMATE   # derived number NOT downgraded
+
+
+def test_estimate_stating_a_material_figure_needs_numeric_raw_material_in_its_sources():
+    # WHY (real money, "never a fabricated number"): ESTIMATE is the ONE claim kind exempt from
+    # numbers_grounded -- a real derivation (annualizing/summing source figures) has a RESULT
+    # absent from any single source, so digit-for-digit checking the result would wrongly flag
+    # legitimate arithmetic. But that exemption let a model bypass EVERY numeric check by merely
+    # LABELLING a fabricated figure "estimate": "profit is roughly 5000 crore" citing a purely
+    # qualitative chunk (no figure at all) rendered as a clean "Estimate (derived, not a primary
+    # figure)" with an invented crore number in front of a parent. A derivation needs numeric raw
+    # material; when NO cited source carries any material figure, the number was invented, not
+    # derived -> downgrade to UNVERIFIED (renders with a caution). Real arithmetic that cites a
+    # number-bearing source is untouched.
+    reg, retrieved = _setup_assembly()  # ar#0="Revenue was 100 cr" (figure); yt#0="I think you should buy." (none)
+    payload = {"abstain": False, "claims": [
+        {"text": "Annualized, that is about 5000 cr over five years", "chunk_ids": ["ar#0"],
+         "kind": "estimate"},                                        # derives from ar#0's 100 cr -> kept
+        {"text": "Profit is roughly 5000 crore", "chunk_ids": ["yt#0"], "kind": "estimate"},  # invented
+    ]}
+    res = _assemble_result("q", payload, retrieved, reg, None)
+    by = {c.text: c for c in res.claims}
+    assert by["Annualized, that is about 5000 cr over five years"].kind == ESTIMATE  # real arithmetic kept
+    assert by["Profit is roughly 5000 crore"].kind == UNVERIFIED    # invented figure, no raw material
+
+
+def test_estimate_has_numeric_basis_helper():
+    # a material figure WITH numeric raw material in a source -> has a basis (real derivation)
+    assert estimate_has_numeric_basis("about 5000 cr over five years", ["Revenue was 100 cr in FY24."])
+    assert estimate_has_numeric_basis("margins near 45%", ["Operating profit 20 cr on 44 cr of sales."])
+    # a material figure with NO material number anywhere in the sources -> no basis (invented)
+    assert not estimate_has_numeric_basis("about 5000 cr", ["The company plans to expand capacity."])
+    assert not estimate_has_numeric_basis("margins near 45%", ["Management sounds confident."])
+    # no material number in the estimate itself -> nothing to check -> has a basis (True)
+    assert estimate_has_numeric_basis("it grew a lot", ["The company plans to expand capacity."])
+    assert estimate_has_numeric_basis("about 5 times bigger", ["The company plans to expand."])  # 5 not material
+    # a bare year/FY tag in the source is metadata, not raw material -> still no basis
+    assert not estimate_has_numeric_basis("about 800 crore", ["Results for FY2024 were announced."])
 
 
 def test_numbers_grounded_helper():

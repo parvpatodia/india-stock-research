@@ -58,6 +58,32 @@ _DATE_LIKE = re.compile(r"\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}Z?)?")
 _FY_TAG = re.compile(r"\bFY\s?\d{2,4}\b", re.IGNORECASE)
 
 
+def _digits(token: str) -> str:
+    return re.sub(r"\D", "", token)
+
+
+def _strip_metadata(t: str) -> str:
+    # Remove date/timestamp AND fiscal-year-tag digits before extraction: both are metadata
+    # (when a source was fetched / which period a figure is for), never citable figures.
+    return _FY_TAG.sub(" ", _DATE_LIKE.sub(" ", t or ""))
+
+
+def _all_numbers(t: str) -> list[str]:
+    return _NUMBER.findall(_strip_metadata(t))
+
+
+def _material_numbers(text: str) -> set[str]:
+    """Digit-normalized set of the MATERIAL numbers in text: any >=3-digit number PLUS any
+    unit-bearing figure (%/per cent, crore(s)/lakh(s)/cr, bps/basis point(s)) at ANY digit count.
+    Date/FY metadata is stripped first. This is exactly the set numbers_grounded checks for a claim,
+    factored out so estimate_has_numeric_basis reuses the identical definition of 'a material
+    figure' rather than a second, drifting copy."""
+    stripped = _strip_metadata(text)
+    material = {_digits(m) for m in _NUMBER.findall(stripped) if len(_digits(m)) >= 3}
+    material |= {_digits(m) for m in _UNIT_NUMBER.findall(stripped)}
+    return material
+
+
 def numbers_grounded(text: str, source_texts: list[str]) -> bool:
     """True unless the claim states a material number that does not appear, digit-for-digit, in
     any cited source. WHY (real money): the model can cite the right chunk yet misquote the
@@ -79,22 +105,28 @@ def numbers_grounded(text: str, source_texts: list[str]) -> bool:
     ground against '0.5%' (05 != 5). Date/timestamp substrings are stripped before extraction
     (see _DATE_LIKE), so a source's own fetch-date disclosure can never double as grounding for
     an unrelated fabricated figure."""
-    def digits(token: str) -> str:
-        return re.sub(r"\D", "", token)
-    def _strip_metadata(t: str) -> str:
-        # Remove date/timestamp AND fiscal-year-tag digits before extraction: both are metadata
-        # (when a source was fetched / which period a figure is for), never citable figures.
-        return _FY_TAG.sub(" ", _DATE_LIKE.sub(" ", t or ""))
-    def numbers_in(t: str) -> list[str]:
-        return _NUMBER.findall(_strip_metadata(t))
-    def unit_figures_in(t: str) -> list[str]:
-        return _UNIT_NUMBER.findall(_strip_metadata(t))
-    material = {digits(m) for m in numbers_in(text) if len(digits(m)) >= 3}
-    material |= {digits(m) for m in unit_figures_in(text)}
+    material = _material_numbers(text)
     if not material:
         return True
-    source_digits = {digits(m) for t in source_texts for m in numbers_in(t)}
+    source_digits = {_digits(m) for t in source_texts for m in _all_numbers(t)}
     return all(d in source_digits for d in material)
+
+
+def estimate_has_numeric_basis(text: str, source_texts: list[str]) -> bool:
+    """True unless an ESTIMATE states a material figure while NONE of its cited sources carry any
+    material figure to derive it from. WHY (real money, "never a fabricated number"): ESTIMATE is
+    the ONE claim kind exempt from numbers_grounded, because a real derivation (annualizing/summing
+    source figures) has a RESULT absent from any single source, so digit-for-digit checking the
+    result would wrongly flag legitimate arithmetic. But that exemption is a bypass: a model can
+    label a fabricated figure "estimate" and slip an invented "5000 crore" past every numeric guard.
+    A derivation needs numeric raw material -- if no cited source carries a single material figure,
+    the number was invented, not derived. This is the minimal check that closes the bypass with NO
+    false positives on real arithmetic (which always cites a number-bearing source): it never
+    inspects the estimate's OWN value against the sources, only asks whether there was anything to
+    derive from. An estimate with no material figure of its own has nothing to check -> True."""
+    if not _material_numbers(text):
+        return True
+    return any(_material_numbers(t) for t in source_texts)
 
 _SYSTEM = """You answer questions about Indian investments for a non-expert reader, using \
 ONLY the SOURCES provided. The reader uses your answer with real money, so accuracy and \
@@ -254,10 +286,15 @@ def _assemble_result(question: str, payload: dict, retrieved: list[RetrievedChun
         # is quoting from its cited source, so a material number absent from that source is a
         # misquote/hallucination -- downgrade it to UNVERIFIED (which renders with a caution) so a
         # wrong figure can never show as a clean verified fact OR a clean attributed opinion.
-        # ESTIMATE is exempt by design: it is explicitly a derived/approximated value, not a
-        # verbatim source figure, so requiring digit-for-digit source presence would wrongly flag
-        # legitimate arithmetic (summing/annualizing source numbers).
+        # ESTIMATE is exempt from digit-for-digit grounding by design: a derived/approximated value
+        # (summing/annualizing source figures) has a RESULT absent from any single source, so
+        # checking the result would wrongly flag legitimate arithmetic. But a derivation still needs
+        # numeric raw material -- estimate_has_numeric_basis downgrades an estimate that states a
+        # material figure while NO cited source carries any figure at all (an invented number
+        # mislabeled "estimate" to bypass the numeric guard), without touching real arithmetic.
         if kind in (FACT, OPINION) and not numbers_grounded(text, cited_texts):
+            kind = UNVERIFIED
+        elif kind == ESTIMATE and not estimate_has_numeric_basis(text, cited_texts):
             kind = UNVERIFIED
         # WHY (Ask-tab + annual-report-reader quality): a model can restate the SAME fact more than
         # once (it appears in two retrieved chunks), and every duplicate rendered as its own line
