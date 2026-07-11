@@ -61,3 +61,38 @@ def test_plain_summary_bank_does_not_claim_a_balance_sheet_verdict():
     s = app.plain_summary(v, Stance.FAVORABLE)
     assert "balance sheet" not in s
     assert "profitability" in s.lower()
+
+
+def test_data_vintage_note_names_latest_annual_fy_and_points_at_recent_quarters():
+    # WHY (real money, honesty): the quality verdict is built entirely on the latest ANNUAL figures,
+    # which never include recent quarters -- a vintage only implicit in FY tags inside the collapsed
+    # evidence panel. A non-expert reading "Evidence leans favorable" as the headline could act on a
+    # view up to ~15 months stale. Surface it, naming the LATEST cross-verified fiscal year.
+    from src.research.verification import SourcedValue, VerificationStatus, VerifiedFigure
+    app = _import_app_with_clean_env()
+    figs = (
+        VerifiedFigure("net_profit", VerificationStatus.VERIFIED, 100.0,
+                       (SourcedValue(100.0, "yfinance", locator="FY2025"),
+                        SourcedValue(100.0, "screener", locator="FY2025")), "agree"),
+        VerifiedFigure("total_debt", VerificationStatus.VERIFIED, 50.0,
+                       (SourcedValue(50.0, "yfinance", locator="FY2024"),
+                        SourcedValue(50.0, "screener", locator="FY2024")), "agree"),
+    )
+    note = app.data_vintage_note(figs)
+    assert note is not None
+    assert "FY2025" in note and "FY2024" not in note   # the LATEST annual vintage, not an older leg
+    assert "quarter" in note.lower()                    # points at the actionable step
+
+
+def test_data_vintage_note_none_without_a_cross_verified_annual_figure():
+    # A valuation-only/point-figure report has no annual vintage to caveat; a single-source (not
+    # trustworthy) annual figure doesn't count either -- only what actually drove the verdict does.
+    from src.research.verification import SourcedValue, VerificationStatus, VerifiedFigure
+    app = _import_app_with_clean_env()
+    figs = (
+        VerifiedFigure("current_pe", VerificationStatus.VERIFIED, 18.0,
+                       (SourcedValue(18.0, "yfinance"), SourcedValue(18.0, "screener")), "agree"),
+        VerifiedFigure("net_profit", VerificationStatus.SINGLE_SOURCE, 100.0,
+                       (SourcedValue(100.0, "yfinance", locator="FY2025"),), "single"),
+    )
+    assert app.data_vintage_note(figs) is None

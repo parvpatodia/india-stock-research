@@ -83,3 +83,19 @@ def test_pdf_omits_the_section_entirely_when_no_signal_is_available():
     pdf_bytes = app.build_pdf_report("RELIANCE (live)", _report(), Stance.NEUTRAL)
     text = _pdf_text(pdf_bytes)
     assert "Additional context" not in text
+
+
+def test_pdf_carries_the_annual_data_vintage_caveat_when_figures_are_annual():
+    # WHY (real money, honesty): the saved/shared PDF must disclose that the fundamentals rest on
+    # the latest ANNUAL figures (recent quarters not included), the same vintage caveat the live
+    # Research view shows -- so a parent reviewing the PDF offline isn't misled by a stale headline.
+    from src.research.verification import SourcedValue, VerificationStatus, VerifiedFigure
+    app = _import_app_with_clean_env()
+    report = Report(company="RELIANCE", verdict=_report().verdict, figures=(
+        VerifiedFigure("net_profit", VerificationStatus.VERIFIED, 100.0,
+                       (SourcedValue(100.0, "yfinance", locator="FY2025"),
+                        SourcedValue(100.0, "screener", locator="FY2025")), "agree"),
+    ))
+    text = " ".join(_pdf_text(app.build_pdf_report("RELIANCE (live)", report, Stance.NEUTRAL)).split())
+    assert "latest ANNUAL results (FY2025)" in text
+    assert "recent quarters" in text.lower()

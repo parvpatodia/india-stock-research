@@ -504,6 +504,37 @@ def plain_summary(verdict, stance: Stance) -> str:
     return f"It {val}, with {qual}. {headline}."
 
 
+def data_vintage_note(figures) -> str | None:
+    """A plain-language caveat that the fundamental read rests on the latest ANNUAL figures, so the
+    company's results SINCE then (recent quarters) are not reflected.
+
+    WHY (real money, honesty for a non-expert): the quality verdict -- earnings quality, leverage,
+    interest cover, ROCE, cash-flow discipline -- is built entirely on annual statement figures,
+    which by construction never include the most recent quarter(s). A March-year-end company's last
+    annual can be up to ~15 months stale by the time the next one files, so a parent reading
+    "Evidence leans favorable" as the headline could act on a view that predates several quarters of
+    results. That vintage is currently only implicit in FY tags inside the collapsed evidence panel.
+    Names the LATEST cross-verified fiscal year (the real vintage that drove the verdict) and points
+    at the actionable step. Uses only trustworthy (cross-verified) figures; returns None when none
+    carry a fiscal-year tag (e.g. a valuation-only/point-figure report), where there is no annual
+    vintage to caveat."""
+    years: list[int] = []
+    for f in figures:
+        if not getattr(f, "is_trustworthy", False):
+            continue
+        for sv in getattr(f, "sources", ()):
+            loc = str(getattr(sv, "locator", "") or "")
+            if loc.upper().startswith("FY"):
+                m = re.search(r"(\d{4})", loc)
+                if m:
+                    years.append(int(m.group(1)))
+    if not years:
+        return None
+    return (f"Heads up: this fundamental read is based on the company's latest ANNUAL results "
+            f"(FY{max(years)}); anything reported since then — recent quarters — is not included "
+            "here, so check the latest quarterly update or recent news before deciding.")
+
+
 _STANCE_PDF = {Stance.FAVORABLE: "[+] ", Stance.NEUTRAL: "[~] ",
                Stance.UNFAVORABLE: "[-] ", Stance.INSUFFICIENT_DATA: "[?] "}
 
@@ -552,6 +583,11 @@ def build_pdf_report(title: str, report, stance: Stance, guidance=None,
     _, headline = _STANCE_UI[stance]
     line(_STANCE_PDF[stance] + headline, size=13, style="B", h=8)
     line(plain_summary(v, stance), size=11, gap=2)
+    # WHY: the saved/shared PDF must carry the same annual-vintage caveat the app shows, so a parent
+    # reviewing it offline sees the fundamentals predate recent quarters (mirrors the live view).
+    _vintage = data_vintage_note(report.figures)
+    if _vintage:
+        line(_vintage, size=9, style="I", h=5, gap=2)
 
     if report.insights:
         line("Why, in plain terms", size=12, style="B", h=7)
@@ -935,6 +971,11 @@ with tab_research:
         # summary-first: one line + stance + the 5-6 plain-language reasons
         st.markdown(f"### {icon} {sym}: {headline}")
         st.write(plain_summary(report.verdict, stance))
+        # WHY (real money, honesty): the verdict rests on ANNUAL figures; name that vintage and point
+        # at recent quarters so a non-expert doesn't act on a headline that predates months of results.
+        _vintage = data_vintage_note(report.figures)
+        if _vintage:
+            st.caption(_vintage)
         if report.insights:
             st.markdown("**Why, in plain terms:**")
             for point in report.insights:
