@@ -83,4 +83,9 @@ def test_ask_source_caption_shows_publisher_date_for_news_and_dedups():
     # two chunks of the same source de-duplicate to one label:
     news2 = Citation("news_google", CredibilityTier.ANALYST, "Reuters, 2026-05-15 chunk 1")
     assert app.ask_source_caption([news, news2], reg) == "Google News — Reuters, 2026-05-15"
+    # an UNDATED news item keeps its publisher AND is flagged "undated" (freshness unknown), so a
+    # parent doesn't assume it's recent -- it must NOT be reduced to the bare feed name like a
+    # figure doc. This completes the same freshness-transparency the dated case above provides.
+    undated = Citation("news_google", CredibilityTier.ANALYST, "Reuters, undated chunk 0")
+    assert app.ask_source_caption([undated], reg) == "Google News — Reuters, undated"
     assert app.ask_source_caption([], reg) == "no source"

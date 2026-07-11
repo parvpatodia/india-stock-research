@@ -450,18 +450,22 @@ _ASK_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 def ask_source_caption(citations, registry) -> str:
-    """The 'Source:' line for an Ask-tab claim: each cited source's name, and -- for a DATED news
-    item -- the publisher + article date from the citation locator so the reader can judge how
+    """The 'Source:' line for an Ask-tab claim: each cited source's name, and -- for a NEWS item --
+    the publisher + article date (or "undated") from the citation locator so the reader can judge how
     recent a news-backed claim is. De-duplicated (a claim citing two chunks of one source shows it
-    once). WHY only append a dated locator: the app's own figure/filing documents carry redundant
-    internal locators ("RELIANCE verified figures"); appending those would be noise, whereas a
-    news locator ("Reuters, 2026-05-15") adds the freshness signal the reader actually needs."""
+    once). WHY append a news locator but not a figure/filing one: the app's own figure/filing
+    documents carry redundant internal locators ("RELIANCE verified figures"); appending those would
+    be noise, whereas a news locator ("Reuters, 2026-05-15") adds the freshness signal the reader
+    needs. An UNDATED news item ("Reuters, undated") is surfaced too -- keeping its publisher and
+    flagging that the date is unknown so a parent doesn't assume it's recent -- since only news
+    locators ever carry "undated", it discriminates news from figure/filing docs just as safely."""
     labels: list[str] = []
     for c in citations:
         src = registry.get(c.source_id)
         name = src.name if src else c.source_id
         loc = str(getattr(c, "locator", "") or "").split(" chunk ")[0].strip()
-        label = f"{name} — {loc}" if loc and _ASK_ISO_DATE.search(loc) else name
+        is_news_locator = bool(loc) and (_ASK_ISO_DATE.search(loc) or "undated" in loc.lower())
+        label = f"{name} — {loc}" if is_news_locator else name
         if label not in labels:
             labels.append(label)
     return ", ".join(labels) or "no source"
