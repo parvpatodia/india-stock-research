@@ -21,6 +21,29 @@ def test_roe_bands():
     assert return_on_equity(5 * CR, 100 * CR).concern is True
 
 
+def test_loss_making_ratios_say_loses_not_keeps_or_earns():
+    # WHY (real money, clarity for a non-expert): a loss-making company has NEGATIVE margins/returns.
+    # "It keeps about Rs.-50 of profit" / "it earns about Rs.-50 a year" is a confusing double
+    # negative a parent has to decode -- state plainly that the business LOSES money. The numbers
+    # and the "weak" tag are unchanged; only the wording of the negative case is fixed.
+    nm = net_margin(-500 * CR, 1000 * CR).detail          # -50%
+    assert "loses about ₹50" in nm and "keeps about" not in nm and "-50%" in nm
+    om = operating_margin(-300 * CR, 1000 * CR).detail    # -30%
+    assert "loses about ₹30 at the operating level" in om and "is left as operating profit" not in om
+    roe = return_on_equity(-500 * CR, 1000 * CR).detail   # -50%
+    assert "loses about ₹50 a year" in roe and "earns about" not in roe
+    roa = return_on_assets(-60 * CR, 1000 * CR).detail    # -6.0%
+    assert "loses about ₹6.0" in roa and "earns about" not in roa
+
+
+def test_profitable_ratios_still_say_keeps_and_earns():
+    # Guard: the positive-value wording (and the numbers) are untouched.
+    assert "keeps about ₹8 of final profit" in net_margin(80 * CR, 1000 * CR).detail
+    assert "is left as operating profit" in operating_margin(150 * CR, 1000 * CR).detail
+    assert "earns about ₹20 a year" in return_on_equity(20 * CR, 100 * CR).detail
+    assert "earns about ₹6.0" in return_on_assets(6 * CR, 100 * CR).detail
+
+
 def test_return_ratios_use_average_denominator_when_the_prior_year_is_available():
     # WHY (CA-level rigor): profit is EARNED OVER the year, so the textbook denominator for a
     # return ratio is the AVERAGE of opening and closing capital, not the closing snapshot. Using

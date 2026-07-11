@@ -59,9 +59,12 @@ def return_on_equity(net_profit: float | None, equity: float | None,
     roe = net_profit / denom * 100
     v, concern = _rate(roe, _ROE_GOOD, _ROE_WEAK)
     basis = ", on average equity" if averaged else ""
+    # WHY (real money, clarity): a loss-making company has a NEGATIVE return; "earns about ₹-50 a
+    # year" is a confusing double negative for a non-expert -- say it LOSES money instead.
+    verb = f"loses about ₹{abs(roe):.0f}" if roe < 0 else f"earns about ₹{roe:.0f}"
     return MetricResult(name, True, v,
-                        f"For every ₹100 of owners' money in the business, it earns about "
-                        f"₹{roe:.0f} a year (ROE {roe:.0f}%{basis}) — {v}.", concern)
+                        f"For every ₹100 of owners' money in the business, it {verb} a year "
+                        f"(ROE {roe:.0f}%{basis}) — {v}.", concern)
 
 
 def return_on_capital(ebit: float | None, equity: float | None,
@@ -94,8 +97,10 @@ def return_on_assets(net_profit: float | None, total_assets: float | None,
     # WHY: banks run on ~1% ROA by nature, so the caller passes bank bands; otherwise a healthy
     # bank would read "weak" here and contradict the (correct) bank verdict.
     basis = ", on average assets" if averaged else ""
+    # A loss-making company earns a NEGATIVE return; say it LOSES money rather than "earns ₹-6.0".
+    verb = f"loses about ₹{abs(roa):.1f}" if roa < 0 else f"earns about ₹{roa:.1f}"
     return MetricResult(name, True, v,
-                        f"For every ₹100 of everything it owns, it earns about ₹{roa:.1f} "
+                        f"For every ₹100 of everything it owns, it {verb} "
                         f"(ROA {roa:.1f}%{basis}) — {v}.", concern)
 
 
@@ -105,9 +110,15 @@ def net_margin(net_profit: float | None, revenue: float | None) -> MetricResult:
         return _unknown(name, "net profit or (positive) revenue unavailable.")
     m = net_profit / revenue * 100
     v, concern = _rate(m, _NETMARGIN_GOOD, _NETMARGIN_WEAK)
-    return MetricResult(name, True, v,
-                        f"It keeps about ₹{m:.0f} of final profit from every ₹100 of sales "
-                        f"(net margin {m:.0f}%) — {v}.", concern)
+    # A loss-making company keeps a NEGATIVE margin; "keeps about ₹-50 of profit" is a confusing
+    # double negative for a non-expert -- say it LOSES money per ₹100 of sales instead.
+    if m < 0:
+        detail = (f"It loses about ₹{abs(m):.0f} for every ₹100 of sales "
+                  f"(net margin {m:.0f}%) — {v}.")
+    else:
+        detail = (f"It keeps about ₹{m:.0f} of final profit from every ₹100 of sales "
+                  f"(net margin {m:.0f}%) — {v}.")
+    return MetricResult(name, True, v, detail, concern)
 
 
 def operating_margin(ebit: float | None, revenue: float | None) -> MetricResult:
@@ -116,9 +127,15 @@ def operating_margin(ebit: float | None, revenue: float | None) -> MetricResult:
         return _unknown(name, "operating profit or (positive) revenue unavailable.")
     m = ebit / revenue * 100
     v, concern = _rate(m, _OPMARGIN_GOOD, _OPMARGIN_WEAK)
-    return MetricResult(name, True, v,
-                        f"From every ₹100 of sales, ₹{m:.0f} is left as operating profit "
-                        f"(operating margin {m:.0f}%) — {v}.", concern)
+    # A company with an operating LOSS has a negative operating margin; "₹-30 is left as operating
+    # profit" reads as a confusing double negative -- say it loses money at the operating level.
+    if m < 0:
+        detail = (f"It loses about ₹{abs(m):.0f} at the operating level for every ₹100 of sales "
+                  f"(operating margin {m:.0f}%) — {v}.")
+    else:
+        detail = (f"From every ₹100 of sales, ₹{m:.0f} is left as operating profit "
+                  f"(operating margin {m:.0f}%) — {v}.")
+    return MetricResult(name, True, v, detail, concern)
 
 
 def asset_turnover(revenue: float | None, total_assets: float | None,
