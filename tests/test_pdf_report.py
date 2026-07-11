@@ -85,6 +85,37 @@ def test_pdf_omits_the_section_entirely_when_no_signal_is_available():
     assert "Additional context" not in text
 
 
+def test_pdf_latin1_maps_typographic_chars_to_readable_ascii_not_question_marks():
+    # WHY (real money, the shared PDF's credibility): fpdf's core font is Latin-1, and this app's
+    # insights/caveats use the em dash PERVASIVELY (deep_metrics/trends/framework). A bare
+    # encode('latin-1','replace') turned every em dash into '?', so a parent who downloads "the full
+    # report" to review or share with family saw "... net margin 18%) ? strong" -- reads as
+    # corruption in a document about their real money. Map the common typographic characters the
+    # app's own copy uses to readable ASCII BEFORE the lossy encode; the encode stays as a safety net.
+    app = _import_app_with_clean_env()
+    f = app._pdf_latin1
+    assert f("net margin 18%) — strong") == "net margin 18%) - strong"   # em dash -> hyphen
+    assert "?" not in f("Leverage rose — check it; margins fell –3%")
+    assert f("₹1,00,000") == "Rs.1,00,000"                               # rupee sign
+    assert f("2019–2024") == "2019-2024"                                 # en dash
+    assert f("“quote” ‘x’") == "\"quote\" 'x'"            # curly quotes
+    assert f("wait…") == "wait..."                                       # ellipsis
+    assert f("ROA 1.1% (strong)") == "ROA 1.1% (strong)"                     # plain ASCII unchanged
+    # the latin-1 safety net still catches anything UNmapped, so a stray symbol never crashes the build
+    assert "?" in f("★ star")
+
+
+def test_pdf_renders_em_dash_insights_without_question_mark_garble():
+    # end-to-end: an em-dash insight must read back from the real PDF as '-', never '?' garble.
+    app = _import_app_with_clean_env()
+    rep = Report(company="RELIANCE", verdict=_report().verdict,
+                 insights=("It keeps about Rs18 from every Rs100 of sales (net margin 18%) "
+                           "— strong.",))
+    norm = " ".join(_pdf_text(app.build_pdf_report("RELIANCE (live)", rep, Stance.NEUTRAL)).split())
+    assert "18%) - strong" in norm            # em dash rendered as a hyphen
+    assert "18%) ? strong" not in norm        # never the '?' garble
+
+
 def test_pdf_carries_the_annual_data_vintage_caveat_when_figures_are_annual():
     # WHY (real money, honesty): the saved/shared PDF must disclose that the fundamentals rest on
     # the latest ANNUAL figures (recent quarters not included), the same vintage caveat the live

@@ -544,6 +544,34 @@ _STANCE_PDF = {Stance.FAVORABLE: "[+] ", Stance.NEUTRAL: "[~] ",
                Stance.UNFAVORABLE: "[-] ", Stance.INSUFFICIENT_DATA: "[?] "}
 
 
+# Common non-Latin-1 typographic characters this app's own copy uses, mapped to readable ASCII for
+# fpdf's core (Latin-1) font. WHY (real money, the shared PDF's credibility): a bare
+# encode("latin-1","replace") turns each of these into "?" -- and the EM DASH appears in nearly
+# every insight/caveat (deep_metrics/trends/framework), so an unmapped PDF read "... 18%) ? strong",
+# corruption in a document a parent downloads to review or share with family. Mapped BEFORE the lossy
+# encode in _pdf_latin1, which keeps the encode only as a final safety net for any other stray glyph.
+_PDF_CHAR_MAP = {
+    "₹": "Rs.",   # rupee sign
+    "—": "-",      # em dash
+    "–": "-",      # en dash
+    "‘": "'",      # left single quote
+    "’": "'",      # right single quote / curly apostrophe
+    "“": '"',      # left double quote
+    "”": '"',      # right double quote
+    "…": "...",    # ellipsis
+}
+
+
+def _pdf_latin1(text) -> str:
+    """Sanitize text for fpdf's core Latin-1 font: map the common non-Latin-1 typographic characters
+    the app's copy uses (em/en dash, curly quotes, ellipsis, the rupee sign) to readable ASCII, THEN
+    latin-1-encode as a final safety net so any other stray glyph still can't crash the PDF build."""
+    out = str(text)
+    for uni, ascii_ in _PDF_CHAR_MAP.items():
+        out = out.replace(uni, ascii_)
+    return out.encode("latin-1", "replace").decode("latin-1")
+
+
 def build_pdf_report(title: str, report, stance: Stance, guidance=None,
                      promoter_trend: str | None = None,
                      cash_conversion_trend: str | None = None,
@@ -562,7 +590,7 @@ def build_pdf_report(title: str, report, stance: Stance, guidance=None,
     from fpdf.enums import XPos, YPos
 
     def s(text) -> str:
-        return str(text).replace("₹", "Rs.").encode("latin-1", "replace").decode("latin-1")
+        return _pdf_latin1(text)
 
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
