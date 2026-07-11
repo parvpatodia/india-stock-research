@@ -358,10 +358,18 @@ def trend_points(revenue_series: dict[int, float],
     # WHY "outpaced/lagged" not "grown faster/slower" (clarity/correctness): when BOTH sales and
     # profit are FALLING, "profit grew slower than sales" is wrong -- profit shrank faster. Outpaced/
     # lagged is true whether the business grew or shrank (it's about the ratio, i.e. the margin).
+    # WHY suppress the margin claim under a base-effect CAGR (real money, consistency): the margin
+    # direction is the profit-vs-sales growth comparison. When EITHER series has a >100%/yr base-
+    # effect CAGR (a trough recovery), that comparison is dominated by the base effect, not a real
+    # margin trend -- and "margins have been improving" would flatly contradict the "reflects a low
+    # or one-off starting year, not a sustainable trend" caveat the growth line prints for the SAME
+    # numbers. Withhold the margin direction there; the raw figures + swing caveat still tell it.
+    base_effect = (rev is not None and rev[0] > _CAGR_BASE_EFFECT) or \
+                  (prof is not None and prof[0] > _CAGR_BASE_EFFECT)
     margin = margins_improving(revenue_series, profit_series)
-    if margin is True:
+    if not base_effect and margin is True:
         points.append("Profit has outpaced sales, so margins have been improving.")
-    elif margin is False:
+    elif not base_effect and margin is False:
         points.append("Profit has lagged sales, so margins have been under pressure.")
     # Prefer the profit signal (the bottom line, more decision-relevant) whenever there is ENOUGH
     # profit data to judge it at all -- whether it turns out volatile or confirmed smooth. Fall

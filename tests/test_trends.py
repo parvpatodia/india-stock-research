@@ -203,6 +203,22 @@ def test_trend_points_empty_when_insufficient_history():
     assert trend_points({2022: 100}, {2022: 10}) == []           # too few years
 
 
+def test_trend_points_suppresses_margin_direction_when_a_cagr_is_a_base_effect():
+    # WHY (real money, consistency): the margin-direction claim compares profit vs sales growth. When
+    # EITHER is a >100%/yr base-effect CAGR (a trough recovery), that comparison is dominated by the
+    # base effect, not a real margin trend -- and stating "margins have been improving" flatly
+    # contradicts the base-effect caveat the growth line now prints for the SAME numbers. Suppress the
+    # margin-direction line in that case; a normal-growth pair still gets it.
+    prof = {2021: 5 * CR, 2022: 50 * CR, 2023: 200 * CR, 2024: 500 * CR}       # ~364%/yr base effect
+    rev = {2021: 1000 * CR, 2022: 1200 * CR, 2023: 1400 * CR, 2024: 1600 * CR}  # ~17%/yr
+    joined = " ".join(trend_points(rev, prof))
+    assert "margins have been improving" not in joined
+    assert "margins have been under pressure" not in joined
+    normal = " ".join(trend_points({2020: 100 * CR, 2021: 110 * CR, 2022: 121 * CR},
+                                    {2020: 10 * CR, 2021: 12 * CR, 2022: 15 * CR}))
+    assert "margins have been improving" in normal            # a normal pair still gets the claim
+
+
 def test_trend_points_qualifies_an_absurd_low_base_cagr():
     # WHY (real money, honesty): a cyclical/turnaround whose EARLIEST cross-verified year was a trough
     # (tiny positive profit) shows an astronomical CAGR off that low base -- "growing 364% a year"
