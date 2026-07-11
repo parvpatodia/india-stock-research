@@ -378,8 +378,20 @@ def trend_points(revenue_series: dict[int, float],
     base_effect = (rev is not None and rev[0] > _CAGR_BASE_EFFECT) or \
                   (prof is not None and prof[0] > _CAGR_BASE_EFFECT)
     margin = margins_improving(revenue_series, profit_series)
+    # WHY (pairs with trend_improving's melting-ice-cube guard): when sales AND profit are BOTH
+    # shrinking, margin is True because profit merely fell SLOWER -- but "profit outpaced sales, so
+    # margins have been improving" reads as a positive headline sitting under two "...shrinking..."
+    # lines (a shrinking profit did not "outpace" anything) and spins a contracting business as
+    # progress, contradicting the withheld positive flag. State the margin fact (it widened) framed
+    # honestly as managing decline. Same shrinking threshold as trend_improving so flag and prose agree.
+    both_shrinking = (rev is not None and rev[0] < -_GROWTH_MIN
+                      and prof is not None and prof[0] < -_GROWTH_MIN)
     if not base_effect and margin is True:
-        points.append("Profit has outpaced sales, so margins have been improving.")
+        if both_shrinking:
+            points.append("Profit has shrunk more slowly than sales, so margins widened even as the "
+                          "business got smaller -- managing decline, not an improving trend.")
+        else:
+            points.append("Profit has outpaced sales, so margins have been improving.")
     elif not base_effect and margin is False:
         points.append("Profit has lagged sales, so margins have been under pressure.")
     # Prefer the profit signal (the bottom line, more decision-relevant) whenever there is ENOUGH

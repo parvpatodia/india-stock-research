@@ -199,6 +199,24 @@ def test_margin_direction_wording_is_not_grown_when_the_company_is_declining():
     assert "lagged sales" in joined
 
 
+def test_trend_points_margin_wording_when_both_lines_shrink_is_not_a_positive_headline():
+    # WHY (real money, clarity -- pairs with trend_improving's melting-ice-cube guard, 1b9dd68):
+    # when sales AND profit are BOTH shrinking, margins_improving is True (profit fell slower), and
+    # the prose printed "Profit has outpaced sales, so margins have been improving." -- a positive-
+    # sounding headline directly under two "...has been shrinking..." lines. That reads as a
+    # contradiction (a shrinking profit did not "outpace" anything) and spins a contracting business
+    # as improving, now also disagreeing with the withheld positive flag. The margin fact (it
+    # widened) is still stated, but framed honestly as managing decline, not progress.
+    rev = {2020: 200 * CR, 2021: 150 * CR, 2022: 110 * CR}      # sales down ~26%/yr
+    prof = {2020: 20 * CR, 2021: 17 * CR, 2022: 15 * CR}        # profit down ~13%/yr (slower)
+    joined = " ".join(trend_points(rev, prof))
+    assert margins_improving(rev, prof) is True                 # margins did widen (profit fell slower)
+    assert "outpaced sales" not in joined                       # not a positive "outpaced" headline
+    assert "margins have been improving" not in joined          # nor a bare "improving" for a shrinking biz
+    assert "shrunk more slowly than sales" in joined            # honest: profit fell slower, margins widened
+    assert "managing decline" in joined                         # framed as contraction, not progress
+
+
 def test_trend_points_empty_when_insufficient_history():
     assert trend_points({2022: 100}, {2022: 10}) == []           # too few years
 
