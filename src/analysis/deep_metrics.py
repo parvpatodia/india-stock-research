@@ -235,7 +235,11 @@ def plain_points(v: dict, deep: list[MetricResult], is_real_estate: bool = False
     if not is_bank and debt is not None and eq and eq > 0:
         de = debt / eq
         ebit, interest = v.get("ebit"), v.get("interest_expense")
-        cover = (ebit / interest) if (ebit and interest and interest > 0) else None
+        has_interest = interest is not None and interest > 0
+        # Only show a coverage multiple with a POSITIVE operating profit; a negative EBIT can't
+        # cover interest, so "covers its interest bill about -2x over" is a confusing negative.
+        cover = (ebit / interest) if (has_interest and ebit is not None and ebit > 0) else None
+        operating_loss = has_interest and ebit is not None and ebit < 0
         # WHY (real money, honesty; adversarial-review regression): derive the word from
         # leverage_health's OWN tier (D/E AND interest coverage), the SAME computation the
         # Verdict's tier/concern flag and REAL_ESTATE_LEVERAGE_CAVEAT gating are built from --
@@ -247,6 +251,9 @@ def plain_points(v: dict, deep: list[MetricResult], is_real_estate: bool = False
         s = f"Debt: it owes ₹{de:.2f} for every ₹1 of owners' money (D/E {de:.2f}) — {word}"
         if cover is not None:
             s += f", and operating profit covers its interest bill about {cover:.0f}x over"
+        elif operating_loss:
+            s += (", and its operating profit is negative, so it isn't covering its interest "
+                  "bill from operations")
         s += "."
         if is_real_estate and word == "high, worth watching":
             s += " " + REAL_ESTATE_LEVERAGE_CAVEAT

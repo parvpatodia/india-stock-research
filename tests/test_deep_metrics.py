@@ -235,6 +235,17 @@ def test_plain_points_cash_quality_word_matches_earnings_quality_on_negative_ocf
     assert "only partly backed by cash" not in joined
 
 
+def test_plain_points_debt_line_flags_an_operating_loss_not_a_negative_cover():
+    # WHY (real money, clarity): a leveraged loss-maker showed "operating profit covers its interest
+    # bill about -2x over" -- a confusing negative "cover". Say its operating profit is negative and
+    # it isn't covering interest instead; the verdict word ("high, worth watching") is unchanged.
+    v = {"total_debt": 120 * CR, "equity": 100 * CR, "ebit": -40 * CR, "interest_expense": 20 * CR}
+    joined = " ".join(plain_points(v, []))
+    assert "-2x" not in joined and "covers its interest bill about" not in joined
+    assert "operating profit is negative" in joined and "isn't covering" in joined
+    assert "high, worth watching" in joined      # verdict word unchanged
+
+
 def test_plain_points_debt_word_matches_leverage_health_on_weak_coverage_alone():
     # WHY (real money, honesty; adversarial-review regression): D/E 0.60 alone reads "moderate",
     # but weak interest coverage (2.0x, below the 3.0x minimum) makes leverage_health -- the SAME

@@ -154,16 +154,26 @@ def leverage_health(total_debt: float | None, equity: float | None,
     if total_debt is None or equity is None or equity <= 0:
         return _unknown(name, "debt or (positive) equity unavailable.", critical=True)
     de = total_debt / equity
-    coverage = None
-    if ebit is not None and interest is not None and interest > 0:
-        coverage = ebit / interest
-    stretched = de > _DE_STRETCHED or (coverage is not None and coverage < _COVERAGE_MIN)
-    healthy = de < _DE_HEALTHY and (coverage is None or coverage >= _COVERAGE_MIN)
+    has_interest = interest is not None and interest > 0
+    # Interest coverage (EBIT/interest) is only meaningful with a POSITIVE operating profit; a
+    # negative EBIT can't cover interest from operations at all, so don't display a nonsensical
+    # negative "cover" (e.g. "-2.0x") -- flag the operating loss in words instead. Verdicts are
+    # UNCHANGED: a negative-EBIT leveraged name still reads stretched, exactly as the old
+    # negative-coverage-below-3 path did, and the ebit<=0 quirk (coverage ignored) is preserved.
+    coverage = ebit / interest if (has_interest and ebit is not None and ebit > 0) else None
+    operating_loss_vs_interest = has_interest and ebit is not None and ebit < 0
+    weak_cover = operating_loss_vs_interest or (coverage is not None and coverage < _COVERAGE_MIN)
+    stretched = de > _DE_STRETCHED or weak_cover
+    healthy = de < _DE_HEALTHY and not weak_cover
     v = "stretched" if stretched else ("healthy" if healthy else "moderate")
-    cov_txt = f", interest cover {coverage:.1f}x" if coverage is not None else ""
-    return MetricResult(name, True, v,
-                        f"debt/equity {de:.2f}{cov_txt} reads {v}.", concern=stretched,
-                        critical=True, positive=healthy)
+    if coverage is not None:
+        detail = f"debt/equity {de:.2f}, interest cover {coverage:.1f}x reads {v}."
+    elif operating_loss_vs_interest:
+        detail = (f"debt/equity {de:.2f} reads {v}; operating profit is negative, so it isn't "
+                  "covering its interest bill from operations.")
+    else:
+        detail = f"debt/equity {de:.2f} reads {v}."
+    return MetricResult(name, True, v, detail, concern=stretched, critical=True, positive=healthy)
 
 
 def promoter_pledge(pledge_pct: float | None) -> MetricResult:

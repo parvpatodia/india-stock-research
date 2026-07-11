@@ -61,6 +61,24 @@ def test_leverage_health():
     assert leverage_health(20, 0, 5, 1).known is False
 
 
+def test_leverage_health_negative_operating_profit_avoids_a_confusing_negative_cover():
+    # WHY (real money, clarity): a leveraged company with an OPERATING LOSS can't service interest
+    # from operations -- it must read stretched (it does), but "interest cover -2.0x" is a
+    # nonsensical display (you don't "cover" interest with a negative operating profit). State
+    # plainly that operating profit is negative and isn't covering interest. The VERDICT is
+    # unchanged: the old negative-coverage-below-3 path already read this stretched.
+    r = leverage_health(120, 100, -40, 20)     # D/E 1.2, EBIT -40, interest 20
+    assert r.verdict == "stretched" and r.concern is True
+    assert "-2.0x" not in r.detail and "interest cover -" not in r.detail
+    assert "operating profit is negative" in r.detail and "isn't covering" in r.detail
+
+
+def test_leverage_health_debt_light_operating_loss_is_not_flagged_on_coverage():
+    # A near-debt-free company with an operating loss but NO interest bill must not be dragged to
+    # "stretched" by the coverage lens -- there is no interest to miss.
+    assert leverage_health(1, 100, -40, 0).verdict == "healthy"    # D/E 0.01, no interest
+
+
 def test_promoter_pledge():
     assert promoter_pledge(0).verdict == "none"
     assert promoter_pledge(10).verdict == "watch"
