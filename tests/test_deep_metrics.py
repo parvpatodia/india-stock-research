@@ -77,6 +77,21 @@ def test_return_ratios_use_average_denominator_when_the_prior_year_is_available(
     assert "6.7" in roa.detail                                           # 6/90 = 6.7%, not 6.0%
 
 
+def test_asset_turnover_notes_it_varies_by_industry_not_a_bare_good_bad():
+    # WHY (real money, non-expert clarity): unlike ROE/ROCE/margins, asset turnover has NO universal
+    # good/bad level -- it is inherently industry-dependent (capital-heavy utilities/manufacturers run
+    # LOW; asset-light services/retail run HIGH). A bare "— low" reads to a non-expert as a weakness
+    # the number does not carry, so a capital-heavy business would be misread as inefficient. The
+    # sentence must note that what's normal varies by industry, so the descriptor isn't taken as a
+    # verdict. The MetricResult verdict tier itself is unchanged.
+    low = asset_turnover(30 * CR, 100 * CR)                            # 0.30x -> lower side
+    assert "0.30x" in low.detail
+    assert "varies" in low.detail.lower() and "industry" in low.detail.lower()
+    assert "— low." not in low.detail                                  # no bare good/bad verdict word
+    assert low.verdict == "low"                                        # the tier field is unchanged
+    assert "varies" in asset_turnover(200 * CR, 100 * CR).detail.lower()  # high case also carries context
+
+
 def test_asset_turnover_uses_average_assets_like_roa():
     # WHY (CA-level rigor, consistency): asset turnover = sales / total assets is the same
     # flow-over-stock ratio as ROA -- sales are generated OVER the year, so the denominator should

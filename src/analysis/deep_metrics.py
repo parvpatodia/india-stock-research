@@ -183,9 +183,18 @@ def asset_turnover(revenue: float | None, total_assets: float | None,
     t = revenue / denom
     v = "high" if t >= 1.0 else "low" if t < 0.4 else "moderate"
     basis = ", on average assets" if averaged else ""
+    # WHY (real money, non-expert clarity): unlike ROE/ROCE/margins, asset turnover has NO universal
+    # good/bad level -- it is inherently industry-dependent (capital-heavy utilities/manufacturers run
+    # LOW; asset-light services/retail run HIGH). A bare "— low" reads to a non-expert as a weakness
+    # the number does not carry, so a capital-heavy business would be misread as inefficient. Keep the
+    # verdict tier (v) for any caller, but phrase the SENTENCE as a side plus an explicit
+    # "varies by industry" note so the descriptor is never taken as a verdict.
+    level = "on the higher side" if t >= 1.0 else "on the lower side" if t < 0.4 else "middling"
     return MetricResult(name, True, v,
                         f"It generates ₹{t:.2f} of sales a year for every ₹1 of assets "
-                        f"(asset turnover {t:.2f}x{basis}) — {v}.", concern=False)
+                        f"(asset turnover {t:.2f}x{basis}) — {level}; what counts as normal here "
+                        "varies a lot by industry (capital-heavy businesses run lower, asset-light "
+                        "ones higher).", concern=False)
 
 
 def compute_deep_metrics(v: dict, is_bank: bool = False) -> list[MetricResult]:
