@@ -70,7 +70,23 @@ class AMFIProvider:
         return next((s for s in self._schemes if s.scheme_code == str(scheme_code)), None)
 
     def search(self, query: str, limit: int = 10) -> list[MFScheme]:
-        q = query.strip().lower()
-        if not q:
+        """Match schemes whose name contains EVERY word of the query (order-independent).
+
+        WHY (real money workflow, live-verified): a parent types a fund's words naturally -- in a
+        different order, or with the plan/option words ("direct", "growth") that the AMFI scheme
+        name splits apart with " - " separators. A single contiguous-substring test returned NOTHING
+        for common, correct queries like "hdfc small cap direct growth" (the real name is "HDFC Small
+        Cap Fund - Direct Plan - Growth", so the typed words are never contiguous). Requiring each
+        query WORD to appear -- the standard search behaviour -- surfaces the fund the parent means.
+        """
+        terms = query.strip().lower().split()
+        if not terms:
             return []
-        return [s for s in self._schemes if q in s.name.lower()][:limit]
+        out: list[MFScheme] = []
+        for s in self._schemes:
+            name = s.name.lower()
+            if all(t in name for t in terms):
+                out.append(s)
+                if len(out) >= limit:
+                    break
+        return out

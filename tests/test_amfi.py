@@ -39,3 +39,22 @@ def test_amfi_provider_with_injected_fetcher():
     assert provider.get_by_code("119551").name.startswith("Aditya Birla Sun Life Frontline")
     assert len(provider.search("frontline")) == 1
     assert provider.search("") == []
+
+
+def test_search_matches_all_query_words_in_any_order():
+    # WHY (real money workflow): a parent naturally types a fund's words in a different order, or
+    # includes the plan/option words that the AMFI scheme name splits apart with " - " separators
+    # (e.g. "frontline growth" for "...Frontline Equity Fund - Growth", "banking direct" for
+    # "...Banking Fund - Direct - Growth"). A contiguous-substring match returns NOTHING for every
+    # such query. Require each query WORD to appear (order-independent) -- the standard search
+    # behaviour -- so the fund the parent means actually shows up.
+    provider = AMFIProvider(fetcher=lambda: SAMPLE)
+    provider.load()
+    reordered = provider.search("frontline growth aditya")     # words present, non-contiguous, reordered
+    assert len(reordered) == 1
+    assert reordered[0].name.startswith("Aditya Birla Sun Life Frontline")
+    assert len(provider.search("banking direct")) == 1         # "Banking Fund - Direct - Growth"
+    assert provider.search("frontline debt") == []             # a word in no name still excludes
+    # single-word and empty behaviour unchanged:
+    assert len(provider.search("frontline")) == 1
+    assert provider.search("") == []
