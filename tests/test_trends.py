@@ -233,6 +233,28 @@ def test_earnings_volatility_guards_against_a_zero_base_year():
     assert earnings_volatility_point(profit) is None   # <2 usable growth points after the guard
 
 
+def test_earnings_volatility_uses_qualitative_wording_across_a_loss_to_profit_crossing():
+    # WHY (real money, honesty): a year-over-year growth % is ill-defined through a SIGN CHANGE --
+    # a small loss between profit years explodes the rate into an absurd, alarming figure
+    # (live-repro: "a 20201-percentage-point range"). When profit crossed between losses and
+    # profits, fire the SAME earning-power caveat but phrase it qualitatively, never quoting a
+    # nonsensical percentage a parent would read as a typo.
+    point = earnings_volatility_point({2023: 100 * CR, 2024: -1 * CR, 2025: 200 * CR})
+    assert point is not None
+    assert "losses and profits" in point.lower()
+    assert "percentage-point" not in point          # no absurd computed % shown
+    assert "20201" not in point
+    # a genuine turnaround (losses then a profit) is also worded qualitatively
+    tp = earnings_volatility_point({2023: -100 * CR, 2024: -50 * CR, 2025: 50 * CR})
+    assert tp is not None and "losses and profits" in tp.lower()
+
+
+def test_earnings_volatility_keeps_percentage_wording_for_all_positive_cyclicals():
+    # regression: an all-positive cyclical (no sign change) still gets the precise pp-range wording
+    point = earnings_volatility_point({2023: 4142 * CR, 2024: 8892 * CR, 2025: 3498 * CR})
+    assert point is not None and "percentage-point range" in point
+
+
 # --- revenue_volatility_point: fills a real gap earnings_volatility_point cannot ---
 
 def test_revenue_volatility_flags_lumpy_project_based_revenue():

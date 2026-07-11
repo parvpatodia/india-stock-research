@@ -216,6 +216,16 @@ def earnings_volatility_point(profit_series: dict[int, float]) -> str | None:
     if result is None:
         return None
     swing, n_years = result
+    # WHY (real money, honesty): a year-over-year growth % is ill-defined through a SIGN CHANGE --
+    # a near-zero base (a small loss between profit years) explodes it into an absurd, alarming
+    # figure a parent would read as a typo (live-repro: "a 20201-percentage-point range"). When
+    # profit crossed between losses and profits in the window, fire the SAME earning-power caveat
+    # but phrase it qualitatively rather than quoting a nonsensical percentage.
+    values = list(profit_series.values())
+    if any(v < 0 for v in values) and any(v > 0 for v in values):
+        return (f"Profit has swung between losses and profits over the last {n_years} years -- a "
+                "single year's ROE/margin may not represent its long-term earning power, so weigh "
+                "the multi-year trend, not just the latest year.")
     if swing < _VOLATILITY_SWING:
         return None
     return (f"Profit has swung sharply year to year (a {swing:.0f}-percentage-point range in "
