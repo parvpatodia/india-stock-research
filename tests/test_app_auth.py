@@ -39,3 +39,18 @@ def test_bare_and_wrong_url_are_gated():
 def test_no_password_configured_is_open():
     at = _run(app_password=None)
     assert len(at.tabs) >= 4          # local dev, open
+
+
+def test_trailing_whitespace_in_the_password_secret_does_not_lock_out():
+    # WHY (real money, RELIABILITY -- not a security change): a Streamlit TOML secret commonly carries
+    # a trailing space or newline (app_password = "letmein "). Compared untrimmed with ==, it rejected
+    # the CORRECT password on BOTH the typed prompt and the ?key= magic-link -- locking the parents
+    # out of the deployed app with a password that "looks right" and is very hard to debug. The
+    # configured password is trimmed so the clean password (what the parents type, and what the
+    # bookmark magic-link carries) authenticates. A blank/whitespace-only secret still means "no
+    # password set" -> open (local dev), unchanged.
+    at = _run(app_password="letmein ", url_key="letmein")   # padded secret, clean key
+    assert len(at.exception) == 0
+    assert len(at.tabs) >= 4                                  # authenticated, not locked out
+    at2 = _run(app_password="  letmein\n")                    # padded secret, no key -> still gated
+    assert len(at2.tabs) == 0

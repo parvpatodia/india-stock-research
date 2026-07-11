@@ -334,7 +334,11 @@ def _check_password() -> bool:
     (their Home-Screen bookmark carries it -> tapping the icon auto-signs-in), or typing it once.
     The bare URL (no key) still shows the prompt, so a stranger with only the base link is blocked.
     """
-    expected = _secret("app_password")
+    # Trim the configured password: a Streamlit TOML secret commonly carries a trailing space or
+    # newline (app_password = "pw "). Compared untrimmed with ==, that rejected the CORRECT password
+    # on both the typed prompt and the ?key= magic-link -- locking the parents out of the deployed app
+    # with a password that "looks right". A blank/whitespace-only value still means no password set.
+    expected = str(_secret("app_password") or "").strip()
     if not expected:
         return True
     if st.session_state.get("_authed"):
