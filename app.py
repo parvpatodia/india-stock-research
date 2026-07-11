@@ -409,6 +409,19 @@ def money(value: float | None) -> str:
     return format_rupees(value)
 
 
+def conflict_values_line(fig) -> str:
+    """The actual per-source values behind a withheld (CONFLICT) figure, each in its proper unit.
+
+    WHY (real money, review workflow + honesty): a conflicting figure is shown only as 'withheld',
+    which hides WHAT the sources disagreed on. The expert must acknowledge a conflict before
+    approving (real-money gate), and seeing the numbers is what lets them judge a benign
+    definitional gap (e.g. yfinance's to-owners net profit vs Screener's consolidated, ~15% on
+    minority interest) apart from a real parse/scale error to reject. These are the disagreeing,
+    UNVERIFIED values -- labeled as such by the caller, never presented as facts."""
+    return ", ".join(f"{sv.source_id} {format_figure_value(fig.name, sv.value)}"
+                     for sv in fig.sources if sv.value is not None)
+
+
 def ask_no_figures_tip(symbol: str, already_researched_this_session: bool) -> str:
     """The right guidance when the Ask tab can't ground a numeric question in cross-verified
     figures for `symbol`. WHY (real money, workflow honesty): the tip used to be the SAME
@@ -921,6 +934,11 @@ with tab_research:
             if report.conflicts:
                 st.error(f"{len(report.conflicts)} figure(s) in CONFLICT (independent sources "
                          "disagree); withheld from the verdict.")
+                # Show the actual disagreeing values so the expert can judge the nature of the gap
+                # (a benign definitional difference to acknowledge vs a real error to reject)
+                # before approving -- 'withheld' alone hides what the sources actually said.
+                for f in report.conflicts:
+                    st.caption(f"• {f.name}: {conflict_values_line(f)}")
             single = [f for f in report.figures if f.status.value == "single_source"]
             if single:
                 st.info(f"{len(single)} figure(s) are single-source, so the verdict is "
