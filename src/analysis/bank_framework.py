@@ -12,7 +12,9 @@ fit every NBFC segment (e.g. gold-loan/microfinance lenders typically run higher
 """
 from __future__ import annotations
 
-from ..research.report import Verdict
+from dataclasses import replace
+
+from ..research.report import Confidence, Verdict
 from .framework import MetricResult, _avg_denominator, assemble_verdict
 
 # ROA thresholds for Indian banks (a well-run bank earns ~1%+; a strained one is below 0.5%).
@@ -122,5 +124,16 @@ def assemble_bank_verdict(valuation: MetricResult, roa: MetricResult) -> Verdict
     """Bank/NBFC verdict from ROA + valuation, always carrying the 'check the filing' caveat."""
     # min_signals_for_strong=1: ROA is a lender's single designated quality lens (the industrial
     # leverage/coverage metrics do not apply), so one verified strong ROA is the intended STRONG.
-    return assemble_verdict(valuation, [roa], min_signals_for_strong=1,
-                            sector_caveats=(_BANK_CAVEAT,))
+    verdict = assemble_verdict(valuation, [roa], min_signals_for_strong=1,
+                               sector_caveats=(_BANK_CAVEAT,))
+    # WHY (real money, honesty): a bank is only ever assessed on ROA + valuation here -- its single
+    # most important risk, asset quality (GNPA/NNPA) and capital adequacy (CRAR), is STRUCTURALLY
+    # absent from the free structured feeds (see _BANK_CAVEAT). With both metrics known the generic
+    # confidence math reads HIGH (2/2), which would imply a comprehensive check when a core
+    # dimension was never even attempted. Cap at MEDIUM so the structured confidence signal matches
+    # what the caveat already says in words, and so a bank never out-ranks a fully cross-verified
+    # industrial on conviction it structurally cannot earn. There is no bank scenario where HIGH is
+    # warranted from these feeds, so the cap is unconditional for the bank/NBFC path.
+    if verdict.confidence == Confidence.HIGH:
+        verdict = replace(verdict, confidence=Confidence.MEDIUM)
+    return verdict

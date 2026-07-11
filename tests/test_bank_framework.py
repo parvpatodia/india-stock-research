@@ -7,7 +7,7 @@ from src.analysis.bank_framework import (
 )
 from src.analysis.framework import REAL_ESTATE_LEVERAGE_CAVEAT, valuation_vs_history
 from src.pipeline import build_company_report
-from src.research.report import QualityTier
+from src.research.report import Confidence, QualityTier
 from src.research.verification import SourcedValue
 
 
@@ -52,6 +52,20 @@ def test_bank_verdict_and_displayed_roa_agree_on_the_same_denominator():
     assert r.verdict.quality == QualityTier.STRONG          # verdict now on average assets -> strong
     roa_line = next(i for i in r.insights if "ROA" in i)
     assert "average assets" in roa_line and "1.1%" in roa_line   # ~1.07% average, shown to 1 dp
+
+
+def test_bank_confidence_capped_at_medium_because_asset_quality_is_unavailable():
+    # WHY (real money, honesty): a bank's single most important risk -- asset quality (GNPA/NNPA)
+    # and capital adequacy (CRAR) -- is STRUCTURALLY absent from the free structured feeds (see
+    # _BANK_CAVEAT), so a bank is only ever assessed on ROA + valuation. Both being known would
+    # compute HIGH confidence (2/2 metrics), which falsely implies a comprehensive check when a
+    # core dimension was never even attempted. Cap at MEDIUM so the structured confidence signal
+    # matches what the caveat already discloses in words (and so a bank doesn't out-rank a fully
+    # cross-verified industrial on conviction it hasn't earned).
+    v = assemble_bank_verdict(valuation_vs_history(15, 25),      # cheap
+                              return_on_assets(150, 10000))       # ROA 1.5% -> strong
+    assert v.quality == QualityTier.STRONG
+    assert v.confidence == Confidence.MEDIUM
 
 
 def test_bank_mixed_roa_is_not_strong_quality():
