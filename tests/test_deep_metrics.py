@@ -37,6 +37,18 @@ def test_return_ratios_use_average_denominator_when_the_prior_year_is_available(
     assert "6.7" in roa.detail                                           # 6/90 = 6.7%, not 6.0%
 
 
+def test_asset_turnover_uses_average_assets_like_roa():
+    # WHY (CA-level rigor, consistency): asset turnover = sales / total assets is the same
+    # flow-over-stock ratio as ROA -- sales are generated OVER the year, so the denominator should
+    # be average (opening+closing) total assets, not the closing snapshot. It was left on point
+    # assets when ROA moved to average; align it (a company that grew assets during the year would
+    # otherwise show an artificially low turnover).
+    at = asset_turnover(200 * CR, 100 * CR, prior_total_assets=80 * CR)   # avg (100+80)/2 = 90
+    assert "2.22x" in at.detail and "average assets" in at.detail        # 200/90 = 2.22x, not 2.00
+    assert "2.00x" in asset_turnover(200 * CR, 100 * CR).detail          # no prior -> point
+    assert "average" not in asset_turnover(200 * CR, 100 * CR).detail.lower()
+
+
 def test_return_ratios_fall_back_to_point_value_when_prior_is_missing_or_nonpositive():
     # a missing or non-positive prior must NOT corrupt the average -- use the closing value alone,
     # preserving the pre-existing behavior exactly.

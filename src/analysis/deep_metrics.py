@@ -127,15 +127,21 @@ def operating_margin(ebit: float | None, revenue: float | None) -> MetricResult:
                         f"(operating margin {m:.0f}%) — {v}.", concern)
 
 
-def asset_turnover(revenue: float | None, total_assets: float | None) -> MetricResult:
+def asset_turnover(revenue: float | None, total_assets: float | None,
+                   prior_total_assets: float | None = None) -> MetricResult:
     name = "Asset turnover"
     if revenue is None or total_assets is None or total_assets <= 0:
         return _unknown(name, "revenue or (positive) total assets unavailable.")
-    t = revenue / total_assets
+    # WHY average assets (CA-level rigor, consistency with ROA): sales are generated OVER the year,
+    # so the flow-over-stock ratio uses the average of opening and closing assets when a
+    # cross-verified prior year is available; falls back to the closing value otherwise.
+    denom, averaged = _avg_denominator(total_assets, prior_total_assets)
+    t = revenue / denom
     v = "high" if t >= 1.0 else "low" if t < 0.4 else "moderate"
+    basis = ", on average assets" if averaged else ""
     return MetricResult(name, True, v,
                         f"It generates ₹{t:.2f} of sales a year for every ₹1 of assets "
-                        f"(asset turnover {t:.2f}x) — {v}.", concern=False)
+                        f"(asset turnover {t:.2f}x{basis}) — {v}.", concern=False)
 
 
 def compute_deep_metrics(v: dict, is_bank: bool = False) -> list[MetricResult]:
@@ -157,7 +163,7 @@ def compute_deep_metrics(v: dict, is_bank: bool = False) -> list[MetricResult]:
                               prior_equity=p_eq, prior_total_debt=p_debt),
             net_margin(v.get("net_profit"), v.get("revenue")),
             operating_margin(v.get("ebit"), v.get("revenue")),
-            asset_turnover(v.get("revenue"), v.get("total_assets")),
+            asset_turnover(v.get("revenue"), v.get("total_assets"), prior_total_assets=p_assets),
         ]
     return metrics
 
