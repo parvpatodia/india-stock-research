@@ -1273,7 +1273,11 @@ with tab_ask:
     registry, curated_store, skipped, failed = get_curated_library(_library_fingerprint())
     grounded = get_grounded_analyst()
     if not grounded.available:
-        st.info("Set LLM_MODEL to ask questions. The sources still load below.")
+        # WHY (honesty): source-loading is gated on the (now-disabled) Ask button below, so nothing
+        # actually loads here without an LLM -- the old "the sources still load below" was simply
+        # false. Say what is true: Ask needs the model; the rest of the app does not.
+        st.info("Set LLM_MODEL to ask questions here. The Portfolio, Research, and Invest tabs "
+                "work without it.")
 
     ask_sym = st.text_input("Stock (symbol)", placeholder="RELIANCE", key="ask_sym")
     question = st.text_input("Your question", placeholder="What is the recent news about it?")
