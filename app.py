@@ -820,7 +820,11 @@ with tab_portfolio:
         cc = st.columns(3)
         cc[0].metric("Largest holding", f"{analysis.top_holding_weight * 100:.1f}%")
         cc[1].metric("HHI", f"{analysis.hhi:.3f}", help=explain("Concentration (HHI)"))
-        cc[2].metric("Effective # holdings", f"{analysis.effective_holdings:.1f}")
+        # WHY help= (comprehension): "effective 3.2" when a parent holds 8 names is opaque on its
+        # own -- and the glossary already HAS the plain explanation; it just wasn't wired to the card
+        # (HHI next to it is). Show it, matching every other technical metric card in the app.
+        cc[2].metric("Effective # holdings", f"{analysis.effective_holdings:.1f}",
+                     help=explain("Effective number of holdings"))
         flags = []
         if analysis.top_holding_weight > CONCENTRATION_TOP_HOLDING_WARN:
             flags.append(f"One name is over {CONCENTRATION_TOP_HOLDING_WARN * 100:.0f}% of the book.")

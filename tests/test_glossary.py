@@ -14,7 +14,7 @@ def test_all_definitions_are_nonempty_plain_text():
 
 def test_covers_terms_the_app_relies_on():
     # WHY: the app passes these exact keys to help= tooltips; a rename must update both.
-    required = {"P&L", "Concentration (HHI)", "Beta", "NAV", "SIP",
+    required = {"P&L", "Concentration (HHI)", "Effective number of holdings", "Beta", "NAV", "SIP",
                 "Verified fact", "Opinion", "Unverified", "Confidence"}
     assert required <= set(GLOSSARY)
 
