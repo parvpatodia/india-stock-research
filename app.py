@@ -79,6 +79,7 @@ from src.portfolio.analysis import (  # noqa: E402
     historical_cagr,
     max_drawdown,
     portfolio_daily_returns,
+    thin_risk_window_note,
 )
 from src.portfolio.loader import load_holdings  # noqa: E402
 from src.research.claims import ESTIMATE, FACT, OPINION  # noqa: E402
@@ -809,6 +810,12 @@ with tab_portfolio:
                                "priced holdings that had usable 1-year history; the rest are "
                                "excluded here (weights renormalized over what's available), so "
                                "this may not reflect your full portfolio's risk.")
+                # WHY (honesty): even with every name "having history", the SHARED (intersected)
+                # window can be short if one name was recently listed/added -- annualizing so few
+                # days into a firm volatility/beta overstates precision, so disclose a thin window.
+                thin_note = thin_risk_window_note(len(port_returns))
+                if thin_note:
+                    st.caption(thin_note)
                 risk_cols = st.columns(3)
                 risk_cols[0].metric("Annualized volatility",
                                     f"{annualized_volatility(port_returns) * 100:.1f}%",

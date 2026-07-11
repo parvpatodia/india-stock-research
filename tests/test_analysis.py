@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 
 from src.portfolio.analysis import (
+    MIN_RISK_WINDOW_DAYS,
     analyze_portfolio,
     annualized_volatility,
     beta,
@@ -9,6 +10,7 @@ from src.portfolio.analysis import (
     historical_cagr,
     max_drawdown,
     portfolio_daily_returns,
+    thin_risk_window_note,
 )
 from src.portfolio.models import Holding
 
@@ -133,6 +135,20 @@ def test_beta_none_when_it_cannot_be_computed():
     assert beta(port, pd.Series([0.0, 0.0, 0.0, 0.0, 0.0])) is None        # zero-variance benchmark
     idx = pd.Series(np.random.RandomState(1).normal(0, 0.01, 200))         # a real beta is unaffected
     assert beta(2 * idx, idx) is not None and abs(beta(2 * idx, idx) - 2.0) < 1e-6
+
+
+def test_thin_risk_window_note_flags_a_short_shared_window():
+    # WHY (real money, honesty): portfolio_daily_returns INTERSECTS every holding's history, so ONE
+    # recently-added or thinly-traded name shrinks the window all holdings share. Annualizing a
+    # handful of days into a confident-looking volatility/beta (x sqrt(252)) overstates precision the
+    # data doesn't have -- the same fabricated-confidence guardrail as beta's n/a and cagr's >=3-year
+    # floor. The existing coverage caption only catches ZERO-history names, not thin ones, so a very
+    # short shared window must be disclosed; a normal (~1yr) window stays silent.
+    note = thin_risk_window_note(5)                             # ~1 week shared -> unreliable
+    assert note is not None and "5 trading day" in note
+    assert thin_risk_window_note(MIN_RISK_WINDOW_DAYS) is None  # at the floor -> fine, no caveat
+    assert thin_risk_window_note(240) is None                  # a full year -> no caveat
+    assert thin_risk_window_note(0) is not None                # degenerate window still disclosed
 
 
 def test_volatility_and_empty_guards():

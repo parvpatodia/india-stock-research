@@ -138,6 +138,31 @@ def annualized_volatility(returns: pd.Series) -> float:
     return float(returns.std() * math.sqrt(TRADING_DAYS_PER_YEAR))
 
 
+# Below this many overlapping trading days, annualizing volatility (x sqrt(252)) or estimating beta
+# from the window all holdings SHARE is an unreliable extrapolation. ~1 trading month; a daily-return
+# std (and a beta) from fewer points is too noisy to annualize into a confident figure.
+MIN_RISK_WINDOW_DAYS = 20
+
+
+def thin_risk_window_note(overlap_days: int) -> str | None:
+    """A plain caveat when the return window all holdings SHARE is too short for the annualized
+    volatility / beta to be a reliable read, else None.
+
+    WHY (real money, honesty): portfolio_daily_returns INTERSECTS every holding's daily returns, so a
+    single recently-added or thinly-traded name shrinks the whole shared window. Annualizing a handful
+    of days into a confident-looking volatility/beta would overstate precision the data does not have
+    -- the same fabricated-confidence guardrail as beta's n/a and historical_cagr's >=3-year floor.
+    The existing coverage caption only catches names with ZERO history, not thin ones, so a very short
+    shared window is disclosed here instead of quietly firming up a rough number into a hard one.
+    """
+    if overlap_days < MIN_RISK_WINDOW_DAYS:
+        return (f"These risk figures rest on only {overlap_days} trading day(s) that all your "
+                "holdings share — a recently added or thinly-traded name shortens the common "
+                "window. Annualized volatility and beta from so short a window are rough, not a "
+                "reliable read; they firm up as the shared history grows.")
+    return None
+
+
 def beta(asset_returns: pd.Series, benchmark_returns: pd.Series) -> float | None:
     """Sensitivity of the asset to the benchmark: cov(a, b) / var(b).
 
