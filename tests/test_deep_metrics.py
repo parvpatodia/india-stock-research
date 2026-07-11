@@ -34,6 +34,8 @@ def test_loss_making_ratios_say_loses_not_keeps_or_earns():
     assert "loses about ₹50 a year" in roe and "earns about" not in roe
     roa = return_on_assets(-60 * CR, 1000 * CR).detail    # -6.0%
     assert "loses about ₹6.0" in roa and "earns about" not in roa
+    roce = return_on_capital(-30 * CR, 100 * CR, 50 * CR).detail   # EBIT loss -> -20% on ₹150 capital
+    assert "loses about ₹20 a year" in roce and "earns about" not in roce
 
 
 def test_margins_over_100pct_flag_profit_exceeding_sales_rather_than_reading_strong():

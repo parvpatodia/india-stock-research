@@ -84,8 +84,11 @@ def return_on_capital(ebit: float | None, equity: float | None,
     roce = ebit / denom * 100
     v, concern = _rate(roce, _ROCE_GOOD, _ROCE_WEAK)
     basis = ", on average capital" if averaged else ""
+    # A negative ROCE (an operating loss) must say it LOSES money, not "earns about ₹-20" -- the
+    # same double-negative fix applied to ROE/ROA/margins (this metric was missed there).
+    verb = f"loses about ₹{abs(roce):.0f}" if roce < 0 else f"earns about ₹{roce:.0f}"
     return MetricResult(name, True, v,
-                        f"It earns about ₹{roce:.0f} a year for every ₹100 of capital it uses "
+                        f"It {verb} a year for every ₹100 of capital it uses "
                         f"(ROCE {roce:.0f}%{basis}) — {v}.", concern)
 
 
