@@ -216,6 +216,7 @@ def _assemble_result(question: str, payload: dict, retrieved: list[RetrievedChun
 
     chunk_by_id = {rc.chunk.chunk_id: rc.chunk for rc in retrieved}
     claims: list[Claim] = []
+    seen_texts: set[str] = set()
     for raw_claim in raw_claims:
         if not isinstance(raw_claim, dict):
             continue
@@ -258,6 +259,15 @@ def _assemble_result(question: str, payload: dict, retrieved: list[RetrievedChun
         # legitimate arithmetic (summing/annualizing source numbers).
         if kind in (FACT, OPINION) and not numbers_grounded(text, cited_texts):
             kind = UNVERIFIED
+        # WHY (Ask-tab + annual-report-reader quality): a model can restate the SAME fact more than
+        # once (it appears in two retrieved chunks), and every duplicate rendered as its own line
+        # reads as broken and repetitive to a non-expert. Keep the FIRST valid occurrence of each
+        # claim and drop later verbatim (case/whitespace-insensitive) repeats. Done AFTER citation
+        # resolution so a duplicate is only suppressed once a genuine, citable claim already stands.
+        norm_text = " ".join(text.lower().split())
+        if norm_text in seen_texts:
+            continue
+        seen_texts.add(norm_text)
         claims.append(Claim(text=text, citations=tuple(citations), kind=kind))
 
     if not claims:

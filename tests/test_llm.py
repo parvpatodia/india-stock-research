@@ -75,6 +75,25 @@ def test_citation_locator_carries_source_provenance_for_freshness():
     assert res.claims[0].citations[0].locator.startswith("Reuters")   # not an opaque chunk id
 
 
+def test_answer_drops_verbatim_duplicate_claims():
+    # WHY (Ask-tab + annual-report-reader quality): a model can restate the SAME fact more than once
+    # (it appears in two retrieved chunks), and every duplicate rendered as its own line reads as
+    # broken and repetitive to a non-expert. The FIRST valid occurrence is kept; a later verbatim
+    # (case/whitespace-insensitive) repeat is dropped; genuinely distinct claims are untouched.
+    reg = SourceRegistry([Source("news_google", "Google News", CredibilityTier.ANALYST)])
+    store = DocumentStore(registry=reg)
+    store.add_document("news_google", "Reliance Q3 profit rose 12 percent on refining margins.")
+    payload = ('{"abstain": false, "claims": ['
+               '{"text": "Reliance Q3 profit rose 12 percent.", "chunk_ids": ["news_google#0"], "kind": "opinion"},'
+               '{"text": "  reliance q3 profit ROSE 12 percent. ", "chunk_ids": ["news_google#0"], "kind": "opinion"},'
+               '{"text": "Refining margins drove the rise.", "chunk_ids": ["news_google#0"], "kind": "opinion"}]}')
+    res = GroundedAnalyst(client=FakeClient(payload)).answer("Reliance news", store, reg)
+    texts = [c.text for c in res.claims]
+    assert len(texts) == 2                                       # the case/space-different repeat dropped
+    assert "Reliance Q3 profit rose 12 percent." in texts        # first occurrence kept verbatim
+    assert "Refining margins drove the rise." in texts           # a distinct claim survives
+
+
 def test_answer_uses_the_retrieval_hint_to_surface_company_news():
     # WHY (real money, Ask-tab answer quality): a natural question like "what is the recent news"
     # shares NO words with a specific headline ("Reliance Q3 profit rises..."), so TF-IDF scored the
