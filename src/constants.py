@@ -23,9 +23,10 @@ DEFAULT_HISTORY_PERIOD = "1y"
 CONCENTRATION_TOP_HOLDING_WARN = 0.25  # one name > 25% of the book
 CONCENTRATION_HHI_WARN = 0.20          # Herfindahl index above this reads as concentrated
 
-# Promoter pledge above this % of promoter holding reads as a serious red flag. ONE source of
-# truth: shared by the framework's promoter-pledge metric (analysis) and the Screener pledge
-# signal's severity wording (data), which must never drift apart on a real-money threshold.
+# Promoter pledge AT OR ABOVE this % of promoter holding reads as a serious red flag. ONE source of
+# truth: shared by the framework's promoter-pledge metric (analysis, >=) and the Screener pledge
+# signal's severity wording (data, >=), which must never drift apart on a real-money threshold --
+# so BOTH use >= this value (they previously used > vs >=, contradicting each other at the boundary).
 PROMOTER_PLEDGE_HIGH_PCT = 25.0
 
 # LLM research layer: model/provider is configured via LLM_MODEL (see src/llm/client.py).

@@ -89,15 +89,22 @@ def test_promoter_pledge():
 
 def test_pledge_threshold_is_the_single_shared_constant():
     # WHY (one source of truth, real money): the "serious pledge" threshold was duplicated as
-    # literals in framework and screener_source. Both now derive from constants -- guard against a
-    # future re-duplication that could let the framework metric and the Screener signal wording
-    # disagree on a real-money red-flag threshold.
+    # literals in framework and screener_source. Both derive from the constant now -- but they must
+    # also AGREE at the boundary. The framework used `>` (watch AT the threshold) while the Screener
+    # signal a parent reads used `>=` (serious AT the threshold), so at EXACTLY the threshold the
+    # verdict metric and the wording CONTRADICTED each other on a top-tier red flag. Both treat the
+    # threshold itself as the SERIOUS tier now (the conservative direction, matching what the parent
+    # already sees from the Screener side).
     from src.analysis import framework
     from src.constants import PROMOTER_PLEDGE_HIGH_PCT
+    from src.data.screener_source import promoter_pledge_point
     assert framework._PLEDGE_HIGH is PROMOTER_PLEDGE_HIGH_PCT
-    # the framework metric flags "high" exactly above the shared threshold, "watch" at/below it
     assert promoter_pledge(PROMOTER_PLEDGE_HIGH_PCT + 1).verdict == "high"
     assert promoter_pledge(PROMOTER_PLEDGE_HIGH_PCT - 1).verdict == "watch"
+    # at EXACTLY the shared threshold, the framework metric and the Screener wording must agree:
+    assert promoter_pledge(PROMOTER_PLEDGE_HIGH_PCT).verdict == "high"
+    assert promoter_pledge(PROMOTER_PLEDGE_HIGH_PCT).concern is True
+    assert "serious red flag" in promoter_pledge_point(PROMOTER_PLEDGE_HIGH_PCT)
 
 
 def test_assemble_verdict_constructive_high_confidence():

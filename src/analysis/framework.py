@@ -31,7 +31,7 @@ _OCF_WEAK = 0.50        # below 50% = a quality-of-earnings concern
 _DE_HEALTHY = 0.50      # debt/equity below this is comfortable
 _DE_STRETCHED = 1.00    # above this is stretched
 _COVERAGE_MIN = 3.0     # interest coverage (EBIT/interest) below this is a concern
-_PLEDGE_HIGH = PROMOTER_PLEDGE_HIGH_PCT  # promoter pledge above this % is a serious red flag
+_PLEDGE_HIGH = PROMOTER_PLEDGE_HIGH_PCT  # promoter pledge AT OR ABOVE this % is a serious red flag
 _MIN_SIGNALS_FOR_STRONG = 2  # "strong" needs >=2 verified quality dimensions, not one lucky one
 
 # WHY (sector-aware analysis, live-verified 2026-07-09): real-estate developers commonly carry
@@ -193,7 +193,11 @@ def promoter_pledge(pledge_pct: float | None) -> MetricResult:
         return _unknown(name, "promoter pledge percentage unavailable.")
     if pledge_pct <= 0:
         return MetricResult(name, True, "none", "no promoter pledging.", concern=False)
-    if pledge_pct > _PLEDGE_HIGH:
+    # WHY >= (not >): the Screener pledge signal a parent reads uses >= this shared threshold, so
+    # the verdict metric must too, or at EXACTLY the threshold the metric would read "watch (not a
+    # concern)" while the Screener wording reads "serious red flag" -- a contradiction on a top-tier
+    # red flag. >= is also the conservative direction for a real-money red flag.
+    if pledge_pct >= _PLEDGE_HIGH:
         return MetricResult(name, True, "high",
                             f"{pledge_pct:.0f}% of promoter holding is pledged; a serious "
                             "red flag.", concern=True)
