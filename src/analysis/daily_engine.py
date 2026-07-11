@@ -16,6 +16,19 @@ from .suggestions import Candidate, rank_picks
 TODAY_HEADER = ["date", "symbol", "stance", "score", "reason"]
 
 
+def _first_sentence(text: str) -> str:
+    """The core first sentence of an insight, for the compact daily-shortlist 'reason' bullet.
+
+    WHY (real money, shortlist readability): report.insights[0] can be MULTI-sentence -- the Price
+    insight appends a de-rating-trap caveat for a cheap read -- which is right for the detailed
+    Research view but turns a scannable "SYM (stance) — reason" bullet into a ~76-word paragraph. Keep
+    the core first sentence here; the full insight, caveats and all, still shows on the Research tab.
+    Splits on a period FOLLOWED BY A SPACE so a decimal (0.84) or a ratio never triggers a false break;
+    a single-sentence insight (no ". ") is returned whole."""
+    i = text.find(". ")
+    return text[: i + 1] if i != -1 else text
+
+
 def candidate_from_report(symbol: str, report, held_value: float, total_value: float,
                           cap_pct: float) -> Candidate:
     from ..research.report import QualityTier, ValuationTier
@@ -29,7 +42,7 @@ def candidate_from_report(symbol: str, report, held_value: float, total_value: f
         has_room=sizing.headroom > 0,
         trend_improving=report.trend_improving,   # structured signal, not parsed from prose
         strength=verdict_strength(v),   # orders names within the same flag band by conviction
-        reason=(report.insights[0] if report.insights else ""),
+        reason=(_first_sentence(report.insights[0]) if report.insights else ""),
     )
 
 

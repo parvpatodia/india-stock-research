@@ -63,6 +63,23 @@ def test_refresh_force_recomputes_even_when_fresh():
     assert rows[0]["symbol"] == "NEW"
 
 
+def test_candidate_reason_is_the_first_sentence_not_a_paragraph():
+    # WHY (real money, shortlist readability): the daily "Today" shortlist a parent scans shows one
+    # SYM (stance) — reason bullet per name. reason = report.insights[0], which can be MULTI-sentence
+    # -- the Price insight now appends a de-rating-trap caveat for a cheap read (right for the detailed
+    # Research view) that turned the bullet into a ~76-word paragraph. Keep the compact list scannable:
+    # the reason is the core FIRST sentence; the full insight (caveats and all) still shows in Research.
+    v = Verdict(ValuationTier.CHEAP, QualityTier.STRONG, Leaning.CONSTRUCTIVE, Confidence.MEDIUM)
+    long_insight = ("Price: you pay about ₹15 for every ₹1 of yearly profit (P/E 15) — cheaper than "
+                    "usual versus its own history (about 50% of its normal). A below-usual multiple "
+                    "is a cue to research WHY, not a bargain on its own.")
+    rep = Report(company="X", verdict=v, insights=(long_insight,))
+    c = candidate_from_report("X", rep, held_value=0.0, total_value=100.0, cap_pct=0.25)
+    assert "cheaper than usual" in c.reason               # the core 'why' is kept
+    assert c.reason.endswith("of its normal).")           # ...just the first sentence
+    assert "research WHY" not in c.reason                 # the trailing caveat is dropped for the bullet
+
+
 def test_candidate_from_report_maps_signals():
     v = Verdict(ValuationTier.CHEAP, QualityTier.STRONG, Leaning.CONSTRUCTIVE, Confidence.MEDIUM)
     rep = Report(company="BLS", verdict=v, trend_improving=True,
