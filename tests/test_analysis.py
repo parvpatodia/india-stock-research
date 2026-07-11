@@ -112,7 +112,11 @@ def test_zero_cost_lot_pnl_pct_is_undefined_not_a_misleading_zero():
     a = analyze_portfolio(holdings, {"A": 50.0})
     assert a.positions[0].pnl_pct is None            # undefined percent, not a misleading 0.0
     assert a.positions[0].pnl_abs == 500.0           # the actual rupee gain is correct
-    assert a.total_pnl_pct == 0.0                    # portfolio-level guard still prevents div-by-zero
+    # the WHOLE-book percent is undefined too when total cost is 0 (all zero-cost lots): a portfolio
+    # "0.0%" reads as break-even and HIDES the gain, exactly what the per-position guard prevents --
+    # so the total must be None as well, not a misleading 0.0. total_pnl_abs still carries the gain.
+    assert a.total_pnl_pct is None
+    assert a.total_pnl_abs == 500.0                   # the real rupee gain is still correct
 
 
 def test_sector_concentration_note_flags_a_dominant_sector():

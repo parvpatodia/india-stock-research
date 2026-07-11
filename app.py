@@ -806,8 +806,11 @@ with tab_portfolio:
     m[0].metric("Invested", money(analysis.total_invested))
     m[1].metric("Market value", money(analysis.total_value))
     m2 = st.columns(2)
+    # No percentage delta (not "+0.00%") when total cost is 0 -- an all-zero-cost book is all gain,
+    # so its percent return is undefined; the rupee P&L above still carries it (mirrors pnl_pct None).
+    _tpct = analysis.total_pnl_pct
     m2[0].metric("Profit / loss", money(analysis.total_pnl_abs),
-                 f"{analysis.total_pnl_pct:+.2f}%", help=explain("P&L"))
+                 f"{_tpct:+.2f}%" if _tpct is not None else None, help=explain("P&L"))
     m2[1].metric("Holdings priced", f"{len(analysis.positions)} / {distinct_holding_symbols}")
 
     if analysis.missing_symbols:

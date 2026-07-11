@@ -61,5 +61,10 @@ class PortfolioAnalysis:
         return self.total_value - self.total_invested
 
     @property
-    def total_pnl_pct(self) -> float:
-        return (self.total_pnl_abs / self.total_invested * 100.0) if self.total_invested else 0.0
+    def total_pnl_pct(self) -> float | None:
+        # WHY None (not 0.0) when total cost is 0 (real money, honesty; mirrors PositionAnalysis.
+        # pnl_pct): an all-zero-cost book (only bonus/IPO lots, or blank/0 cost cells) is ALL gain,
+        # so its PERCENT return is UNDEFINED -- a portfolio "0.0%" reads as break-even and HIDES the
+        # gain, exactly the misread the per-position guard prevents. total_pnl_abs still carries the
+        # real rupee gain; the caller shows the metric without a percentage delta.
+        return (self.total_pnl_abs / self.total_invested * 100.0) if self.total_invested else None
