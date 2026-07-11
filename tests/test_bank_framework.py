@@ -8,7 +8,7 @@ from src.analysis.bank_framework import (
 from src.analysis.framework import REAL_ESTATE_LEVERAGE_CAVEAT, valuation_vs_history
 from src.analysis.sizing import Stance, stance_from_verdict
 from src.pipeline import build_company_report
-from src.research.report import Confidence, QualityTier
+from src.research.report import Confidence, Leaning, QualityTier
 from src.research.verification import SourcedValue
 
 
@@ -19,6 +19,28 @@ def test_roa_tiers():
     assert return_on_assets(70, 10000).verdict == "mixed"     # 0.7%
     assert return_on_assets(None, 10000).known is False
     assert return_on_assets(120, 0).known is False
+
+
+def test_roa_loss_is_a_severe_concern_not_merely_weak():
+    # WHY (real money; mirrors framework.earnings_quality's negative-OCF red flag): a NEGATIVE ROA
+    # means the bank posted a NET LOSS, not a sub-par positive return. ROA is a bank's SINGLE quality
+    # lens, so lumping a loss into the same "weak" band as a thin-but-profitable bank reaches only
+    # MIXED quality -> a suggestible NEUTRAL. A loss-making lender must read as a severe concern.
+    r = return_on_assets(-200, 10000)                    # ROA -2.0% (a net loss)
+    assert r.verdict == "loss"
+    assert r.concern is True and r.severe is True
+    assert "loss" in r.detail.lower()
+
+
+def test_loss_making_bank_reads_weak_and_is_never_a_suggestible_neutral():
+    # A bank losing money must not be surfaced for research just because its price looks cheap. The
+    # lone SEVERE ROA loss drags quality to WEAK -> CAUTIOUS -> UNFAVORABLE, excluded from the daily
+    # suggestions and allocation (the same protection non-banks get from the negative-OCF fix).
+    v = assemble_bank_verdict(valuation_vs_history(15, 25),           # cheap valuation
+                              return_on_assets(-200, 10000))          # ROA -2.0% (loss)
+    assert v.quality == QualityTier.WEAK                              # severe loss -> WEAK, not MIXED
+    assert v.leaning == Leaning.CAUTIOUS                              # leans unfavorable despite cheap
+    assert stance_from_verdict(v) == Stance.UNFAVORABLE               # -> excluded from suggestions
 
 
 def test_bank_verdict_quality_from_roa_and_carries_caveat():

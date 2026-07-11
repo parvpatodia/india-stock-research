@@ -40,6 +40,19 @@ def return_on_assets(net_profit: float | None, total_assets: float | None,
     # never land in different bands for a bank that grew its balance sheet. Falls back to closing.
     denom, averaged = _avg_denominator(total_assets, prior_total_assets)
     roa = net_profit / denom * 100.0
+    basis = ", on average assets" if averaged else ""
+    # WHY (real money, severity; mirrors framework.earnings_quality's negative-OCF red flag): a
+    # NEGATIVE ROA means the bank posted a NET LOSS, not merely a sub-par positive return. ROA is a
+    # bank's SINGLE quality lens, so without singling out a loss it lands in the same "weak" band as a
+    # thin-but-profitable bank and, being one concern, reaches only MIXED quality -> a NEUTRAL stance
+    # that is ELIGIBLE for the daily suggestions/allocation. A loss-making lender must never be
+    # suggestible: mark it severe so a lone ROA loss drags quality to WEAK -> CAUTIOUS -> UNFAVORABLE
+    # (see assemble_verdict's severe_concern path), the same protection non-banks get for negative OCF.
+    if roa < 0:
+        return MetricResult(name, True, "loss",
+                            f"ROA {roa:.2f}%{basis} — a NET LOSS: the bank lost money on its asset "
+                            "base this year, a serious concern for a lender.", concern=True,
+                            critical=True, severe=True)
     if roa >= _ROA_STRONG:
         verdict, concern = "strong", False
     elif roa < _ROA_WEAK:
@@ -48,7 +61,6 @@ def return_on_assets(net_profit: float | None, total_assets: float | None,
         verdict, concern = "mixed", False
     # positive only for an affirmatively strong ROA: a "mixed" (0.5-1.0%) ROA is concern-free but
     # NOT a strength, so as a bank's single quality lens it must not by itself reach a STRONG verdict.
-    basis = ", on average assets" if averaged else ""
     return MetricResult(name, True, verdict, f"ROA {roa:.2f}% ({verdict} for a lender){basis}.",
                         concern, critical=True, positive=(verdict == "strong"))
 
