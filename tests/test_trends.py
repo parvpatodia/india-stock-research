@@ -377,6 +377,21 @@ def test_earnings_volatility_flags_a_real_cyclical_swing():
     assert "swung" in point.lower() or "volatil" in point.lower()
 
 
+def test_earnings_volatility_names_the_pe_valuation_as_the_cyclical_trap():
+    # WHY (real money, margin-of-safety / the cyclical P/E value trap): the caveat already warned a
+    # single year's ROE/margin can mislead for a cyclical, but it OMITTED the P/E -- yet the valuation
+    # is computed from the SAME latest-year earnings, so a LOW P/E on a cyclical at PEAK earnings reads
+    # "cheap" while actually being the classic value trap (earnings about to normalize DOWN), the
+    # single most important cyclical mistake a non-expert makes. The caveat must name the P/E, not
+    # just ROE/margin, and explain the inverse P/E-vs-profit relationship in both directions.
+    profit = {2023: 4142 * CR, 2024: 8892 * CR, 2025: 3498 * CR}    # real JSW Steel cyclical swing
+    point = earnings_volatility_point(profit)
+    assert point is not None
+    assert "p/e" in point.lower()                                   # valuation named, not just ROE/margin
+    assert "trap" in point.lower() and "peak" in point.lower()      # the low-P/E-at-peak trap
+    assert "mid-cycle" in point.lower()                             # the corrective: normalize earnings
+
+
 def test_earnings_volatility_silent_for_a_smooth_grower():
     # Live-verified against real TCS data: consistent ~1-9%/yr growth, no cyclical swing.
     profit = {2023: 42225 * CR, 2024: 46004 * CR, 2025: 48675 * CR, 2026: 49332 * CR}

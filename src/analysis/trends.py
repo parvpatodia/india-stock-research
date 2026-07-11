@@ -280,10 +280,20 @@ def earnings_volatility_point(profit_series: dict[int, float]) -> str | None:
                 "the multi-year trend, not just the latest year.")
     if swing < _VOLATILITY_SWING:
         return None
+    # WHY name the P/E, not just ROE/margin (real money, THE cyclical value trap): the P/E-based
+    # valuation is computed from the SAME latest-year earnings as ROE/margin, so it is distorted the
+    # same way -- and for a cyclical the P/E moves INVERSELY to profits, so a LOW P/E coincides with
+    # PEAK earnings (reads "cheap" but is the classic value trap: earnings about to normalize down),
+    # a HIGH P/E with a trough. Omitting valuation left the single most important cyclical mistake a
+    # non-expert makes uncaveated. State it in both directions and point at mid-cycle (normalized)
+    # earnings as the corrective.
     return (f"Profit has swung sharply year to year (a {swing:.0f}-percentage-point range in "
             f"annual growth over the last {n_years} years) — common in cyclical or "
-            f"project-based businesses. A single year's ROE/margin may not represent its "
-            f"long-term earning power; weigh the multi-year trend, not just the latest year.")
+            "project-based businesses. A single year's ROE, margin, or P/E may not represent "
+            "long-term earning power: for a cyclical the P/E moves opposite to profits, so a LOW "
+            "P/E can reflect peak earnings that won't last (a value trap) and a HIGH one a "
+            "temporary trough — weigh valuation and returns against mid-cycle earnings, not just "
+            "the latest year.")
 
 
 def revenue_volatility_point(revenue_series: dict[int, float]) -> str | None:
