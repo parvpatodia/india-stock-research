@@ -249,6 +249,35 @@ def test_promoter_holding_trend_point_roughly_steady_below_threshold():
     assert point is not None and "steady" in point.lower()
 
 
+def test_promoter_holding_trend_point_surfaces_an_intra_period_selldown_and_recovery():
+    # WHY (real money, promoter-behavior rigor; mirrors leverage_trend_point's spike detection): an
+    # oldest-vs-latest read hides a promoter stake reduction that RESOLVED. A promoter holding of
+    # 50% -> 30% -> 50% (quarterly shareholding data has many points, so a middle exists) reads
+    # "steady" on the endpoints, silently erasing a real temporary sell-down a parent asking "has the
+    # promoter been selling?" needs to know about. Surface the materially-lower intra-period trough
+    # (more than the same steady band below BOTH endpoints) so a promoter exit-and-return is never
+    # averaged away -- the direct analogue of the leverage-spike disclosure already built.
+    point = promoter_holding_trend_point({"Mar 2022": 50.0, "Mar 2023": 30.0, "Mar 2024": 50.0})
+    assert point is not None
+    assert "steady" in point.lower()                    # the endpoints ARE steady...
+    assert "dipped to 30.0% in Mar 2023" in point        # ...but the intra-period sell-down is surfaced
+    assert "not cross-verified" in point.lower()
+
+
+def test_promoter_holding_trend_point_dip_also_shown_when_the_endpoints_moved():
+    # A trough below BOTH endpoints is surfaced regardless of the net direction (here a net increase).
+    point = promoter_holding_trend_point({"Mar 2022": 45.0, "Mar 2023": 30.0, "Mar 2024": 52.0})
+    assert point is not None and "increased" in point
+    assert "dipped to 30.0% in Mar 2023" in point
+
+
+def test_promoter_holding_trend_point_ignores_a_minor_intra_period_wobble():
+    # A sub-band intra-period wiggle is routine quarterly noise, not a sell-down -> no dip clause
+    # (uses the SAME steady band as the endpoint read, so noise is treated consistently).
+    point = promoter_holding_trend_point({"Mar 2022": 50.0, "Jun 2022": 49.8, "Mar 2024": 50.1})
+    assert point is not None and "dipped" not in point.lower()
+
+
 def test_promoter_holding_trend_point_none_when_insufficient_data():
     assert promoter_holding_trend_point({}) is None
     assert promoter_holding_trend_point({"Mar 2024": 50.0}) is None   # need >=2 points

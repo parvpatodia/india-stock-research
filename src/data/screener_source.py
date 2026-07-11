@@ -322,9 +322,21 @@ def promoter_holding_trend_point(series: dict[str, float]) -> str | None:
         periods = list(series.items())
     (first_label, first_val), (last_label, last_val) = periods[0], periods[-1]
     delta = last_val - first_val
+    # WHY (real money, promoter-behavior rigor; mirrors leverage_trend_point's spike detection): an
+    # oldest-vs-latest read hides a promoter stake reduction that RESOLVED -- 50% -> 30% -> 50% reads
+    # "steady" on the endpoints, erasing a real temporary sell-down a parent asking "has the promoter
+    # been selling?" needs to know. Surface a materially-lower intra-period trough (a MIDDLE period
+    # more than the steady band below BOTH endpoints), reusing the same noise band the endpoint read
+    # uses, so a promoter exit-and-return is never silently averaged away.
+    middle = periods[1:-1]
+    dip = ""
+    if middle:
+        trough_label, trough_val = min(middle, key=lambda lv: lv[1])
+        if trough_val < min(first_val, last_val) - _HOLDING_STEADY_BAND:
+            dip = f", though it dipped to {trough_val:.1f}% in {trough_label} in between"
     if abs(delta) < _HOLDING_STEADY_BAND:
         return (f"Promoter holding has stayed roughly steady near {last_val:.1f}% "
-                f"({first_label} to {last_label}; not cross-verified, Screener only).")
+                f"({first_label} to {last_label}{dip}; not cross-verified, Screener only).")
     if delta > 0:
         read = ("promoters adding to their stake is often read as a positive signal, though it "
                 "can also follow a preferential issue or warrant conversion")
@@ -337,7 +349,7 @@ def promoter_holding_trend_point(series: dict[str, float]) -> str | None:
                 "or dilution; check exchange filings or recent news for the actual reason")
     direction = "increased" if delta > 0 else "decreased"
     return (f"Promoter holding has {direction} from {first_val:.1f}% ({first_label}) to "
-            f"{last_val:.1f}% ({last_label}); {read} (not cross-verified, Screener only).")
+            f"{last_val:.1f}% ({last_label}){dip}; {read} (not cross-verified, Screener only).")
 
 
 # Below this many days a year-to-year move reads as ordinary noise, not a genuine multi-year
