@@ -39,3 +39,23 @@ def sip_future_value(monthly: float, annual_return_pct: float, years: int) -> SI
         monthly=monthly, years=years, annual_return_pct=annual_return_pct,
         invested=float(invested), projected_value=projected,
     )
+
+
+# India's rough long-run CPI average. An ASSUMPTION for real-value context (the caller discloses
+# it), never a prediction -- real inflation varies year to year.
+DEFAULT_INFLATION_PCT = 6.0
+
+
+def real_value(nominal: float, years: int,
+               inflation_pct: float = DEFAULT_INFLATION_PCT) -> float:
+    """Purchasing power of a future NOMINAL amount expressed in TODAY's rupees, discounting at an
+    assumed annual inflation rate.
+
+    WHY (real money, honesty): a multi-decade SIP projects a large nominal corpus, but inflation
+    erodes what it buys -- ₹1 crore in 30 years does not buy what ₹1 crore buys today. Showing the
+    real value stops a non-expert planning for retirement from over-reading the bare nominal number
+    as its actual worth. Deterministic arithmetic on a disclosed assumption, not a forecast.
+    """
+    if years <= 0 or inflation_pct <= 0:
+        return float(nominal)
+    return nominal / ((1 + inflation_pct / 100.0) ** years)

@@ -1,4 +1,22 @@
-from src.sip import sip_future_value
+from src.sip import DEFAULT_INFLATION_PCT, real_value, sip_future_value
+
+
+def test_real_value_discounts_a_future_corpus_to_todays_money():
+    # WHY (real money, honesty): a multi-decade SIP projects a large NOMINAL corpus, but inflation
+    # erodes what it buys. ₹1 crore in 30 years at ~6%/yr inflation is worth ~₹17 lakh in today's
+    # money (1e7 / 1.06^30 = ~1.74e6) -- a non-expert must not read the bare nominal as its real worth.
+    r = real_value(10_000_000, years=30, inflation_pct=6.0)
+    assert 1_600_000 < r < 1_850_000
+    assert r < 10_000_000                       # always less than nominal for positive inflation
+
+
+def test_real_value_is_nominal_at_zero_inflation_or_zero_years():
+    assert real_value(1_000_000, years=20, inflation_pct=0.0) == 1_000_000
+    assert real_value(500_000, years=0, inflation_pct=6.0) == 500_000
+
+
+def test_default_inflation_is_a_disclosed_constant():
+    assert DEFAULT_INFLATION_PCT == 6.0        # India's rough long-run CPI average (an assumption)
 
 
 def test_zero_return_projects_exactly_invested():

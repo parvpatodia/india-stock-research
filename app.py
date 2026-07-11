@@ -103,7 +103,7 @@ from src.research.library import (  # noqa: E402
     resolve_curated_library_paths,
 )
 from src.research.report import ReviewStatus, most_recent_by_symbol  # noqa: E402
-from src.sip import sip_future_value  # noqa: E402
+from src.sip import DEFAULT_INFLATION_PCT, real_value, sip_future_value  # noqa: E402
 from src.sources.adapters import HttpDocumentAdapter, ingest_documents  # noqa: E402
 from src.sources.registry import CredibilityTier, Source, SourceRegistry  # noqa: E402
 from src.data.amfi_provider import AMFIProvider  # noqa: E402
@@ -1400,6 +1400,14 @@ with st.expander("Mutual funds & SIP projection"):
     pcols[1].metric(f"Projected at {sip_return:.1f}%", money(proj.projected_value))
     pcols[2].metric("Projected gain", money(proj.gain))
     st.caption("Compound-interest arithmetic on a return YOU assumed. Not a prediction, not advice.")
+    # WHY (real money, honesty): the projected corpus is in FUTURE (nominal) rupees. Over a
+    # multi-decade SIP, inflation erodes what it actually buys, so a parent planning for retirement
+    # must see the real (today's-money) value, not just the large nominal figure.
+    real = real_value(proj.projected_value, int(sip_years))
+    st.caption(f"In today's money (assuming {DEFAULT_INFLATION_PCT:.0f}%/yr inflation, roughly "
+               f"India's long-run average) that {money(proj.projected_value)} is worth about "
+               f"{money(real)} — inflation erodes purchasing power over long horizons. An "
+               "assumption, not a prediction.")
     # WHY (honesty): the slider allows up to 30%/40 years, which compounds into an absurd,
     # misleading corpus if taken literally (a real risk for a non-expert reading a bare number).
     # Ground the assumption against SENSEX's own real, live-computed long-term price return, not
