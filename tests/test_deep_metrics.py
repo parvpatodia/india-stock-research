@@ -21,6 +21,31 @@ def test_roe_bands():
     assert return_on_equity(5 * CR, 100 * CR).concern is True
 
 
+def test_return_ratios_use_average_denominator_when_the_prior_year_is_available():
+    # WHY (CA-level rigor): profit is EARNED OVER the year, so the textbook denominator for a
+    # return ratio is the AVERAGE of opening and closing capital, not the closing snapshot. Using
+    # closing understates the ratio for a company that grew equity/assets during the year (retained
+    # earnings, a capital raise, or a merger -- e.g. a post-merger bank whose equity jumped). When
+    # the prior year is cross-verified, average it in; otherwise fall back safely to the point value.
+    roe = return_on_equity(20 * CR, 100 * CR, prior_equity=80 * CR)     # avg (100+80)/2 = 90
+    assert abs(20.0 / 90.0 * 100 - float(roe.detail.split("ROE ")[1].split("%")[0])) < 0.6
+    assert "average" in roe.detail.lower()                              # basis disclosed
+    roce = return_on_capital(30 * CR, 100 * CR, 50 * CR,
+                             prior_equity=80 * CR, prior_total_debt=40 * CR)  # avg CE (150+120)/2=135
+    assert "22%" in roce.detail                                          # 30/135 = 22%, not 20%
+    roa = return_on_assets(6 * CR, 100 * CR, prior_total_assets=80 * CR)  # avg (100+80)/2 = 90
+    assert "6.7" in roa.detail                                           # 6/90 = 6.7%, not 6.0%
+
+
+def test_return_ratios_fall_back_to_point_value_when_prior_is_missing_or_nonpositive():
+    # a missing or non-positive prior must NOT corrupt the average -- use the closing value alone,
+    # preserving the pre-existing behavior exactly.
+    assert "20%" in return_on_equity(20 * CR, 100 * CR).detail                       # no prior
+    assert "20%" in return_on_equity(20 * CR, 100 * CR, prior_equity=0).detail       # bad prior
+    assert "20%" in return_on_equity(20 * CR, 100 * CR, prior_equity=-5 * CR).detail
+    assert "average" not in return_on_equity(20 * CR, 100 * CR).detail.lower()
+
+
 def test_ratios_unknown_when_inputs_missing_or_nonpositive():
     assert return_on_equity(None, 100 * CR).known is False
     assert return_on_equity(10 * CR, 0).known is False                  # zero equity guarded

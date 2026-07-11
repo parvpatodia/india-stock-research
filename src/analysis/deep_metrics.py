@@ -44,41 +44,65 @@ def _rate(value: float, good: float, weak: float) -> tuple[str, bool]:
     return "moderate", False
 
 
-def return_on_equity(net_profit: float | None, equity: float | None) -> MetricResult:
+def _avg_denominator(closing: float, prior: float | None) -> tuple[float, bool]:
+    """The denominator for a return ratio: the AVERAGE of opening (prior) and closing balance when
+    a positive prior is available, else the closing value alone. WHY (CA-level rigor): profit is
+    earned OVER the year, so it should be measured against the capital deployed OVER the year --
+    averaging opening+closing. Using the closing snapshot understates the ratio for a company that
+    grew its equity/assets during the year (retained earnings, a capital raise, a merger). Falls
+    back to the closing value when no cross-verified prior year exists, so nothing is fabricated."""
+    if prior is not None and prior > 0:
+        return (closing + prior) / 2.0, True
+    return closing, False
+
+
+def return_on_equity(net_profit: float | None, equity: float | None,
+                     prior_equity: float | None = None) -> MetricResult:
     name = "Return on equity (ROE)"
     if net_profit is None or equity is None or equity <= 0:
         return _unknown(name, "net profit or (positive) shareholders' equity unavailable.")
-    roe = net_profit / equity * 100
+    denom, averaged = _avg_denominator(equity, prior_equity)
+    roe = net_profit / denom * 100
     v, concern = _rate(roe, _ROE_GOOD, _ROE_WEAK)
+    basis = ", on average equity" if averaged else ""
     return MetricResult(name, True, v,
                         f"For every ₹100 of owners' money in the business, it earns about "
-                        f"₹{roe:.0f} a year (ROE {roe:.0f}%) — {v}.", concern)
+                        f"₹{roe:.0f} a year (ROE {roe:.0f}%{basis}) — {v}.", concern)
 
 
 def return_on_capital(ebit: float | None, equity: float | None,
-                      total_debt: float | None) -> MetricResult:
+                      total_debt: float | None, prior_equity: float | None = None,
+                      prior_total_debt: float | None = None) -> MetricResult:
     name = "Return on capital employed (ROCE)"
     if ebit is None or equity is None or total_debt is None or (equity + total_debt) <= 0:
         return _unknown(name, "operating profit, equity, or debt unavailable.")
-    roce = ebit / (equity + total_debt) * 100
+    # average capital employed only when BOTH prior components are available (else point capital)
+    prior_capital = (prior_equity + prior_total_debt
+                     if prior_equity is not None and prior_total_debt is not None else None)
+    denom, averaged = _avg_denominator(equity + total_debt, prior_capital)
+    roce = ebit / denom * 100
     v, concern = _rate(roce, _ROCE_GOOD, _ROCE_WEAK)
+    basis = ", on average capital" if averaged else ""
     return MetricResult(name, True, v,
                         f"It earns about ₹{roce:.0f} a year for every ₹100 of capital it uses "
-                        f"(ROCE {roce:.0f}%) — {v}.", concern)
+                        f"(ROCE {roce:.0f}%{basis}) — {v}.", concern)
 
 
 def return_on_assets(net_profit: float | None, total_assets: float | None,
-                     good: float = _ROA_GOOD, weak: float = _ROA_WEAK) -> MetricResult:
+                     good: float = _ROA_GOOD, weak: float = _ROA_WEAK,
+                     prior_total_assets: float | None = None) -> MetricResult:
     name = "Return on assets (ROA)"
     if net_profit is None or total_assets is None or total_assets <= 0:
         return _unknown(name, "net profit or (positive) total assets unavailable.")
-    roa = net_profit / total_assets * 100
+    denom, averaged = _avg_denominator(total_assets, prior_total_assets)
+    roa = net_profit / denom * 100
     v, concern = _rate(roa, good, weak)
     # WHY: banks run on ~1% ROA by nature, so the caller passes bank bands; otherwise a healthy
     # bank would read "weak" here and contradict the (correct) bank verdict.
+    basis = ", on average assets" if averaged else ""
     return MetricResult(name, True, v,
                         f"For every ₹100 of everything it owns, it earns about ₹{roa:.1f} "
-                        f"(ROA {roa:.1f}%) — {v}.", concern)
+                        f"(ROA {roa:.1f}%{basis}) — {v}.", concern)
 
 
 def net_margin(net_profit: float | None, revenue: float | None) -> MetricResult:
@@ -118,13 +142,19 @@ def compute_deep_metrics(v: dict, is_bank: bool = False) -> list[MetricResult]:
     """Compute the ratio suite from a dict of cross-verified values (missing -> None). For banks,
     margins and asset turnover are skipped (bank P&L is interest income, not sales)."""
     from .bank_framework import _ROA_STRONG, _ROA_WEAK as _BANK_ROA_WEAK
+    # prior-year (opening) balances, if the caller supplied cross-verified ones, so the return
+    # ratios use the CA-standard average denominator (see _avg_denominator); absent -> point value.
+    p_eq, p_debt, p_assets = (v.get("prior_equity"), v.get("prior_total_debt"),
+                              v.get("prior_total_assets"))
     roa = (return_on_assets(v.get("net_profit"), v.get("total_assets"),
-                            good=_ROA_STRONG, weak=_BANK_ROA_WEAK) if is_bank
-           else return_on_assets(v.get("net_profit"), v.get("total_assets")))
-    metrics = [return_on_equity(v.get("net_profit"), v.get("equity")), roa]
+                            good=_ROA_STRONG, weak=_BANK_ROA_WEAK, prior_total_assets=p_assets)
+           if is_bank else
+           return_on_assets(v.get("net_profit"), v.get("total_assets"), prior_total_assets=p_assets))
+    metrics = [return_on_equity(v.get("net_profit"), v.get("equity"), prior_equity=p_eq), roa]
     if not is_bank:
         metrics += [
-            return_on_capital(v.get("ebit"), v.get("equity"), v.get("total_debt")),
+            return_on_capital(v.get("ebit"), v.get("equity"), v.get("total_debt"),
+                              prior_equity=p_eq, prior_total_debt=p_debt),
             net_margin(v.get("net_profit"), v.get("revenue")),
             operating_margin(v.get("ebit"), v.get("revenue")),
             asset_turnover(v.get("revenue"), v.get("total_assets")),

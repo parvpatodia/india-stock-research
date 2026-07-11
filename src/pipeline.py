@@ -31,7 +31,8 @@ def build_company_report(company: str,
                          is_bank: bool = False,
                          is_real_estate: bool = False,
                          trend_insights: tuple[str, ...] = (),
-                         trend_improving: bool = False) -> Report:
+                         trend_improving: bool = False,
+                         prior_year_figures: dict[str, float] | None = None) -> Report:
     # WHY: some cross-source figures legitimately differ by more than the 2% default because the
     # two sources compute them from different windows/bases, not because either is a parse/scale
     # error -- those figures get a wider band, while a genuinely gross disagreement still
@@ -85,6 +86,12 @@ def build_company_report(company: str,
     # WHY: use the computed median actually used for the valuation tier, not the (unfetched)
     # median_pe figure, so the price/valuation reason renders whenever valuation was assessed.
     tvals["median_pe"] = median
+    # Opening (prior-year) balances for the CA-standard average-denominator return ratios (ROE,
+    # ROCE, ROA). Only cross-verified prior-year values are passed; compute_deep_metrics falls
+    # back to the closing value for any that are absent, so nothing is fabricated.
+    for key in ("equity", "total_debt", "total_assets"):
+        if prior_year_figures and prior_year_figures.get(key) is not None:
+            tvals[f"prior_{key}"] = prior_year_figures[key]
     insights = plain_points(tvals, compute_deep_metrics(tvals, is_bank=is_bank),
                             is_real_estate=is_real_estate, is_bank=is_bank)
 
@@ -219,9 +226,22 @@ def build_report_for_symbol(symbol: str, sources: list[FigureSource],
                                              verified_series(series.get("net_profit", {})))
         if cash:
             trend_insights.append(cash)
+
+    # Opening (prior-year) balances for the CA-standard average-denominator return ratios (ROE,
+    # ROCE, ROA). Only the exact year before the latest cross-verified year counts, so we never
+    # average across a gap; absent -> the ratio falls back to the closing value. Computed for all
+    # sectors (banks use average total assets for ROA too).
+    def _opening_balance(figure: str) -> float | None:
+        vseries = verified_series(series.get(figure, {}))
+        if len(vseries) < 2:
+            return None
+        return vseries.get(max(vseries) - 1)
+
+    prior_year_figures = {k: _opening_balance(k) for k in ("equity", "total_debt", "total_assets")}
     return build_company_report(symbol, gather_aligned_figures(symbol, sources),
                                 claims=claims, median_pe=compute_median_pe(symbol),
                                 is_bank=category in ("bank", "nbfc"),
                                 is_real_estate=category == "real_estate",
                                 trend_insights=tuple(trend_insights),
-                                trend_improving=trend_improving(rev_series, prof_series))
+                                trend_improving=trend_improving(rev_series, prof_series),
+                                prior_year_figures=prior_year_figures)

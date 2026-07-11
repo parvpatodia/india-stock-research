@@ -371,3 +371,42 @@ def test_cash_conversion_quality_is_skipped_for_a_bank(monkeypatch):
     monkeypatch.setattr(bank_framework, "_yfinance_industry", lambda s: "Banks - Regional")
     report = pipeline.build_report_for_symbol("TESTBANK", _rising_leverage_sources())
     assert not any("cumulative operating cash flow" in i for i in report.insights)
+
+
+def _growing_equity_sources():
+    """Two agreeing sources: net profit 20cr on equity that GREW 80->100cr over two years, so
+    average equity (90) differs from closing equity (100) -- ROE 22.2% vs 20% on point."""
+    from src.data.figure_sources import FRAMEWORK_FIGURES, FigureSource
+
+    series = {
+        "net_profit": {2023: 18 * CR, 2024: 20 * CR},
+        "equity": {2023: 80 * CR, 2024: 100 * CR},
+        "total_assets": {2023: 160 * CR, 2024: 200 * CR},
+    }
+    scalar = {"net_profit": 20 * CR, "equity": 100 * CR, "total_assets": 200 * CR}
+
+    class _FakeSrc(FigureSource):
+        def __init__(self, sid):
+            self.source_id = sid
+
+        def figures(self, symbol):
+            return {n: scalar.get(n) for n in FRAMEWORK_FIGURES}
+
+        def figures_by_year(self, symbol):
+            return series
+
+    return [_FakeSrc("yfinance"), _FakeSrc("screener")]
+
+
+def test_return_ratios_use_average_equity_end_to_end(monkeypatch):
+    # WHY (CA-level rigor): the pipeline must feed the cross-verified prior-year balance into the
+    # ratio suite so ROE is measured on AVERAGE equity, not the closing snapshot -- otherwise a
+    # company that grew its equity during the year reads a too-low ROE.
+    import src.pipeline as pipeline
+    monkeypatch.setattr(pipeline, "compute_median_pe", lambda s: None, raising=False)
+    from src.analysis import bank_framework
+    monkeypatch.setattr(bank_framework, "_yfinance_industry", lambda s: "Auto Components")
+    report = pipeline.build_report_for_symbol("GROWCO", _growing_equity_sources())
+    roe_line = next((i for i in report.insights if "ROE" in i), "")
+    assert "on average equity" in roe_line       # averaged, not the closing snapshot
+    assert "ROE 22%" in roe_line                  # 20 / ((80+100)/2) = 22.2%, not 20%
