@@ -28,6 +28,34 @@ def test_litellm_client_availability_tracks_model():
     assert configured.model_name == "nvidia_nim/deepseek-ai/deepseek-v3.2"
 
 
+def test_whitespace_only_model_is_not_configured_and_a_real_model_is_trimmed():
+    # WHY (real money, Ask-tab reliability): env / .env / Streamlit TOML secrets very commonly carry a
+    # trailing space or newline (a quoted-with-space value, or a copy-paste). An unstripped LLM_MODEL
+    # made `available` read True for a WHITESPACE-ONLY value (then complete() errored on an empty
+    # model), and passed a trailing-space model string straight to litellm, failing every lookup --
+    # silently breaking the Ask tab even though a valid model was intended. Whitespace-only -> NOT
+    # configured (honest "no LLM" state); a real value is trimmed so the call works.
+    import os
+    os.environ.pop("LLM_MODEL", None)
+    assert LiteLLMClient(model="   ").available is False
+    assert LiteLLMClient(model="\n").available is False
+    assert LiteLLMClient(model="\t ").available is False
+    c = LiteLLMClient(model="  ollama/llama3.1  ")
+    assert c.available is True
+    assert c.model == "ollama/llama3.1"                # trimmed, not the whitespace-padded string
+    assert c.model_name == "ollama/llama3.1"
+
+
+def test_api_key_and_base_are_trimmed_and_blank_becomes_none():
+    # WHY: the same whitespace-in-config gotcha -- a trailing-newline API key fails auth and a padded
+    # api_base fails the request. Trim both; a whitespace-only value becomes None (absent), so litellm
+    # falls back to the provider's own env (e.g. NVIDIA_NIM_API_KEY) instead of sending blank creds.
+    c = LiteLLMClient(model="m", api_key="  sk-abc\n", api_base=" http://localhost:11434 ")
+    assert c.api_key == "sk-abc" and c.api_base == "http://localhost:11434"
+    c2 = LiteLLMClient(model="m", api_key="   ", api_base="\n")
+    assert c2.api_key is None and c2.api_base is None
+
+
 def _store_and_registry():
     reg = SourceRegistry([Source("amfi", "AMFI", CredibilityTier.PRIMARY)])
     store = DocumentStore(words_per_chunk=30, overlap=5, registry=reg)

@@ -16,6 +16,20 @@ import os
 from abc import ABC, abstractmethod
 
 
+def _clean(value: str | None) -> str | None:
+    """Trim a config string; a blank/whitespace-only value becomes None (treated as absent).
+
+    WHY (real money, Ask-tab reliability): env vars / .env / Streamlit TOML secrets very commonly
+    carry a trailing space or newline (a quoted-with-space value, or a copy-paste). Left unstripped,
+    a whitespace-only LLM_MODEL made `available` read True (then complete() errored on an empty
+    model), and a trailing-space model string was passed straight to litellm, failing every lookup --
+    silently breaking the Ask tab even though a valid model was intended. None-ing a blank value also
+    lets a padded/empty API key fall back to the provider's own env instead of sending blank creds.
+    """
+    v = (value or "").strip()
+    return v or None
+
+
 class LLMClient(ABC):
     @property
     @abstractmethod
@@ -42,9 +56,9 @@ class LiteLLMClient(LLMClient):
 
     def __init__(self, model: str | None = None, api_key: str | None = None,
                  api_base: str | None = None, temperature: float = 0.0):
-        self.model = model or os.environ.get("LLM_MODEL")
-        self.api_key = api_key or os.environ.get("LLM_API_KEY")
-        self.api_base = api_base or os.environ.get("LLM_API_BASE")
+        self.model = _clean(model or os.environ.get("LLM_MODEL"))
+        self.api_key = _clean(api_key or os.environ.get("LLM_API_KEY"))
+        self.api_base = _clean(api_base or os.environ.get("LLM_API_BASE"))
         self.temperature = temperature
 
     @property
