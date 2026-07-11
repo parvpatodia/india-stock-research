@@ -82,7 +82,7 @@ from src.portfolio.analysis import (  # noqa: E402
     sector_concentration_note,
     thin_risk_window_note,
 )
-from src.portfolio.loader import load_holdings  # noqa: E402
+from src.portfolio.loader import load_holdings, normalize_symbol  # noqa: E402
 from src.research.claims import ESTIMATE, FACT, OPINION  # noqa: E402
 from src.research.annual_report_reader import read_filing  # noqa: E402
 from src.research.grounded_analyst import GroundedAnalyst  # noqa: E402
@@ -941,7 +941,13 @@ with tab_research:
         ar_url = st.text_input("Annual report PDF URL (optional override)",
                                placeholder="blank = auto-fetch from NSE")
         if st.button("Research this symbol") and typed.strip():
-            _run_live(typed.strip().upper(), ar_url)
+            # WHY normalize (real money, workflow honesty): a parent often pastes a symbol in a
+            # non-bare format -- "NSE:INFY" (TradingView), "INFY-EQ" (NSE site), "INFY.NS" (Yahoo).
+            # Bare strip().upper() left the prefix/suffix on, so yfinance found nothing and the
+            # "symbol didn't resolve -- the exact ticker differs from the common name (PAGE->PAGEIND)"
+            # hint fired for a VALID symbol, misleading the parent into thinking INFY itself is wrong.
+            # normalize_symbol (already used for the uploaded portfolio, unit-tested) strips them.
+            _run_live(normalize_symbol(typed), ar_url)
 
     active = st.session_state.get("active_report")
     report = st.session_state.reports.get(active) if active else None
@@ -1371,7 +1377,9 @@ with tab_ask:
         sym_u = ""
         company = ""
         if ask_sym.strip():
-            sym_u = ask_sym.strip().upper()
+            # normalize the same way the Research tab and the uploaded portfolio do, so a pasted
+            # "NSE:INFY" / "INFY-EQ" / "INFY.NS" resolves instead of falsely reading as a bad ticker.
+            sym_u = normalize_symbol(ask_sym)
             # WHY: pass the RAW resolved name, never falling back to the bare symbol -- some
             # real NSE tickers are common English words (PAGE, IDEA, SAIL, RAIN), so searching
             # news for the bare ticker when the name can't be resolved pulls in unrelated results
