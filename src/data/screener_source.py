@@ -445,6 +445,16 @@ def other_income_share_point(series: dict[int, float]) -> str | None:
         return (f"Other income was actually a net expense in FY{year} (reducing profit before "
                 f"tax by about {abs(pct):.0f}%) rather than adding to it; the bulk of profit is "
                 "driven by the core operating business (not cross-verified, Screener only).")
+    # WHY (quality of earnings, honesty): when other income EXCEEDS profit before tax (share >
+    # 100%), the reported profit exists only because of it -- without other income the company would
+    # report a pre-tax LOSS. A bare ">100% came from other income" is a confusing figure that buries
+    # a serious flag (mirrors the negative-share fix at the other end of the ratio), so say it plainly.
+    if pct > 100:
+        return (f"In FY{year}, non-operating \"other income\" (investment gains, interest income, "
+                "or one-off items) was LARGER than the entire profit before tax -- without it the "
+                "company would have reported a pre-tax LOSS, so the reported profit depended "
+                "entirely on non-operating income. A serious quality-of-earnings concern; check how "
+                "repeatable that income is (not cross-verified, Screener only).")
     if pct >= _OTHER_INCOME_NOTABLE_PCT:
         return (f"{pct:.0f}% of FY{year}'s profit before tax came from non-operating \"other "
                 "income\" (investment gains, interest income, or one-off items) rather than the "

@@ -360,6 +360,20 @@ def test_other_income_share_point_does_not_flag_a_low_share():
     assert "worth checking" not in point.lower()
 
 
+def test_other_income_share_point_over_100pct_reads_as_a_pre_tax_loss_without_it():
+    # WHY (quality of earnings, honesty; mirrors the negative-share fix): when non-operating "other
+    # income" is LARGER than the entire profit before tax (share > 100%), the reported profit exists
+    # ONLY because of it -- without other income the company would report a pre-tax LOSS. Rendering a
+    # confusing ">100%" ("5000% of profit came from other income") buries a serious flag; state it
+    # plainly instead. Reachable: a tiny PBT propped up by large investment/interest income.
+    point = other_income_share_point({2024: 5000.0})       # other income ~50x a tiny PBT
+    assert point is not None
+    assert "5000%" not in point                            # no confusing >100% figure
+    assert "pre-tax loss" in point.lower()
+    assert "FY2024" in point
+    assert "not cross-verified" in point.lower() or "screener only" in point.lower()
+
+
 def test_other_income_share_point_none_when_no_data():
     assert other_income_share_point({}) is None
 
