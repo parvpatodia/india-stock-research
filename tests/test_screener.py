@@ -63,6 +63,22 @@ FIXTURE = """
 CR = 1e7
 
 
+def test_screener_pe_and_yield_regex_ignore_a_missing_value_no_far_number_grab():
+    # WHY (real money, data quality / "never a fabricated number"): a loss-making company can show
+    # the "Stock P/E" label with no value (blank/dash), and a no-dividend company shows "Dividend
+    # Yield" with none. The old `Stock P/E.*?(number)` (non-greedy, DOTALL) then grabbed the NEXT
+    # number ANYWHERE after the label -- e.g. Book Value -- as the P/E, a fabricated figure that would
+    # render in the evidence table (single-source) and could even coincidentally cross-verify. Anchor
+    # on the value's own span so a label with no value yields nothing, not an unrelated field's number.
+    from src.data.screener_source import _DIV_YIELD_RE, _PE_RE
+    no_pe = "Stock P/E </span> <span> Book Value </span> <span> 1450 </span>"
+    assert _PE_RE.search(no_pe) is None                     # no value -> no match (not Book Value 1450)
+    assert _PE_RE.search("Stock P/E <span>24.5</span> Book Value <span>1450</span>").group(1) == "24.5"
+    no_dy = "Dividend Yield </span> <span> Face Value </span> <span> 10 </span>"
+    assert _DIV_YIELD_RE.search(no_dy) is None
+    assert _DIV_YIELD_RE.search("Dividend Yield <span>1.8</span>").group(1) == "1.8"
+
+
 def test_parse_screener_figures():
     figs = parse_screener_figures(FIXTURE)
     assert figs["current_pe"] == 20.5

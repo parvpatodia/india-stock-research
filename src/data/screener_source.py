@@ -19,8 +19,14 @@ from ..constants import PROMOTER_PLEDGE_HIGH_PCT
 from .figure_sources import FRAMEWORK_FIGURES, FigureSource
 
 _CRORE = 1e7
-_PE_RE = re.compile(r"Stock P/E.*?([\d,]+\.?\d+)", re.IGNORECASE | re.DOTALL)
-_DIV_YIELD_RE = re.compile(r"Dividend Yield.*?([\d,]+\.?\d+)", re.IGNORECASE | re.DOTALL)
+# WHY anchor on the value's own <span> (real money, data quality): Screener renders each top ratio
+# as "<label> <span ...>value</span>". A non-greedy ".*?(number)" instead grabbed the NEXT number
+# ANYWHERE after the label, so a loss-making company showing "Stock P/E" with NO value silently took
+# the following ratio (e.g. Book Value) as its P/E -- a fabricated figure. Requiring the number to
+# sit inside the span immediately after the label means a valueless label matches nothing, not an
+# unrelated field. \s* (which includes newlines) removes the need for DOTALL.
+_PE_RE = re.compile(r"Stock P/E\s*<span[^>]*>\s*([\d,]+\.?\d+)", re.IGNORECASE)
+_DIV_YIELD_RE = re.compile(r"Dividend Yield\s*<span[^>]*>\s*([\d,]+\.?\d+)", re.IGNORECASE)
 _YEAR_RE = re.compile(r"(\d{4})\s*$")
 _MONTH_YEAR_RE = re.compile(r"([A-Za-z]{3})\s+(\d{4})\s*$")
 
