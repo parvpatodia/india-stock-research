@@ -140,17 +140,28 @@ def _year_of(col) -> int | None:
 
 
 def _series_from_statement(df, candidates: list[str]) -> dict[int, float]:
-    """Build {fiscal_year: value} for the first matching row label across all period columns."""
+    """Build {fiscal_year: value} for the first candidate row that actually HAS data, across all
+    period columns.
+
+    WHY pick the first row with data, not the first row merely PRESENT (regression, real money,
+    same class as _latest_pair's synonym fallthrough): yfinance unions row labels across its
+    schema, so a company reporting a figure only under a later synonym (e.g. equity under "Common
+    Stock Equity") can still carry an all-NaN row for the first-listed label ("Stockholders
+    Equity"). Locking onto that present-but-empty row and stopping silently emptied the ENTIRE
+    year series -- and with it the cross-verified leverage/cash-conversion/volatility trends and
+    the average-denominator ROE/ROCE/ROA ratios that consume it -- even though the data sat under
+    the next synonym. _has_any_data skips empty candidate rows exactly as _latest()/_latest_pair()
+    already do."""
     out: dict[int, float] = {}
     if df is None or getattr(df, "empty", True):
         return out
-    for label in candidates:
-        if label in df.index:
-            for col, value in df.loc[label].items():
-                year, n = _year_of(col), _num(value)
-                if year is not None and n is not None and year not in out:
-                    out[year] = n
-            break
+    label = next((c for c in candidates if _has_any_data(df, c)), None)
+    if label is None:
+        return out
+    for col, value in df.loc[label].items():
+        year, n = _year_of(col), _num(value)
+        if year is not None and n is not None and year not in out:
+            out[year] = n
     return out
 
 

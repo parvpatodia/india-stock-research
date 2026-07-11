@@ -130,6 +130,39 @@ def test_ebit_uses_pretax_and_interest_from_the_same_fiscal_period(monkeypatch):
     assert figs["interest_expense"] == 100.0
 
 
+def test_year_series_falls_back_to_a_synonym_row_when_the_first_is_entirely_empty(monkeypatch):
+    # WHY (regression, same class as _latest_pair's synonym fallthrough, real money): the per-YEAR
+    # series builder (_series_from_statement) feeds the cross-verified multi-year trends (leverage,
+    # cash-conversion, volatility) and the average-denominator ROE/ROCE/ROA ratios. It locked onto
+    # the FIRST candidate label merely PRESENT in the statement and stopped -- even when that row
+    # was entirely NaN -- never trying the next synonym, unlike _latest()/_latest_pair(), which try
+    # every candidate and only give up when ALL are empty. yfinance unions row labels across its
+    # schema, so a company that reports equity only under "Common Stock Equity" can still carry an
+    # all-NaN "Stockholders Equity" row; the bug silently emptied its ENTIRE equity series, so its
+    # leverage trend and average-equity ROE would not compute at all despite the data being present
+    # under the synonym.
+    cols = [pd.Timestamp("2026-03-31"), pd.Timestamp("2025-03-31")]
+    balance = pd.DataFrame(
+        {cols[0]: [None, 1000.0], cols[1]: [None, 900.0]},
+        index=["Stockholders Equity", "Common Stock Equity"],
+    )
+
+    class _BalTicker:
+        info = {}
+        income_stmt = pd.DataFrame()
+        cashflow = pd.DataFrame()
+
+        def __init__(self, _sym):
+            self.balance_sheet = balance
+
+    fake_yf = type("_FakeYF", (), {"Ticker": staticmethod(lambda sym: _BalTicker(sym))})
+    monkeypatch.setitem(__import__("sys").modules, "yfinance", fake_yf)
+
+    series = YFinanceFigureSource().figures_by_year("X")
+
+    assert series.get("equity") == {2026: 1000.0, 2025: 900.0}
+
+
 def test_ebit_pairing_falls_back_to_a_synonym_row_when_the_first_is_entirely_empty(monkeypatch):
     # WHY (regression, found by adversarial review): the first EBIT fix locked onto the FIRST
     # candidate label present in the statement even if that row is entirely NaN, never trying
