@@ -203,6 +203,21 @@ def test_trend_points_empty_when_insufficient_history():
     assert trend_points({2022: 100}, {2022: 10}) == []           # too few years
 
 
+def test_trend_points_qualifies_an_absurd_low_base_cagr():
+    # WHY (real money, honesty): a cyclical/turnaround whose EARLIEST cross-verified year was a trough
+    # (tiny positive profit) shows an astronomical CAGR off that low base -- "growing 364% a year"
+    # reads as a bug and overstates a sustainable trend (no business compounds >100%/yr for years, and
+    # a genuine small-company hyper-grower still isn't sustaining that rate). Above 100%/yr, describe
+    # it qualitatively instead of quoting the absurd precise rate; the year-by-year swing caveat and
+    # the raw figures still convey the real picture. A NORMAL CAGR keeps its precise rate.
+    prof = {2021: 5 * CR, 2022: 50 * CR, 2023: 200 * CR, 2024: 500 * CR}       # trough -> ~364%/yr
+    rev = {2021: 1000 * CR, 2022: 1200 * CR, 2023: 1400 * CR, 2024: 1600 * CR}  # ~17%/yr, normal
+    joined = " ".join(trend_points(rev, prof))
+    assert "364% a year" not in joined                            # the absurd precise rate is gone
+    assert "low or one-off starting year" in joined               # qualified as a base effect instead
+    assert "17% a year" in joined                                 # a normal CAGR still shows its rate
+
+
 def test_limited_history_note_thresholds():
     # WHY (real money, rigor): fewer than the 3 years a trend needs is a SHORT track record. The
     # note fires for 1-2 years, is silent at >=3 (a real trend is available), and silent at 0

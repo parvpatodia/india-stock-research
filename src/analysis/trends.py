@@ -314,6 +314,29 @@ def limited_history_note(years: int) -> str | None:
             "strong or weak year with that in mind.")
 
 
+# A sustained (>=3yr) CAGR above this is not real compounding: no business grows >100%/yr for years,
+# and even a genuine small-company hyper-grower isn't sustaining that rate -- it reflects a low or
+# one-off starting year. Above it, quote the growth QUALITATIVELY, not as an absurd precise rate.
+_CAGR_BASE_EFFECT = 100.0
+
+
+def _track_record_line(subject: str, verb: str, rate: float, span: int, cross_verified: bool) -> str:
+    tail = " (cross-verified)" if cross_verified else ""
+    # WHY (real money, honesty): a >100%/yr multi-year CAGR off a low/one-off starting year --
+    # common in cyclical troughs and turnarounds -- printed as "growing 364% a year" reads as a bug
+    # and overstates a sustainable trend. Describe it qualitatively instead (mirrors the earnings-
+    # volatility fix that replaced a nonsensical computed % with words); the year-by-year swing
+    # caveat and the raw figures still convey the real picture. Only the extreme-GROWTH side is
+    # qualified -- an extreme negative rate is a genuine collapse, and "shrinking ~90% a year" is not
+    # misleading the way "growing 364% a year" is.
+    if rate > _CAGR_BASE_EFFECT:
+        return (f"Track record: the multi-year growth rate for {subject} is extremely high (well over "
+                f"100% a year over {span} years), which reflects a low or one-off starting year, not "
+                f"a sustainable trend -- weigh the year-by-year figures{tail}.")
+    return (f"Track record: {subject} {verb} been {_word(rate)} about {abs(rate):.0f}% a year over "
+            f"the last {span} years{tail}.")
+
+
 def trend_points(revenue_series: dict[int, float],
                  profit_series: dict[int, float]) -> list[str]:
     """Plain-language multi-year track-record points, from cross-verified yearly series."""
@@ -325,12 +348,10 @@ def trend_points(revenue_series: dict[int, float],
     # about 13% a year", never the double-negative "shrinking about -13% a year".
     if rev:
         rate, span = rev
-        points.append(f"Track record: sales have been {_word(rate)} about {abs(rate):.0f}% a year "
-                      f"over the last {span} years (cross-verified).")
+        points.append(_track_record_line("sales", "have", rate, span, cross_verified=True))
     if prof:
         rate, span = prof
-        points.append(f"Track record: profit has been {_word(rate)} about {abs(rate):.0f}% a year "
-                      f"over the last {span} years.")
+        points.append(_track_record_line("profit", "has", rate, span, cross_verified=False))
     # Margin direction compares the two growth rates over their COMMON window (see
     # margins_improving) so a revenue/profit year-coverage mismatch can't read two different eras
     # against each other. The per-series CAGR lines above keep each figure's own full window.
