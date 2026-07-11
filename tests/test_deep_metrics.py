@@ -36,6 +36,21 @@ def test_loss_making_ratios_say_loses_not_keeps_or_earns():
     assert "loses about ₹6.0" in roa and "earns about" not in roa
 
 
+def test_margins_over_100pct_flag_profit_exceeding_sales_rather_than_reading_strong():
+    # WHY (quality of earnings, honesty; cross-verified counterpart of the other-income>100% fix):
+    # when net profit (or the operating measure) EXCEEDS total sales the margin passes 100%, and
+    # "net margin 200% -- strong" misrepresents it: profit that large can't come from the core sales
+    # business, it's driven by other/one-off income. Reachable (a holding company whose income sits
+    # below 'sales', or a big one-off divestment gain). Read it plainly, never "strong".
+    nm = net_margin(200 * CR, 100 * CR)                   # net profit 2x sales
+    assert nm.verdict != "strong"
+    assert "larger than" in nm.detail.lower() and "sales" in nm.detail.lower()
+    assert "200%" in nm.detail                            # magnitude still shown for reference
+    om = operating_margin(150 * CR, 100 * CR)             # operating measure 1.5x sales
+    assert om.verdict != "strong"
+    assert "exceeded" in om.detail.lower()
+
+
 def test_profitable_ratios_still_say_keeps_and_earns():
     # Guard: the positive-value wording (and the numbers) are untouched.
     assert "keeps about ₹8 of final profit" in net_margin(80 * CR, 1000 * CR).detail

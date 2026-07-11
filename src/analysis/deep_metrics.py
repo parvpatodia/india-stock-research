@@ -109,6 +109,16 @@ def net_margin(net_profit: float | None, revenue: float | None) -> MetricResult:
     if net_profit is None or revenue is None or revenue <= 0:
         return _unknown(name, "net profit or (positive) revenue unavailable.")
     m = net_profit / revenue * 100
+    # WHY (quality of earnings, honesty): net profit LARGER than sales (margin > 100%) can't come
+    # from the core sales business; it's driven by other income (investment/interest) or one-off
+    # gains. "net margin 200% -- strong" misrepresents that, so flag it plainly (concern-free: it
+    # can be structural for a holding company, but the reader is told to check repeatability).
+    if m > 100:
+        return MetricResult(name, True, "unusual",
+                            f"Net profit was LARGER than total sales this year (net margin "
+                            f"{m:.0f}%), so this profit isn't coming from the core sales business "
+                            "-- it's driven by other income (investment/interest) or one-off gains; "
+                            "check how repeatable it is.", concern=False)
     v, concern = _rate(m, _NETMARGIN_GOOD, _NETMARGIN_WEAK)
     # A loss-making company keeps a NEGATIVE margin; "keeps about ₹-50 of profit" is a confusing
     # double negative for a non-expert -- say it LOSES money per ₹100 of sales instead.
@@ -126,6 +136,15 @@ def operating_margin(ebit: float | None, revenue: float | None) -> MetricResult:
     if ebit is None or revenue is None or revenue <= 0:
         return _unknown(name, "operating profit or (positive) revenue unavailable.")
     m = ebit / revenue * 100
+    # As with net margin: an operating measure LARGER than sales (> 100%) is inflated by
+    # non-operating income (this EBIT = PBT + interest, so it carries other income) or one-off
+    # items, not the core sales business. "operating margin 150% -- strong" would misrepresent it.
+    if m > 100:
+        return MetricResult(name, True, "unusual",
+                            f"Operating profit exceeded total sales this year (margin {m:.0f}%), so "
+                            "it's inflated by non-operating income (investment/interest) or one-off "
+                            "items rather than the core sales business; check how repeatable it is.",
+                            concern=False)
     v, concern = _rate(m, _OPMARGIN_GOOD, _OPMARGIN_WEAK)
     # A company with an operating LOSS has a negative operating margin; "₹-30 is left as operating
     # profit" reads as a confusing double negative -- say it loses money at the operating level.
