@@ -75,8 +75,16 @@ def return_on_capital(ebit: float | None, equity: float | None,
                       total_debt: float | None, prior_equity: float | None = None,
                       prior_total_debt: float | None = None) -> MetricResult:
     name = "Return on capital employed (ROCE)"
-    if ebit is None or equity is None or total_debt is None or (equity + total_debt) <= 0:
-        return _unknown(name, "operating profit, equity, or debt unavailable.")
+    # WHY require POSITIVE equity (real money, rigor): capital employed = equity + debt. When
+    # accumulated losses have driven net worth NEGATIVE (a distress signal), the negative equity
+    # shrinks the denominator and INFLATES ROCE, so a distressed company would read an artificial
+    # "strong" return on capital -- and feed a false affirmative strength into the verdict. ROE and
+    # leverage_health already withhold on non-positive equity; ROCE must too. Positive-equity ROCE
+    # is unchanged.
+    if (ebit is None or equity is None or total_debt is None
+            or equity <= 0 or (equity + total_debt) <= 0):
+        return _unknown(name, "operating profit, or positive equity and debt, unavailable "
+                              "(ROCE is not meaningful when net worth is negative).")
     # average capital employed only when BOTH prior components are available (else point capital)
     prior_capital = (prior_equity + prior_total_debt
                      if prior_equity is not None and prior_total_debt is not None else None)

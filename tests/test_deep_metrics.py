@@ -120,6 +120,18 @@ def test_ratios_unknown_when_inputs_missing_or_nonpositive():
     assert asset_turnover(10 * CR, 0).known is False
 
 
+def test_roce_withheld_for_negative_equity_not_a_misleading_strong():
+    # WHY (real money, rigor): capital employed = equity + debt. When accumulated losses have driven
+    # net worth NEGATIVE (a distress signal -- some telecoms, PSUs, turnarounds), the negative equity
+    # SHRINKS the denominator, inflating ROCE so a distressed company reads an artificial "strong".
+    # ROE and leverage_health already withhold on non-positive equity; ROCE must too, so a negative-
+    # net-worth company never shows a misleading strong return on capital (and never feeds a false
+    # affirmative strength into the verdict). Positive-equity ROCE is unchanged.
+    neg = return_on_capital(800 * CR, -1000 * CR, 5000 * CR)         # neg equity, big debt, +EBIT
+    assert neg.known is False and neg.verdict == "unknown"
+    assert return_on_capital(30 * CR, 100 * CR, 50 * CR).known is True   # positive equity: unchanged
+
+
 def test_roce_and_roa_and_margins_values():
     roce = return_on_capital(30 * CR, 100 * CR, 50 * CR)                 # 30/150 = 20%
     assert roce.known and "20%" in roce.detail and roce.verdict == "strong"
