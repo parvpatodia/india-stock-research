@@ -13,7 +13,7 @@ fit every NBFC segment (e.g. gold-loan/microfinance lenders typically run higher
 from __future__ import annotations
 
 from ..research.report import Verdict
-from .framework import MetricResult, assemble_verdict
+from .framework import MetricResult, _avg_denominator, assemble_verdict
 
 # ROA thresholds for Indian banks (a well-run bank earns ~1%+; a strained one is below 0.5%).
 _ROA_STRONG = 1.0
@@ -26,14 +26,18 @@ _BANK_CAVEAT = ("Bank/NBFC: asset quality (GNPA/NNPA) and capital adequacy (CRAR
                 "investor presentation and segment benchmarks before deciding.")
 
 
-def return_on_assets(net_profit: float | None,
-                     total_assets: float | None) -> MetricResult:
+def return_on_assets(net_profit: float | None, total_assets: float | None,
+                     prior_total_assets: float | None = None) -> MetricResult:
     name = "Return on assets (ROA)"
     # WHY: ROA is a lender's core quality dimension (critical); unknown -> confidence can't be HIGH.
     if net_profit is None or total_assets is None or total_assets <= 0:
         return MetricResult(name, False, "unknown", "net profit or total assets unavailable.",
                             critical=True)
-    roa = net_profit / total_assets * 100.0
+    # Average (opening+closing) assets when a cross-verified prior year exists, the SAME denominator
+    # rule the displayed ROA insight uses (deep_metrics), so the verdict's ROA and the shown ROA
+    # never land in different bands for a bank that grew its balance sheet. Falls back to closing.
+    denom, averaged = _avg_denominator(total_assets, prior_total_assets)
+    roa = net_profit / denom * 100.0
     if roa >= _ROA_STRONG:
         verdict, concern = "strong", False
     elif roa < _ROA_WEAK:
@@ -42,8 +46,9 @@ def return_on_assets(net_profit: float | None,
         verdict, concern = "mixed", False
     # positive only for an affirmatively strong ROA: a "mixed" (0.5-1.0%) ROA is concern-free but
     # NOT a strength, so as a bank's single quality lens it must not by itself reach a STRONG verdict.
-    return MetricResult(name, True, verdict, f"ROA {roa:.2f}% ({verdict} for a lender).", concern,
-                        critical=True, positive=(verdict == "strong"))
+    basis = ", on average assets" if averaged else ""
+    return MetricResult(name, True, verdict, f"ROA {roa:.2f}% ({verdict} for a lender){basis}.",
+                        concern, critical=True, positive=(verdict == "strong"))
 
 
 def _industry_category(industry: str) -> str:

@@ -8,7 +8,13 @@ nothing to fabricate. Thresholds are documented heuristics an expert can tune; a
 """
 from __future__ import annotations
 
-from .framework import REAL_ESTATE_LEVERAGE_CAVEAT, MetricResult, earnings_quality, leverage_health
+from .framework import (
+    REAL_ESTATE_LEVERAGE_CAVEAT,
+    MetricResult,
+    _avg_denominator,
+    earnings_quality,
+    leverage_health,
+)
 
 # Maps leverage_health's own tier (D/E AND interest coverage) onto this module's plain-language
 # wording, so the always-visible summary and the Verdict's tier/concern flag can never diverge --
@@ -42,18 +48,6 @@ def _rate(value: float, good: float, weak: float) -> tuple[str, bool]:
     if value < weak:
         return "weak", True
     return "moderate", False
-
-
-def _avg_denominator(closing: float, prior: float | None) -> tuple[float, bool]:
-    """The denominator for a return ratio: the AVERAGE of opening (prior) and closing balance when
-    a positive prior is available, else the closing value alone. WHY (CA-level rigor): profit is
-    earned OVER the year, so it should be measured against the capital deployed OVER the year --
-    averaging opening+closing. Using the closing snapshot understates the ratio for a company that
-    grew its equity/assets during the year (retained earnings, a capital raise, a merger). Falls
-    back to the closing value when no cross-verified prior year exists, so nothing is fabricated."""
-    if prior is not None and prior > 0:
-        return (closing + prior) / 2.0, True
-    return closing, False
 
 
 def return_on_equity(net_profit: float | None, equity: float | None,

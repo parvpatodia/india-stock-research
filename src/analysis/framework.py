@@ -80,6 +80,23 @@ def _unknown(name: str, why: str, critical: bool = False) -> MetricResult:
     return MetricResult(name, known=False, verdict="unknown", detail=why, critical=critical)
 
 
+def _avg_denominator(closing: float, prior: float | None) -> tuple[float, bool]:
+    """The denominator for a return ratio: the AVERAGE of opening (prior) and closing balance when
+    a positive prior is available, else the closing value alone. WHY (CA-level rigor): profit is
+    earned OVER the year, so it should be measured against the capital deployed OVER the year --
+    averaging opening+closing. Using the closing snapshot understates the ratio for a company that
+    grew its equity/assets during the year (retained earnings, a capital raise, a merger). Falls
+    back to the closing value when no cross-verified prior year exists, so nothing is fabricated.
+
+    Lives here (the shared base module), not in deep_metrics, so the bank verdict's ROA
+    (bank_framework) and the displayed ratio suite (deep_metrics) apply ONE identical denominator
+    rule -- otherwise a bank's verdict ROA (closing) and its shown ROA (average) can land in
+    different bands and contradict each other for a bank that grew its balance sheet."""
+    if prior is not None and prior > 0:
+        return (closing + prior) / 2.0, True
+    return closing, False
+
+
 def valuation_vs_history(current_pe: float | None,
                          median_pe: float | None) -> MetricResult:
     name = "Valuation (P/E vs own history)"

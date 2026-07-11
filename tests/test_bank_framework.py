@@ -26,6 +26,34 @@ def test_bank_verdict_quality_from_roa_and_carries_caveat():
     assert any("GNPA" in c for c in v.sector_caveats)   # "check the filing" caveat is present
 
 
+def test_bank_roa_uses_average_assets_when_a_prior_is_available():
+    # WHY (CA-level rigor, consistency): profit is earned OVER the year, so ROA should measure it
+    # against AVERAGE (opening+closing) assets, exactly as the displayed ROA insight (deep_metrics)
+    # already does. On CLOSING assets alone the verdict's ROA and the shown ROA can fall in
+    # different bands for a bank that grew its balance sheet, contradicting each other.
+    # closing 1000, prior 800 -> avg 900; net profit 9.6 -> avg ROA 1.07% (strong) vs closing 0.96% (mixed).
+    assert return_on_assets(9.6, 1000).verdict == "mixed"                      # 0.96% on closing
+    r_avg = return_on_assets(9.6, 1000, prior_total_assets=800)
+    assert r_avg.verdict == "strong"                                           # 1.07% on average
+    assert "average assets" in r_avg.detail
+
+
+def test_bank_verdict_and_displayed_roa_agree_on_the_same_denominator():
+    # A bank that grew assets 800->1000cr with ~9.6cr profit: closing ROA 0.96% (mixed) but average
+    # ROA 1.07% (strong). Before this fix the verdict used CLOSING assets (MIXED) while the always-
+    # visible ROA insight used AVERAGE assets (strong) -- a direct contradiction a parent would see
+    # side by side. Both must now use the same average denominator.
+    figs = {
+        "net_profit": [SourcedValue(9.6, "a"), SourcedValue(9.6, "b")],
+        "total_assets": [SourcedValue(1000, "a"), SourcedValue(1000, "b")],
+    }
+    r = build_company_report("XBANK", figs, is_bank=True,
+                             prior_year_figures={"total_assets": 800.0})
+    assert r.verdict.quality == QualityTier.STRONG          # verdict now on average assets -> strong
+    roa_line = next(i for i in r.insights if "ROA" in i)
+    assert "average assets" in roa_line and "1.1%" in roa_line   # ~1.07% average, shown to 1 dp
+
+
 def test_bank_mixed_roa_is_not_strong_quality():
     # WHY (real money): a bank earning a MIDDLING ~0.7% ROA is "mixed for a lender" by ROA's own
     # band. It must NOT read STRONG quality merely because a middling ROA is not a CONCERN -- with

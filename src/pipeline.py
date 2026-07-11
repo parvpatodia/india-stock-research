@@ -59,7 +59,10 @@ def build_company_report(company: str,
     if is_bank:
         # WHY: the industrial lenses (D/E, coverage, EBIT) do not apply to banks; use ROA.
         from .analysis.bank_framework import assemble_bank_verdict, return_on_assets
-        roa = return_on_assets(tv("net_profit"), tv("total_assets"))
+        # Same cross-verified prior-year total assets the displayed ROA insight uses, so the
+        # verdict's ROA and the shown ROA share one (average) denominator instead of diverging.
+        p_assets = prior_year_figures.get("total_assets") if prior_year_figures else None
+        roa = return_on_assets(tv("net_profit"), tv("total_assets"), prior_total_assets=p_assets)
         verdict = assemble_bank_verdict(valuation, roa)
     else:
         leverage = leverage_health(tv("total_debt"), tv("equity"), tv("ebit"),
