@@ -402,9 +402,22 @@ def cash_conversion_cycle_trend_point(series: dict[int, float]) -> str | None:
     first_year, last_year = years[0], years[-1]
     first_val, last_val = series[first_year], series[last_year]
     delta = last_val - first_val
+    # WHY (mirrors leverage_trend_point's spike detection and the promoter-holding dip): an oldest-
+    # vs-latest read hides a working-capital STRESS episode that resolved -- CCC 20 -> 90 -> 25 days
+    # reads "steady near 25" on the endpoints, erasing a real intra-period cash-cycle blowout (slow
+    # collections / inventory pile-up) a CA would flag. HIGH CCC is the concerning direction (cash
+    # tied up longer), so surface a materially-higher intra-period PEAK (a MIDDLE year more than the
+    # steady band above BOTH endpoints), reusing the same noise band the endpoint read uses, so a
+    # temporary squeeze is never silently averaged away.
+    middle_years = years[1:-1]
+    spike = ""
+    if middle_years:
+        peak_year = max(middle_years, key=lambda y: series[y])
+        if series[peak_year] > max(first_val, last_val) + _CCC_STEADY_BAND:
+            spike = f", though it spiked to {series[peak_year]:.0f} days in FY{peak_year} in between"
     if abs(delta) < _CCC_STEADY_BAND:
         return (f"Cash conversion cycle has stayed roughly steady near {last_val:.0f} days "
-                f"(FY{first_year} to FY{last_year}; not cross-verified, Screener only).")
+                f"(FY{first_year} to FY{last_year}{spike}; not cross-verified, Screener only).")
     if delta > 0:
         read = ("a lengthening cash cycle can mean slower collections, rising inventory, or "
                 "weaker supplier terms; worth checking against sector peers and recent quarters")
@@ -413,7 +426,8 @@ def cash_conversion_cycle_trend_point(series: dict[int, float]) -> str | None:
                 "inventory/payables discipline, a positive sign for cash-flow quality")
     direction = "lengthened" if delta > 0 else "shortened"
     return (f"Cash conversion cycle has {direction} from {first_val:.0f} days (FY{first_year}) "
-            f"to {last_val:.0f} days (FY{last_year}); {read} (not cross-verified, Screener only).")
+            f"to {last_val:.0f} days (FY{last_year}){spike}; {read} (not cross-verified, "
+            "Screener only).")
 
 
 # Above this % a year's other-income share of profit before tax reads as worth checking, not

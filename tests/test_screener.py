@@ -337,6 +337,34 @@ def test_cash_conversion_cycle_trend_point_roughly_steady_below_threshold():
     assert point is not None and "steady" in point.lower()
 
 
+def test_cash_conversion_cycle_trend_point_surfaces_an_intra_period_working_capital_spike():
+    # WHY (real money, cash-flow-discipline rigor; mirrors leverage_trend_point's spike detection and
+    # the promoter-holding dip): an oldest-vs-latest read hides a working-capital STRESS episode that
+    # resolved -- a CCC of 20 -> 90 -> 25 days reads "steady near 25" on the endpoints, silently
+    # erasing a real intra-period cash-cycle blowout (slow collections / inventory pile-up) a CA would
+    # flag. High CCC is the concerning direction (cash tied up longer), so surface the materially-
+    # higher intra-period PEAK, so a temporary squeeze is never averaged away.
+    point = cash_conversion_cycle_trend_point({2021: 20, 2022: 90, 2023: 25})
+    assert point is not None
+    assert "steady" in point.lower()                     # the endpoints ARE steady...
+    assert "spiked to 90 days in FY2022" in point          # ...but the intra-period blowout is surfaced
+    assert "not cross-verified" in point.lower()
+
+
+def test_cash_conversion_cycle_trend_point_spike_also_shown_when_endpoints_moved():
+    # A peak above BOTH endpoints is surfaced regardless of the net direction (here a net lengthening).
+    point = cash_conversion_cycle_trend_point({2021: 20, 2022: 95, 2023: 45})
+    assert point is not None and "lengthened" in point
+    assert "spiked to 95 days in FY2022" in point
+
+
+def test_cash_conversion_cycle_trend_point_ignores_a_minor_intra_period_wobble():
+    # A sub-band intra-period wiggle is routine noise, not a squeeze -> no spike clause (uses the
+    # SAME steady band as the endpoint read, so noise is treated consistently).
+    point = cash_conversion_cycle_trend_point({2021: 30, 2022: 38, 2023: 32})
+    assert point is not None and "spiked" not in point.lower()
+
+
 def test_cash_conversion_cycle_trend_point_none_when_insufficient_data():
     assert cash_conversion_cycle_trend_point({}) is None
     assert cash_conversion_cycle_trend_point({2024: 50}) is None   # need >=2 points
