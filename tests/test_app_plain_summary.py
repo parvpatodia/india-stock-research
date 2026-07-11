@@ -32,6 +32,24 @@ def test_plain_summary_industrial_uses_balance_sheet_language():
     assert "balance sheet" in s
 
 
+def test_plain_summary_unknown_valuation_reads_grammatically():
+    # WHY (real money, UI honesty): a real industrial whose historical median P/E can't be computed
+    # (thin/short price history, or loss years break the EPS series) but whose balance sheet cross-
+    # verifies STRONG reads NEUTRAL with valuation UNKNOWN -- a reachable production state. The
+    # one-liner is built as "It {val}, with {qual}."; every other val phrase is a verb clause
+    # ("looks cheap versus its own history"), but the UNKNOWN phrase was a bare noun ("valuation
+    # could not be verified"), producing the broken "It valuation could not be verified, with a
+    # strong balance sheet." Broken English in the headline summary of a money tool erodes trust;
+    # the sentence must compose grammatically while still conveying the valuation is unconfirmed.
+    app = _import_app_with_clean_env()
+    v = Verdict(ValuationTier.UNKNOWN, QualityTier.STRONG, Leaning.NEUTRAL, Confidence.MEDIUM)
+    s = app.plain_summary(v, Stance.NEUTRAL)
+    assert "It valuation could not be verified" not in s   # the broken, ungrammatical phrasing
+    assert s.startswith("It ")
+    assert "valuation" in s.lower()                        # still tells the reader valuation is unconfirmed
+    assert "strong balance sheet" in s                     # quality still described
+
+
 def test_plain_summary_bank_does_not_claim_a_balance_sheet_verdict():
     # WHY (real money, sector-aware honesty): a bank's quality tier comes from ROA (profitability),
     # and the app CANNOT assess a lender's actual balance-sheet quality (asset quality/GNPA, capital

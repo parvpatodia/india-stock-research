@@ -471,10 +471,14 @@ def plain_summary(verdict, stance: Stance) -> str:
     if verdict is None or stance == Stance.INSUFFICIENT_DATA:
         return ("Not enough independently verified data to form a view. Withheld on purpose, "
                 "rather than guessed.")
+    # WHY every phrasing is a VERB clause: the sentence is built as "It {val}, with {qual}.", so a
+    # bare-noun "unknown" value ("valuation could not be verified") produced the broken "It valuation
+    # could not be verified..." for a reachable case (median P/E uncomputable but quality verified).
     val = {"cheap": "looks cheap versus its own history",
            "fair": "looks fairly priced versus its own history",
            "expensive": "looks expensive versus its own history",
-           "unknown": "valuation could not be verified"}[verdict.valuation.value]
+           "unknown": "has a valuation that couldn't be checked against its own history"
+           }[verdict.valuation.value]
     # WHY (real money, sector-aware honesty): a bank/NBFC's quality tier is its RETURNS (ROA), not
     # balance-sheet strength -- and the app cannot assess a lender's actual balance-sheet quality
     # (asset quality/GNPA, capital adequacy) from the free feeds. So a bank must never be summarized
