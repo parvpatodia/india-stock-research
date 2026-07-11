@@ -813,8 +813,13 @@ with tab_portfolio:
                 risk_cols[0].metric("Annualized volatility",
                                     f"{annualized_volatility(port_returns) * 100:.1f}%",
                                     help=explain("Volatility"))
+                # beta needs the benchmark's OWN history; the index fetch can fail while stock
+                # history succeeds, so beta() returns None (not a fabricated 0.00 that would read as
+                # a real market-neutral beta). Show n/a in that case.
+                port_beta = beta(port_returns, bench_returns)
                 risk_cols[1].metric(f"Beta vs {INDEX_DISPLAY_NAMES[DEFAULT_BENCHMARK]}",
-                                    f"{beta(port_returns, bench_returns):.2f}", help=explain("Beta"))
+                                    f"{port_beta:.2f}" if port_beta is not None else "n/a",
+                                    help=explain("Beta"))
                 worst = min((max_drawdown(c) for c in close_by_symbol.values() if not c.empty),
                             default=0.0)
                 risk_cols[2].metric("Worst single-name drawdown", f"{worst * 100:.1f}%",

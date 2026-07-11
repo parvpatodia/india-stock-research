@@ -119,6 +119,22 @@ def test_beta_of_2x_series_is_2():
     assert abs(beta(asset, idx) - 2.0) < 1e-6
 
 
+def test_beta_none_when_it_cannot_be_computed():
+    # WHY (real money, "never a fabricated number"): beta needs the benchmark's OWN return history.
+    # On a cloud IP the index fetch can fail while individual stock history succeeds, so port_returns
+    # is non-empty but bench_returns is empty -- the overlap is < 2 points and no beta is defined.
+    # Returning 0.0 there is indistinguishable from a REAL market-neutral 0.00 beta and would render
+    # as one in the risk panel; return None so the display can honestly show "n/a" (mirrors
+    # historical_cagr, which already returns None when it cannot compute). A constant (zero-variance)
+    # benchmark is likewise undefined, not 0.0.
+    port = pd.Series([0.01, -0.02, 0.015, 0.03, -0.01])
+    assert beta(port, pd.Series(dtype=float)) is None                      # benchmark history missing
+    assert beta(pd.Series(dtype=float), pd.Series(dtype=float)) is None    # both missing
+    assert beta(port, pd.Series([0.0, 0.0, 0.0, 0.0, 0.0])) is None        # zero-variance benchmark
+    idx = pd.Series(np.random.RandomState(1).normal(0, 0.01, 200))         # a real beta is unaffected
+    assert beta(2 * idx, idx) is not None and abs(beta(2 * idx, idx) - 2.0) < 1e-6
+
+
 def test_volatility_and_empty_guards():
     assert annualized_volatility(pd.Series([0.01, -0.01, 0.02, -0.02, 0.0])) > 0
     assert annualized_volatility(pd.Series(dtype=float)) == 0.0
@@ -147,7 +163,6 @@ def test_historical_cagr_none_on_empty_or_bad_data():
     assert historical_cagr(pd.Series([100.0])) is None                   # single point
     idx = pd.date_range("2016-01-01", "2026-01-01", freq="365D")
     assert historical_cagr(pd.Series([0.0, 100.0], index=[idx[0], idx[-1]])) is None  # bad first
-    assert beta(pd.Series(dtype=float), pd.Series(dtype=float)) == 0.0
 
 
 def test_portfolio_daily_returns_equal_weight_cancel():

@@ -138,15 +138,22 @@ def annualized_volatility(returns: pd.Series) -> float:
     return float(returns.std() * math.sqrt(TRADING_DAYS_PER_YEAR))
 
 
-def beta(asset_returns: pd.Series, benchmark_returns: pd.Series) -> float:
-    """Sensitivity of the asset to the benchmark: cov(a, b) / var(b)."""
+def beta(asset_returns: pd.Series, benchmark_returns: pd.Series) -> float | None:
+    """Sensitivity of the asset to the benchmark: cov(a, b) / var(b).
+
+    None when beta cannot be computed -- fewer than 2 overlapping return points (e.g. the benchmark
+    index history failed to load while the stock's did) or a zero-variance benchmark. WHY (real
+    money, "never a fabricated number"): returning 0.0 there is indistinguishable from a REAL
+    market-neutral 0.00 beta and would render as one in the risk panel; None lets the caller show
+    'n/a' honestly, mirroring historical_cagr's None contract for the same not-computable situation.
+    """
     df = pd.concat([asset_returns, benchmark_returns], axis=1, join="inner").dropna()
     if len(df) < 2:
-        return 0.0
+        return None
     a, b = df.iloc[:, 0], df.iloc[:, 1]
     var_b = b.var()
     if var_b == 0:
-        return 0.0
+        return None
     return float(a.cov(b) / var_b)
 
 
