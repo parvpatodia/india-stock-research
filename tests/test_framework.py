@@ -117,6 +117,34 @@ def test_two_clean_quality_signals_reach_strong():
     assert v.quality == QualityTier.STRONG                  # 2 known incl. leverage -> corroborated
 
 
+def test_all_concern_free_but_lukewarm_signals_are_not_strong():
+    # WHY (real money): two concern-free dimensions that are merely MODERATE, with nothing
+    # affirmatively strong, must read MIXED, not STRONG. STRONG means at least one dimension is
+    # genuinely strong, not just "no red flags present". Here: moderate leverage (D/E 0.7, no
+    # coverage signal), no pledge, earnings unverified -- the critical (leverage) dimension IS
+    # known, so the old "N concern-free dimensions" rule wrongly reached STRONG on lukewarm data.
+    v = assemble_verdict(
+        valuation_vs_history(15, 25),
+        [earnings_quality(None, None),            # unverified
+         leverage_health(70, 100, None, None),    # D/E 0.7 -> "moderate" (concern-free, not strong)
+         promoter_pledge(0)],                     # "none" (concern-free, not a strength)
+    )
+    assert v.quality == QualityTier.MIXED
+
+
+def test_one_strong_dimension_with_a_moderate_one_still_strong():
+    # Guard against over-tightening: a genuinely STRONG dimension (earnings quality) plus a
+    # concern-free MODERATE leverage (the critical dimension, known) is still STRONG. The fix only
+    # blocks verdicts with nothing affirmatively strong; it does not demand every dimension be strong.
+    v = assemble_verdict(
+        valuation_vs_history(15, 25),
+        [earnings_quality(90, 100),               # "strong" (affirmative)
+         leverage_health(70, 100, None, None),    # "moderate" (concern-free)
+         promoter_pledge(0)],
+    )
+    assert v.quality == QualityTier.STRONG
+
+
 def test_two_soft_signals_without_verified_debt_are_not_strong():
     # WHY (real money): earnings-quality + no-pledge are two signals, but NEITHER is solvency.
     # STRONG must be unreachable while the critical debt dimension is unverified — otherwise a

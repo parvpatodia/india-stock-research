@@ -40,8 +40,10 @@ def return_on_assets(net_profit: float | None,
         verdict, concern = "weak", True
     else:
         verdict, concern = "mixed", False
+    # positive only for an affirmatively strong ROA: a "mixed" (0.5-1.0%) ROA is concern-free but
+    # NOT a strength, so as a bank's single quality lens it must not by itself reach a STRONG verdict.
     return MetricResult(name, True, verdict, f"ROA {roa:.2f}% ({verdict} for a lender).", concern,
-                        critical=True)
+                        critical=True, positive=(verdict == "strong"))
 
 
 def _industry_category(industry: str) -> str:

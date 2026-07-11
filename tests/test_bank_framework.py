@@ -24,6 +24,19 @@ def test_bank_verdict_quality_from_roa_and_carries_caveat():
     v = assemble_bank_verdict(valuation_vs_history(None, None), return_on_assets(120, 10000))
     assert v.quality == QualityTier.STRONG
     assert any("GNPA" in c for c in v.sector_caveats)   # "check the filing" caveat is present
+
+
+def test_bank_mixed_roa_is_not_strong_quality():
+    # WHY (real money): a bank earning a MIDDLING ~0.7% ROA is "mixed for a lender" by ROA's own
+    # band. It must NOT read STRONG quality merely because a middling ROA is not a CONCERN -- with
+    # ROA the bank's single quality lens, STRONG requires an affirmatively strong ROA, not just the
+    # absence of a red flag. A large swath of mid-ROA Indian banks (many PSU banks sit at
+    # 0.5-1.0% ROA) would otherwise be overstated into STRONG -> a FAVORABLE stance on middling
+    # evidence. The metric's own text already says "mixed for a lender"; the verdict must agree.
+    r = return_on_assets(70, 10000)                     # ROA 0.7% -> "mixed"
+    assert r.verdict == "mixed"
+    v = assemble_bank_verdict(valuation_vs_history(None, None), r)
+    assert v.quality == QualityTier.MIXED               # not STRONG (was over-confident)
     # WHY: the caveat is NOT itself a cross-verified figure, so it must never blend into
     # `reasons` -- the app renders that list under a "Why (each from cross-verified figures)"
     # header, which must stay literally true.

@@ -64,6 +64,9 @@ class MetricResult:
     concern: bool = False   # True = a negative signal, used to aggregate quality
     critical: bool = False  # a solvency/core dimension (e.g. leverage); if unknown, cap confidence
     magnitude: float | None = None  # optional continuous value (e.g. P/E-vs-median ratio) for ranking
+    positive: bool = False  # True = an AFFIRMATIVELY strong dimension (not merely concern-free); a
+    #                         # STRONG quality verdict requires at least one of these, so a lone
+    #                         # middling-but-not-bad signal (e.g. a bank's "mixed" ROA) can't read STRONG
 
 
 def value_if_trustworthy(figure: VerifiedFigure | None) -> float | None:
@@ -123,7 +126,7 @@ def earnings_quality(operating_cash_flow: float | None,
     return MetricResult(name, True, v,
                         f"operating cash flow is {ratio:.0%} of net profit; profits are "
                         f"{'well' if concern is False and v == 'strong' else 'only partly'} "
-                        f"backed by cash.", concern)
+                        f"backed by cash.", concern, positive=(v == "strong"))
 
 
 def leverage_health(total_debt: float | None, equity: float | None,
@@ -143,7 +146,7 @@ def leverage_health(total_debt: float | None, equity: float | None,
     cov_txt = f", interest cover {coverage:.1f}x" if coverage is not None else ""
     return MetricResult(name, True, v,
                         f"debt/equity {de:.2f}{cov_txt} reads {v}.", concern=stretched,
-                        critical=True)
+                        critical=True, positive=healthy)
 
 
 def promoter_pledge(pledge_pct: float | None) -> MetricResult:
@@ -199,19 +202,28 @@ def assemble_verdict(valuation: MetricResult,
     # blocks STRONG: you cannot call a balance sheet strong without checking its solvency, even if
     # other, softer signals look clean. This closes the "two non-solvency signals => STRONG" hole.
     critical_quality_unknown = any(m.critical and not m.known for m in quality_signals)
+    # WHY (real money): STRONG needs at least one AFFIRMATIVELY strong dimension, not merely the
+    # absence of concerns. Without this, a lone concern-free-but-middling signal reads STRONG --
+    # most visibly for banks (min_signals=1), where a "mixed for a lender" ROA (0.5-1.0%, e.g. a
+    # PSU bank at 0.7%) has concern=False and so passed straight to STRONG, contradicting the
+    # metric's own "mixed" label and overstating a whole swath of mid-ROA banks into FAVORABLE.
+    # earnings_quality "strong" / leverage_health "healthy" / a bank's "strong" ROA set positive.
+    has_affirmative_strength = any(m.positive for m in known_quality)
     if not known_quality:
         quality_tier = QualityTier.UNKNOWN
     elif len(concerns) >= 2:
         quality_tier = QualityTier.WEAK
     elif len(concerns) == 1:
         quality_tier = QualityTier.MIXED
-    elif len(known_quality) >= min_signals_for_strong and not critical_quality_unknown:
+    elif (len(known_quality) >= min_signals_for_strong and not critical_quality_unknown
+          and has_affirmative_strength):
         quality_tier = QualityTier.STRONG
     else:
         # WHY (real money): zero concerns but either fewer than min_signals_for_strong verified
-        # dimensions, or the critical one (debt) unverified, is not enough to call a balance sheet
-        # STRONG. Requiring corroboration incl. solvency keeps a cheap P/E + soft signals from
-        # reading FAVORABLE on thin data. Banks opt into 1 (ROA is their single, critical lens).
+        # dimensions, the critical one (debt) unverified, or NOTHING affirmatively strong (only
+        # concern-free-but-middling signals), is not enough to call a balance sheet STRONG.
+        # Requiring corroboration incl. solvency AND a genuine strength keeps a cheap P/E + soft
+        # signals from reading FAVORABLE on thin data. Banks opt into 1 (ROA is their single lens).
         quality_tier = QualityTier.MIXED
 
     if valuation_tier == ValuationTier.UNKNOWN and quality_tier == QualityTier.UNKNOWN:
