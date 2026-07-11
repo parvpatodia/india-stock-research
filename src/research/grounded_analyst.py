@@ -124,8 +124,20 @@ class GroundedAnalyst:
 
     def answer(self, question: str, store: DocumentStore, registry: SourceRegistry,
                k: int = 5, as_of: str | None = None,
-               pin_source_ids: frozenset[str] = frozenset()) -> ResearchResult:
-        retrieved = store.retrieve(question, k=k, pin_source_ids=pin_source_ids)
+               pin_source_ids: frozenset[str] = frozenset(),
+               retrieval_hint: str = "") -> ResearchResult:
+        # WHY (real money, Ask-tab answer quality): expand the RETRIEVAL query (only) with the
+        # resolved company identity when the caller supplies it. The user entered a specific stock,
+        # so retrieval must be company-aware -- a natural question like "what is the recent news?"
+        # shares NO words with a specific headline ("Reliance Q3 profit rises..."), so plain TF-IDF
+        # scored the fetched news below the floor and the very thing asked for was never retrieved
+        # (live-reproduced: 0 of the fetched news chunks for the tab's own default question). The
+        # company name -- which every fetched-by-company headline contains -- surfaces it. The MODEL
+        # is still asked the ORIGINAL question, so the answer stays on topic and cites real chunks;
+        # only which chunks are retrieved is company-scoped. Pinned authoritative chunks are
+        # unaffected (they bypass the score), and numeric grounding + citation tiers still apply.
+        retrieval_query = f"{question} {retrieval_hint}".strip() if retrieval_hint.strip() else question
+        retrieved = store.retrieve(retrieval_query, k=k, pin_source_ids=pin_source_ids)
         if not retrieved:
             return ResearchResult.abstain(
                 question,

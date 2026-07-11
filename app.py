@@ -1319,9 +1319,15 @@ with tab_ask:
                 st.warning("No sources to answer from. Enter a stock symbol so recent news can load.")
         else:
             with st.spinner("Reading the sources..."):
+                # WHY retrieval_hint (Ask-tab answer quality): the user entered a specific stock, so
+                # scope retrieval to it. A natural question ("what is the recent news?") shares no
+                # words with a specific headline, so without this the fetched news scored below the
+                # floor and was never retrieved. The resolved company name + symbol (which the
+                # company's own news mentions) surfaces it; the model still answers the original Q.
                 result = grounded.answer(question, store, registry,
                                          pin_source_ids=frozenset(pinned_source_ids),
-                                         as_of=datetime.now().strftime("%Y-%m-%d %H:%M"))
+                                         as_of=datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                         retrieval_hint=f"{company} {sym_u}".strip())
             if result.abstained:
                 st.warning(f"No verified answer. {result.abstain_reason}")
                 # WHY (workflow discoverability): Ask only grounds financial-figure questions in

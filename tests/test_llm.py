@@ -56,3 +56,28 @@ def test_grounded_analyst_abstains_without_llm():
     a = GroundedAnalyst(client=FakeClient("", available=False))
     res = a.answer("what is a SIP", store, reg)
     assert res.abstained and "configured" in (res.abstain_reason or "").lower()
+
+
+def test_answer_uses_the_retrieval_hint_to_surface_company_news():
+    # WHY (real money, Ask-tab answer quality): a natural question like "what is the recent news"
+    # shares NO words with a specific headline ("Reliance Q3 profit rises..."), so TF-IDF scored the
+    # fetched news below the retrieval floor and it was NEVER retrieved -- live-reproduced: 0 chunks
+    # for the tab's OWN default question. The user entered a specific stock, so retrieval must be
+    # company-aware: augmenting the retrieval query with the resolved company name (which every
+    # fetched-by-company headline contains) surfaces it. The MODEL is still asked the ORIGINAL
+    # question, so the answer stays on topic and cites a real chunk.
+    reg = SourceRegistry([Source("news_google", "Google News", CredibilityTier.ANALYST)])
+    store = DocumentStore(registry=reg)
+    store.add_document(
+        "news_google",
+        "[Reuters, 2026-07-01] Reliance Q3 profit rises 12 percent on refining margins.")
+    payload = ('{"abstain": false, "claims": [{"text": "Reliance Q3 profit rose 12 percent.", '
+               '"chunk_ids": ["news_google#0"], "kind": "opinion"}]}')
+    a = GroundedAnalyst(client=FakeClient(payload))
+    # Without the hint the question shares no words with the headline -> nothing retrieved -> abstain.
+    assert a.answer("what is the recent news about it", store, reg).abstained
+    # With the company name as the retrieval hint, the news is surfaced and answered.
+    hinted = a.answer("what is the recent news about it", store, reg,
+                      retrieval_hint="Reliance Industries")
+    assert not hinted.abstained
+    assert hinted.claims[0].citations[0].source_id == "news_google"
