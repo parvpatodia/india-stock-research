@@ -28,13 +28,16 @@ from .grounding import DocumentStore, RetrievedChunk
 _ALLOWED_KINDS = {FACT, OPINION, ESTIMATE}
 
 _NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
-# A number immediately followed by '%'. WHY: ROE/ROCE/margins/dividend-yield/pledge/other-income-
-# share are all formatted as whole- or 1-decimal percentages in this app's own generated source
-# text (see deep_metrics.py, screener_source.py), so they are routinely 1-2 digits -- exactly the
-# figures the general <3-digit exemption below would otherwise wave through ungrounded, even
-# though a percentage is essentially always the figure itself, not incidental noise like a bare
-# year or small count. See numbers_grounded.
-_PERCENT_NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?%")
+# A number immediately followed by a percent unit -- the '%' symbol OR the words 'percent'/'per
+# cent'. WHY: ROE/ROCE/margins/dividend-yield/pledge/other-income-share are all formatted as whole-
+# or 1-decimal percentages in this app's own generated source text (see deep_metrics.py,
+# screener_source.py), so they are routinely 1-2 digits -- exactly the figures the general <3-digit
+# exemption below would otherwise wave through ungrounded, even though a percentage is essentially
+# always the figure itself, not incidental noise like a bare year or small count. The WORD form is
+# matched too because Indian financial press (news is the Ask tab's most-cited source) overwhelmingly
+# writes "12 per cent"/"12 percent", not "12%"; a symbol-only guard left a 2-digit word-form figure
+# checked by NEITHER rule, so a misquoted "45 percent" slipped through ungrounded. See numbers_grounded.
+_PERCENT_NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?\s*(?:%|per\s*cent)", re.IGNORECASE)
 # ISO date/timestamp shapes (e.g. "2026-07-09" or "2026-07-09T09:00:00Z"), used to self-disclose
 # WHEN a source was fetched (see verified_context.py, NewsItem.as_text). A date is metadata, not
 # a citable financial figure, so it must not contribute a digit sequence (e.g. the 4-digit year)
@@ -51,11 +54,13 @@ def numbers_grounded(text: str, source_texts: list[str]) -> bool:
     wrongly-flagged true fact merely shows as 'reported, not independently verified' (safe),
     never a false green tick. Bare numbers under 3 digits (years, small counts) are skipped: too
     common to ground meaningfully and not the high-stakes misquote case. PERCENTAGES are the
-    exception to that exemption, checked at ANY digit count: ROE/ROCE/margins/dividend-yield/
-    pledge/other-income-share are all formatted as whole- or 1-decimal percentages in this app's
-    own generated source text, so they are routinely 1-2 digits -- exempting them the same way as
-    a bare small count would silently wave through a materially wrong ROE/margin claim (e.g. "8%"
-    when the verified figure is "22%") with no check at all. Digit-normalized exact match (not
+    exception to that exemption, checked at ANY digit count and in BOTH the '%'-symbol and the
+    word ('45 percent'/'45 per cent') spellings: ROE/ROCE/margins/dividend-yield/pledge/other-
+    income-share are all formatted as whole- or 1-decimal percentages in this app's own generated
+    source text, and Indian financial news (the Ask tab's most-cited source) writes them as words,
+    so they are routinely 1-2 digits -- exempting them the same way as a bare small count would
+    silently wave through a materially wrong ROE/margin claim (e.g. "8%" when the verified figure
+    is "22%", or "45 percent" when the source said "12 per cent") with no check at all. Digit-normalized exact match (not
     substring), so '957' does not spuriously ground against '9575', and '5%' does not spuriously
     ground against '0.5%' (05 != 5). Date/timestamp substrings are stripped before extraction
     (see _DATE_LIKE), so a source's own fetch-date disclosure can never double as grounding for

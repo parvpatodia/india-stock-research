@@ -425,6 +425,26 @@ def test_numbers_grounded_checks_short_percentages_too():
     assert not numbers_grounded("ROE is 8%, which is weak", src)         # wrong, materially different
 
 
+def test_numbers_grounded_catches_word_form_percentages():
+    # WHY (real money, HIGH severity): Indian financial press overwhelmingly writes percentages as
+    # the WORD "per cent" / "percent" (Economic Times, Business Standard, The Hindu BusinessLine),
+    # not the "%" symbol -- and news is the Ask tab's most-cited source. The "%"-only percentage
+    # guard left the word form exempt: a 2-digit growth/margin figure written "45 percent" is under
+    # 3 digits AND carries no "%", so it was checked by NEITHER rule and slipped through ungrounded.
+    # A model that misquotes "profit rose 45 percent" when its cited source said "12 per cent" would
+    # then render as clean reported context, unflagged -- the exact wrong-figure-stated-confidently
+    # failure this function exists to catch. Symbol and word spellings must ground identically.
+    src = ["Reliance Q3 profit rose 12 per cent on refining margins."]
+    assert numbers_grounded("Profit rose 12 percent", src)          # correct figure, word form grounds
+    assert numbers_grounded("Profit rose 12 per cent", src)         # British spelling grounds too
+    assert not numbers_grounded("Profit rose 45 percent", src)      # misquote -> caught
+    assert not numbers_grounded("Profit rose 45 per cent", src)     # misquote, British spelling -> caught
+    # Cross-spelling grounding: a "%"-symbol source grounds a word-form claim and vice versa, since
+    # both are the same figure -- so tightening the word form never spuriously downgrades a match.
+    assert numbers_grounded("ROE is 22 percent", ["Return on equity: 22%."])
+    assert not numbers_grounded("ROE is 22 percent", ["Return on equity: 18%."])
+
+
 def test_numbers_grounded_percentage_with_decimal_matches_exactly():
     # WHY: "0.5%" and "5%" must NOT be treated as the same figure just because both are short --
     # digit-normalizing preserves the distinction (05 vs 5), so a genuinely different value is
