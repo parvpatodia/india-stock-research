@@ -147,6 +147,14 @@ def _dedup_sort_cap(items: list[NewsItem], cap: int,
         if cutoff and it.published and it.published < cutoff:   # stale, dated -> drop
             continue
         key = _KEY.sub("", it.title.lower())[:80]
+        if not key:
+            # WHY (product): a pure non-Latin headline (Hindi/Tamil/...) strips to an empty
+            # alphanumeric key; fall back to the whitespace-stripped raw title so these items
+            # dedup among themselves and are KEPT, not silently dropped. Indian regional-language
+            # press can break a promoter-pledge or fraud story first and the parents read Hindi.
+            # Safe to surface: news is context only (ANALYST tier, never citable_as_fact). Same
+            # "can't prove it's a dup -> keep it" rule already applied to undated items.
+            key = _WS.sub("", it.title.lower())[:80]
         if key and key not in seen:
             seen.add(key)
             unique.append(it)

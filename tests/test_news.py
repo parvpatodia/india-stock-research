@@ -152,6 +152,32 @@ def test_newssource_keeps_undated_items():
     assert "Reliance undated note" in titles
 
 
+def test_newssource_keeps_non_latin_script_headlines():
+    # WHY (product): Indian markets have rich regional-language press and the parents read Hindi;
+    # a promoter-pledge or fraud story can break in Hindi first. A pure non-Latin headline strips
+    # to an empty alphanumeric dedup key, so it must fall back to its raw title and be KEPT --
+    # consistent with the "can't prove it's a dup -> keep it" rule for undated items, not dropped.
+    hindi_a = "रिलायंस के शेयरों में भारी गिरावट"      # "Reliance shares fall sharply"
+    hindi_b = "टाटा मोटर्स का तिमाही मुनाफा बढ़ा"       # a different Hindi headline
+    feed = [
+        {"id": "h1", "content": {"title": hindi_a, "pubDate": "2026-07-05T00:00:00Z",
+                                 "provider": {"displayName": "Dainik Bhaskar"},
+                                 "canonicalUrl": {"url": "https://y/h1.html"}}},
+        {"id": "h1dup", "content": {"title": hindi_a, "pubDate": "2026-07-04T00:00:00Z",
+                                    "provider": {"displayName": "Amar Ujala"},
+                                    "canonicalUrl": {"url": "https://y/h1dup.html"}}},
+        {"id": "h2", "content": {"title": hindi_b, "pubDate": "2026-07-03T00:00:00Z",
+                                 "provider": {"displayName": "Jagran"},
+                                 "canonicalUrl": {"url": "https://y/h2.html"}}},
+    ]
+    ns = NewsSource(rss_fetcher=lambda q: b"<rss></rss>", yahoo_fetcher=lambda s: feed,
+                    max_items=8, max_age_days=365, today=_TODAY)
+    titles = [i.title for i in ns.fetch("RELIANCE", "Reliance Industries")]
+    assert hindi_a in titles              # non-Latin headline kept, not silently dropped
+    assert hindi_b in titles              # a different non-Latin headline also kept
+    assert titles.count(hindi_a) == 1     # the two identical Hindi items still dedup to one
+
+
 def test_as_documents_carry_attribution_and_source_id():
     items = parse_google_news_rss(GOOGLE_RSS)
     docs = NewsSource.as_documents(items)
