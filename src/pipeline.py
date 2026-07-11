@@ -209,6 +209,7 @@ def build_report_for_symbol(symbol: str, sources: list[FigureSource],
     from .analysis.trends import (
         cash_conversion_quality_point,
         leverage_trend_point,
+        limited_history_note,
         trend_improving,
         trend_points,
         verified_series,
@@ -226,6 +227,13 @@ def build_report_for_symbol(symbol: str, sources: list[FigureSource],
     # fetches an earlier version made (one each for is_bank/is_nbfc/is_real_estate).
     category = sector_category(symbol)
     trend_insights = list(trend_points(rev_series, prof_series))
+    # WHY (real money, rigor): a recently-listed company (or one whose older figures don't cross-
+    # verify) has only a short cross-verified history, yet the verdict's confidence counts METRICS
+    # not YEARS -- so it can read HIGH-confidence FAVORABLE on a single flattering year. Lead the
+    # trend section with an explicit "short track record" caveat so that isn't over-read as proven.
+    hist_note = limited_history_note(max(len(rev_series), len(prof_series)))
+    if hist_note:
+        trend_insights.insert(0, hist_note)
     # WHY (CA-level rigor): add the multi-year debt/equity trend for industrials/real-estate --
     # is the balance sheet getting more or less leveraged over time? Skipped for banks/NBFCs,
     # whose leverage is their business model, not a risk signal (same reason they use the ROA

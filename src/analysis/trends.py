@@ -296,6 +296,24 @@ def revenue_volatility_point(revenue_series: dict[int, float]) -> str | None:
             f"A single year's figures may not represent the long-term run rate.")
 
 
+def limited_history_note(years: int) -> str | None:
+    """A caveat when only a SHORT cross-verified financial history is available (fewer than the 3
+    years a trend needs), so a single strong or weak year is not over-read as a proven track record.
+
+    WHY (real money, rigor): a recently-listed company shows only latest-year ratios, and the
+    verdict's confidence reflects how many METRICS cross-verified, not how many YEARS -- so it can
+    read HIGH-confidence FAVORABLE on a single year. A value investor is wary of a short track record
+    (an unproven IPO can post one flattering year right after listing); state the limitation plainly.
+    Silent at >=3 years (a real multi-year trend is available) and at 0 (nothing cross-verified --
+    that is handled as no-data, not a short-history caveat)."""
+    if years < 1 or years >= 3:
+        return None
+    label = "year" if years == 1 else "years"
+    return (f"Heads up: only {years} {label} of cross-verified financial history is available here, "
+            "so this rests on a short track record, not a proven multi-year one -- weigh a single "
+            "strong or weak year with that in mind.")
+
+
 def trend_points(revenue_series: dict[int, float],
                  profit_series: dict[int, float]) -> list[str]:
     """Plain-language multi-year track-record points, from cross-verified yearly series."""

@@ -3,6 +3,7 @@ from src.analysis.trends import (
     cash_conversion_quality_point,
     earnings_volatility_point,
     leverage_trend_point,
+    limited_history_note,
     margins_improving,
     revenue_volatility_point,
     trend_improving,
@@ -200,6 +201,17 @@ def test_margin_direction_wording_is_not_grown_when_the_company_is_declining():
 
 def test_trend_points_empty_when_insufficient_history():
     assert trend_points({2022: 100}, {2022: 10}) == []           # too few years
+
+
+def test_limited_history_note_thresholds():
+    # WHY (real money, rigor): fewer than the 3 years a trend needs is a SHORT track record. The
+    # note fires for 1-2 years, is silent at >=3 (a real trend is available), and silent at 0
+    # (nothing cross-verified -> handled as no-data, not a "short history" caveat).
+    assert limited_history_note(1) is not None and "1 year" in limited_history_note(1)     # singular
+    assert limited_history_note(2) is not None and "2 years" in limited_history_note(2)     # plural
+    assert "short track record" in limited_history_note(2)
+    assert limited_history_note(3) is None
+    assert limited_history_note(0) is None
 
 
 # --- structured trend_improving signal (decoupled from the UI prose) ---
@@ -557,6 +569,28 @@ def test_roce_averaging_gated_when_equity_and_debt_latest_years_diverge(monkeypa
     roe = next((i for i in insights if "ROE" in i), "")
     assert roce and "on average capital" not in roce       # point capital when years diverge
     assert "on average equity" in roe                        # ROE (single figure) still averages
+
+
+def test_limited_history_caveat_reaches_insights_for_a_thin_track_record(monkeypatch):
+    # WHY (real money, rigor): a recently-listed company (only 1-2 cross-verified years) shows
+    # latest-year ratios and can read HIGH-confidence FAVORABLE, since the verdict's confidence
+    # counts how many METRICS cross-verified, not how many YEARS. Surface an explicit "short track
+    # record" caveat so a single flattering year isn't over-read as a proven record. An established
+    # company (>=3 cross-verified years) gets no such caveat.
+    import src.pipeline as pipeline
+    monkeypatch.setattr(pipeline, "compute_median_pe", lambda s: None, raising=False)
+    from src.analysis import bank_framework
+    monkeypatch.setattr(bank_framework, "_yfinance_industry", lambda s: "Auto Components")
+    thin = {"net_profit": {2024: 20 * CR, 2025: 24 * CR},           # only 2 cross-verified years
+            "equity": {2024: 100 * CR, 2025: 110 * CR},
+            "revenue": {2024: 200 * CR, 2025: 240 * CR}}
+    thin_insights = pipeline.build_report_for_symbol("NEWCO", _two_sources_from_series(thin)).insights
+    assert any("short track record" in i for i in thin_insights)
+    rich = {"net_profit": {2022: 16 * CR, 2023: 18 * CR, 2024: 20 * CR, 2025: 24 * CR},
+            "equity": {2022: 90 * CR, 2023: 95 * CR, 2024: 100 * CR, 2025: 110 * CR},
+            "revenue": {2022: 160 * CR, 2023: 180 * CR, 2024: 200 * CR, 2025: 240 * CR}}
+    rich_insights = pipeline.build_report_for_symbol("OLDCO", _two_sources_from_series(rich)).insights
+    assert not any("short track record" in i for i in rich_insights)
 
 
 def test_roce_averaging_applies_when_equity_and_debt_share_latest_year(monkeypatch):
