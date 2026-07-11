@@ -58,3 +58,15 @@ def test_search_matches_all_query_words_in_any_order():
     # single-word and empty behaviour unchanged:
     assert len(provider.search("frontline")) == 1
     assert provider.search("") == []
+
+
+def test_search_treats_a_hyphen_in_the_query_like_a_space():
+    # WHY (real money workflow): a parent commonly types cap categories hyphenated -- "large-cap",
+    # "mid-cap", "flexi-cap" -- or joins words with a hyphen ("banking-direct"). Splitting the query
+    # ONLY on whitespace left the hyphen inside the token, so it never matched a name that separates
+    # the words with a space, returning NOTHING for a fund that exists (confirmed by an empirical
+    # probe). Treat a hyphen like a space so the fund the parent means shows up.
+    provider = AMFIProvider(fetcher=lambda: SAMPLE)
+    provider.load()
+    assert len(provider.search("banking-direct")) == 1        # hyphen joining two words -> still matches
+    assert len(provider.search("frontline-growth aditya")) == 1

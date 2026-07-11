@@ -79,7 +79,12 @@ class AMFIProvider:
         Cap Fund - Direct Plan - Growth", so the typed words are never contiguous). Requiring each
         query WORD to appear -- the standard search behaviour -- surfaces the fund the parent means.
         """
-        terms = query.strip().lower().split()
+        # WHY replace("-", " "): a parent commonly hyphenates cap categories ("large-cap", "mid-cap",
+        # "flexi-cap") or joins words with a hyphen; splitting only on whitespace left the hyphen in
+        # the token so it never matched a name that separates the words with a space (or vice versa).
+        # Treat a hyphen as a space. An "&" (e.g. L&T) is deliberately NOT split, so it still matches a
+        # name that contains it rather than over-broadening into two single-character tokens.
+        terms = query.strip().lower().replace("-", " ").split()
         if not terms:
             return []
         out: list[MFScheme] = []
