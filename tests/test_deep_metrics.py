@@ -227,6 +227,27 @@ def test_plain_points_omit_unknowns():
     assert plain_points(v, compute_deep_metrics(v)) == []
 
 
+def test_plain_points_warns_up_front_on_negative_net_worth():
+    # WHY (real money, CA-level distress): cross-verified NEGATIVE shareholders' equity (a real,
+    # widely-held case -- e.g. Vodafone Idea) means accumulated losses have wiped out the capital
+    # shareholders put in, a serious distress signal. The standard ratios (D/E, ROE, ROCE) can't be
+    # computed against a negative net worth, so they are all withheld and the verdict reads
+    # INSUFFICIENT_DATA -- which, left alone, SILENTLY understates a situation the app in fact KNOWS.
+    # plain_points must surface it explicitly and lead with it so a parent isn't told merely "not
+    # enough data" about a distressed company.
+    points = plain_points({"equity": -500 * CR, "net_profit": -200 * CR}, [], is_bank=False)
+    assert points
+    assert "net worth" in points[0].lower() and "negative" in points[0].lower()
+    assert "distress" in points[0].lower()
+
+
+def test_plain_points_no_net_worth_warning_when_equity_is_positive():
+    points = plain_points({"equity": 1000 * CR, "net_profit": 100 * CR, "total_debt": 200 * CR,
+                           "ebit": 30 * CR, "interest_expense": 3 * CR}, [], is_bank=False)
+    assert not any("net worth" in p.lower() for p in points)   # no distress warning for healthy equity
+    assert any("D/E" in p for p in points)                      # the normal debt line still shows
+
+
 def test_plain_points_dividend_zero_is_not_a_red_flag():
     points = plain_points({"dividend_yield_pct": 0.0}, [])
     joined = " ".join(points)

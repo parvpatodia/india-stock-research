@@ -263,6 +263,23 @@ def plain_points(v: dict, deep: list[MetricResult], is_real_estate: bool = False
     """
     points: list[str] = []
 
+    # WHY (real money, CA-level distress signal): cross-verified NEGATIVE net worth (shareholders'
+    # equity < 0) means accumulated losses have wiped out the capital shareholders put in -- a serious
+    # financial-distress signal, and a real, widely-held case (e.g. Vodafone Idea). Every standard
+    # balance-sheet ratio (D/E, ROE, ROCE) is undefined against a negative net worth, so leverage_
+    # health/return_on_equity/return_on_capital all return unknown and the verdict reads INSUFFICIENT_
+    # DATA -- which, on its own, SILENTLY understates the situation as "not enough data" when the app
+    # in fact KNOWS the net worth is negative. Surface it explicitly and lead with it. eq is already
+    # value_if_trustworthy (cross-verified), so this only fires when >=2 sources agree it is negative.
+    eq_val = v.get("equity")
+    if eq_val is not None and eq_val < 0:
+        points.append(
+            "Warning: the company's net worth (shareholders' equity) is NEGATIVE -- accumulated "
+            "losses have wiped out the capital shareholders put in, a serious sign of financial "
+            "distress. Standard balance-sheet ratios (debt-to-equity, ROE, return on capital) can't "
+            "be meaningfully computed against a negative net worth and are withheld (cross-verified "
+            "across sources).")
+
     cpe, mpe = v.get("current_pe"), v.get("median_pe")
     if cpe and mpe and cpe > 0 and mpe > 0:
         ratio = cpe / mpe
