@@ -199,6 +199,24 @@ def test_plain_points_dividend_bands_stay_neutral():
         assert "automatically good or bad" in joined
 
 
+def test_plain_points_unusually_high_dividend_yield_warns_about_price_fall_and_sustainability():
+    # WHY (real money, honesty for income-seeking parents): a 3% and a 12% yield are NOT the same
+    # story. Yield = dividend / price, so an UNUSUALLY high yield often reflects a FALLEN share price
+    # as much as a generous dividend, and can flag a payout the market expects to be cut -- the
+    # classic yield trap that draws income investors into a value trap. A normal 'high' yield (3-6%)
+    # keeps the neutral income-vs-growth framing; an unusually high one ADDS a check-sustainability
+    # caveat (non-alarmist: it says "check", and stays true even for a legitimate high-yielder whose
+    # payout IS covered).
+    high12 = " ".join(plain_points({"dividend_yield_pct": 12.0}, []))
+    assert "12.0%" in high12
+    assert "fallen share price" in high12.lower()
+    assert "cut" in high12.lower() and "covered by earnings" in high12.lower()
+    assert "automatically good or bad" in high12          # base neutral framing still present
+    # a normal 'high' yield (5.1%) must NOT get the extra distress caveat:
+    normal_high = " ".join(plain_points({"dividend_yield_pct": 5.1}, []))
+    assert "fallen share price" not in normal_high.lower()
+
+
 def test_plain_points_no_dividend_point_when_unknown():
     assert plain_points({}, []) == []
 

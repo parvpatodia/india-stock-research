@@ -36,6 +36,10 @@ _ROCE_GOOD, _ROCE_WEAK = 15.0, 10.0       # % return on capital employed
 _ROA_GOOD, _ROA_WEAK = 6.0, 2.0           # % return on assets (industrials; banks differ)
 _NETMARGIN_GOOD, _NETMARGIN_WEAK = 12.0, 3.0
 _OPMARGIN_GOOD, _OPMARGIN_WEAK = 15.0, 5.0
+# Above this a dividend yield is unusual for an Indian equity (the market yields ~1-1.5%; even
+# high-payout PSUs/utilities sit ~5-8%). A yield this high is worth a sustainability check: it
+# often reflects a fallen price as much as a generous dividend, and can flag an expected cut.
+_DIVIDEND_YIELD_UNUSUAL = 6.0
 
 
 def _unknown(name: str, why: str) -> MetricResult:
@@ -290,9 +294,19 @@ def plain_points(v: dict, deep: list[MetricResult], is_real_estate: bool = False
                           "automatically a red flag.")
         else:
             band = "high" if dy >= 3.0 else "moderate" if dy >= 1.0 else "modest"
-            points.append(f"Dividend: a {band} {dy:.1f}% dividend yield at the current price. "
-                          "Neither high nor low is automatically good or bad on its own, weigh "
-                          "it against whether the business is reinvesting for growth instead.")
+            line = (f"Dividend: a {band} {dy:.1f}% dividend yield at the current price. "
+                    "Neither high nor low is automatically good or bad on its own, weigh "
+                    "it against whether the business is reinvesting for growth instead.")
+            # WHY (real money, honesty for income-seeking parents): yield = dividend / price, so an
+            # UNUSUALLY high yield often reflects a fallen share price as much as a generous
+            # dividend, and can flag a payout the market expects to be cut -- the classic yield trap.
+            # Non-alarmist ("check"): stays true even for a legitimate high-yielder whose payout is
+            # covered (the check simply passes), while warning off a distressed value trap.
+            if dy >= _DIVIDEND_YIELD_UNUSUAL:
+                line += (" A yield this high often reflects a fallen share price as much as a "
+                         "generous dividend, and can flag a payout the market expects to be cut -- "
+                         "check it's covered by earnings and cash flow before relying on it.")
+            points.append(line)
 
     for m in deep:
         if m.known:
