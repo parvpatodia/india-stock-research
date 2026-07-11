@@ -314,6 +314,27 @@ def test_guidance_weak_quality_reviews_thesis():
     assert any("weak fundamentals matter more" in p for p in g.points)
 
 
+def test_guidance_neutral_non_holder_gets_no_hold_rating():
+    # WHY (real money, "no buy/sell/hold advice" invariant): the neutral/final branch said "Long-term:
+    # hold" regardless of ownership. For a HOLDER "hold" is portfolio management (keep your position);
+    # for a NON-holder it reads as a hold RATING -- the exact hold ADVICE the app forbids -- and a
+    # neutral (mixed-evidence) name reading "hold" is a soft endorsement it hasn't earned. Use the
+    # `held` flag already passed: a non-holder hears "no clear signal to start a position".
+    v = _v(ValuationTier.FAIR, QualityTier.MIXED, Leaning.NEUTRAL)
+    assert stance_from_verdict(v) == Stance.NEUTRAL
+    g = long_term_guidance(Stance.NEUTRAL, position_sizing(0, 100, 0.25), v, held=False)
+    assert "hold" not in g.headline.lower()                          # no ownership-presuming hold rating
+    body = " ".join(g.points).lower()
+    assert "start a position" in body or "no strong reason" in body  # framed honestly for a non-holder
+
+
+def test_guidance_neutral_holder_still_says_hold():
+    # A holder's neutral name correctly reads "hold" -- keep your position, no action -- unchanged.
+    v = _v(ValuationTier.FAIR, QualityTier.MIXED, Leaning.NEUTRAL)
+    g = long_term_guidance(Stance.NEUTRAL, position_sizing(30, 100, 0.25), v, held=True)
+    assert "hold" in g.headline.lower()
+
+
 def test_allocation_spreads_across_two_favorable_names():
     cands = [
         AllocationCandidate("A", Stance.FAVORABLE, 0.0),

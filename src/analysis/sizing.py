@@ -353,6 +353,15 @@ def long_term_guidance(stance: Stance, sizing: SizingAdvice, verdict: Verdict | 
              "timing the market.",
              revisit))
 
+    # WHY holder-aware (real money, the "no buy/sell/hold advice" line): "hold" is portfolio
+    # management for someone who OWNS it (keep your position, no action). For a stock the parent does
+    # NOT own, "hold" reads as a hold RATING -- the exact hold advice this app avoids -- and a neutral,
+    # mixed-evidence name reading "hold" is a soft endorsement it has not earned. Frame a non-holder's
+    # neutral read as no signal to START a position, not a rating.
+    if held:
+        return Guidance(
+            "Long-term: hold.",
+            ("Nothing in the verified data points to adding or trimming right now.", revisit))
     return Guidance(
-        "Long-term: hold.",
-        ("Nothing in the verified data points to adding or trimming right now.", revisit))
+        "Long-term: no clear signal either way.",
+        ("The evidence is mixed, so there's no strong reason to start a position right now.", revisit))
