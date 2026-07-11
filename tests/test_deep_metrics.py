@@ -72,6 +72,33 @@ def test_plain_points_are_simple_sentences_with_numbers():
     assert "D/E 0.84" in joined                                        # debt point
 
 
+def test_plain_points_skips_industrial_debt_and_cash_lines_for_a_bank():
+    # WHY (real money, sector-aware; regression exposed once bank balance sheets started parsing):
+    # the industrial D/E and OCF-vs-profit lines do NOT apply to a lender -- a bank is leveraged by
+    # design (routed to the ROA lens, not D/E) and its operating cash flow is dominated by
+    # lending/deposit flows, so a growing bank can show negative OCF that would FALSE-flag as a
+    # cash red flag. The verdict path and compute_deep_metrics already avoid these lenses for
+    # banks; the always-visible plain_points summary must too, or it contradicts them.
+    v = {"current_pe": 18.0, "median_pe": 16.0, "operating_cash_flow": -50 * CR,
+         "net_profit": 200 * CR, "total_debt": 970 * CR, "equity": 200 * CR,
+         "ebit": 100 * CR, "interest_expense": 50 * CR, "total_assets": 3000 * CR,
+         "dividend_yield_pct": 1.2}
+    joined = " ".join(plain_points(v, compute_deep_metrics(v, is_bank=True), is_bank=True))
+    assert "D/E" not in joined                       # no industrial leverage line for a lender
+    assert "backed by cash" not in joined            # no industrial cash-quality line
+    assert "red flag" not in joined.lower()          # the negative-OCF false alarm must not appear
+    assert "P/E 18" in joined                         # price still shown
+    assert "dividend yield" in joined.lower()         # dividend still shown
+
+
+def test_plain_points_still_shows_debt_and_cash_lines_for_a_non_bank():
+    # regression: the industrial lines must still appear for a normal (non-bank) company
+    v = {"operating_cash_flow": 90 * CR, "net_profit": 100 * CR,
+         "total_debt": 84 * CR, "equity": 100 * CR, "ebit": 30 * CR, "interest_expense": 3 * CR}
+    joined = " ".join(plain_points(v, [], is_bank=False))
+    assert "D/E 0.84" in joined and "Cash quality:" in joined
+
+
 def test_plain_points_omit_unknowns():
     v = {"current_pe": None, "median_pe": None, "net_profit": None}    # nothing cross-verified
     assert plain_points(v, compute_deep_metrics(v)) == []

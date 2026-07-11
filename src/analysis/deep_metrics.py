@@ -132,10 +132,19 @@ def compute_deep_metrics(v: dict, is_bank: bool = False) -> list[MetricResult]:
     return metrics
 
 
-def plain_points(v: dict, deep: list[MetricResult], is_real_estate: bool = False) -> list[str]:
+def plain_points(v: dict, deep: list[MetricResult], is_real_estate: bool = False,
+                 is_bank: bool = False) -> list[str]:
     """5-6 short, everyday-language reasons with the real numbers, for a non-expert reader.
     Covers price, cash quality, and debt from the core figures, then the ratio suite. Only
     includes points whose inputs cross-verified.
+
+    is_bank: WHY (real money, sector-aware; regression exposed once bank balance sheets started
+    parsing) -- the industrial D/E "Debt:" line and the OCF-vs-profit "Cash quality:" line do NOT
+    apply to a lender. A bank/NBFC is leveraged by design (the verdict routes it to the ROA lens,
+    not D/E; see bank_framework), and its operating cash flow is dominated by lending/deposit
+    flows, so a healthy growing bank can show negative OCF that would FALSE-flag as a cash red
+    flag. compute_deep_metrics and the verdict already skip these lenses for banks; this
+    always-visible summary must too, or it contradicts them right where a parent reads it.
 
     is_real_estate: WHY (real money, UI honesty) -- the real-estate leverage caveat
     (framework.REAL_ESTATE_LEVERAGE_CAVEAT) previously only reached Verdict.reasons, shown inside
@@ -161,7 +170,7 @@ def plain_points(v: dict, deep: list[MetricResult], is_real_estate: bool = False
                       f"(P/E {cpe:.0f}); historically it traded near ₹{mpe:.0f} — {tag}.")
 
     np_, ocf = v.get("net_profit"), v.get("operating_cash_flow")
-    if np_ and ocf and np_ > 0:
+    if not is_bank and np_ and ocf and np_ > 0:
         r = ocf / np_
         # WHY (real money, honesty; adversarial-review-style regression, same class as the debt
         # word below): derive the word from earnings_quality's OWN tier, the SAME computation the
@@ -176,7 +185,7 @@ def plain_points(v: dict, deep: list[MetricResult], is_real_estate: bool = False
                       f"{cash_txt} of cash — profits are {word}.")
 
     debt, eq = v.get("total_debt"), v.get("equity")
-    if debt is not None and eq and eq > 0:
+    if not is_bank and debt is not None and eq and eq > 0:
         de = debt / eq
         ebit, interest = v.get("ebit"), v.get("interest_expense")
         cover = (ebit / interest) if (ebit and interest and interest > 0) else None

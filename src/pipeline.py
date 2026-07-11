@@ -86,7 +86,7 @@ def build_company_report(company: str,
     # median_pe figure, so the price/valuation reason renders whenever valuation was assessed.
     tvals["median_pe"] = median
     insights = plain_points(tvals, compute_deep_metrics(tvals, is_bank=is_bank),
-                            is_real_estate=is_real_estate)
+                            is_real_estate=is_real_estate, is_bank=is_bank)
 
     return Report(
         company=company,
