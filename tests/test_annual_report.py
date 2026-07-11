@@ -316,6 +316,26 @@ def test_ar_figures_by_year_tags_fiscal_year():
     assert src.figures_by_year("X")["net_profit"] == {2026: 80775 * 1e7}
 
 
+def test_figures_by_year_tags_with_the_detected_year_not_the_models_top_level_claim():
+    # WHY (real money, cross-verification integrity): parse_extraction VALIDATES each figure's year
+    # against the deterministic detect_fiscal_year, deliberately distrusting the model's own year
+    # claim (a model confused enough to mislabel a figure could be wrong about the top-level year
+    # too -- the same rationale that check is built on). The YEAR TAG used to align figures across
+    # sources must use that SAME authoritative reference. Preferring the model's top-level claim
+    # meant a figure validated as FY2025 could be tagged FY2026 whenever the model's top-level year
+    # was wrong -- then it cross-verifies against the WRONG year's yfinance/Screener value. Here the
+    # report reliably says "year ended 31 March 2025" but the model top-level-claims 2026; the
+    # figure (validated, grounded) must tag as 2025.
+    text = ("Annual Report for the year ended 31 March 2025. "
+            "Profit for the year was 80,775 crore.")
+    assert detect_fiscal_year(text) == 2025
+    resp = json.dumps({"fiscal_year": 2026,   # model's top-level claim disagrees with the report
+                       "net_profit": {"value": 80775, "unit": "crore",
+                                      "quote": "Profit for the year was 80,775 crore"}})
+    src = AnnualReportFigureSource(lambda s: text, client=FakeClient(resp))
+    assert src.figures_by_year("X")["net_profit"] == {2025: 80775 * 1e7}
+
+
 def test_annual_report_breaks_a_two_source_conflict():
     # yfinance and Screener disagree on FY2026 net profit; the annual report confirms yfinance.
     yf = FakeYearSource("yfinance", {"net_profit": {2026: 807.75e9}})

@@ -319,7 +319,16 @@ class AnnualReportFigureSource(FigureSource):
                 pbt, interest = parsed.get("profit_before_tax"), parsed.get("interest_expense")
                 if pbt is not None and interest is not None:
                     parsed["ebit"] = pbt + interest      # EBIT derived, same as the other sources
-                fy = _num_year(payload.get("fiscal_year")) or detect_fiscal_year(text)
+                # WHY prefer the deterministic detect_fiscal_year over the model's top-level claim
+                # (real money, cross-verification integrity): parse_extraction already VALIDATES each
+                # figure's year against detect_fiscal_year, deliberately distrusting the model's own
+                # year claim (a model confused enough to mislabel a figure could be wrong about the
+                # top-level year too). The YEAR TAG that aligns these figures with yfinance/Screener
+                # must use that SAME authoritative reference, or a figure validated as FY2025 gets
+                # tagged FY2026 whenever the model's top-level claim is wrong -- then it cross-verifies
+                # against the WRONG year's value. Fall back to the model's claim only when the
+                # deterministic detection finds nothing (figures_by_year returns {} if fy is None).
+                fy = detect_fiscal_year(text) or _num_year(payload.get("fiscal_year"))
                 result = (parsed, fy)
         self._cache[symbol] = result
         return result
