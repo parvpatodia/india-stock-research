@@ -512,6 +512,28 @@ def test_numbers_grounded_percentage_with_decimal_matches_exactly():
     assert not numbers_grounded("Dividend yield is 5%", src)
 
 
+def test_numbers_grounded_does_not_collapse_decimal_placement_to_an_integer():
+    # WHY (real money, HIGH severity, false positive): the digit-normalizer must NOT drop the
+    # decimal POINT, or two numbers 10x-1000x apart that share a digit sequence ground against each
+    # other. "12.34%" (a margin) and "1,234 crore" (a revenue) both reduce to the digits "1234", so
+    # before this fix a fabricated "operating margin was 12.34%" GROUNDED against an unrelated
+    # 1,234-crore figure and rendered as a VERIFIED FACT -- a 100x-off number stated confidently,
+    # the exact wrong-figure failure this function exists to prevent. Percentages and rupee-crore
+    # figures routinely coexist in one Ask answer's cited sources, so this is reachable, not
+    # theoretical. The match key drops thousands-separator commas (1,234 still equals 1234) but
+    # PRESERVES the decimal point (12.34 is now distinct from 1234).
+    assert not numbers_grounded("operating margin was 12.34%",
+                                ["Revenue rose to 1,234 crore in the latest year."])
+    assert not numbers_grounded("the ratio was 1.234", ["debt stood at 1234 crore"])
+    assert not numbers_grounded("it grew 123.4%", ["profit was 1234 crore"])
+    # The SAME figure at the SAME decimal placement still grounds (no false negative introduced):
+    assert numbers_grounded("operating margin was 12.34%", ["Margin held at 12.34% this year."])
+    assert numbers_grounded("P/E is 18.55", ["Current P/E: 18.55 (cross-verified)."])
+    # Thousands-separator normalization is preserved (comma vs no comma still equal):
+    assert numbers_grounded("revenue was 1,234 crore", ["revenue reached 1234 crore"])
+    assert numbers_grounded("net profit 73,670 crore", ["Net profit was 73670 crore."])
+
+
 def test_numbers_grounded_ignores_timestamp_dates_as_figures():
     # WHY (real money, regression): verified_figures_document embeds a fetch timestamp like
     # "fetched 2026-07-09T09:00:00Z" so the Ask tab's answers self-disclose data freshness. The

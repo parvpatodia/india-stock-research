@@ -62,6 +62,18 @@ def _digits(token: str) -> str:
     return re.sub(r"\D", "", token)
 
 
+def _num_key(token: str) -> str:
+    """Canonical MATCH key for a number: drop thousands-separator commas (and any other non-numeric
+    decoration such as a trailing '%'/currency mark) but PRESERVE the decimal point. WHY (real money,
+    false positive): _digits alone strips the decimal too, so 12.34, 1.234, 123.4 and 1234 all reduce
+    to "1234" -- a fabricated "12.34%" margin then grounds against an unrelated "1,234 crore" figure
+    100x its size and renders as a verified fact. Keeping the decimal makes 12.34 distinct from 1234
+    while 1,234 still equals 1234, and "0.5" stays distinct from "5" (the property _digits already
+    gave via "05" != "5"). _digits is still used for the >=3-digit MATERIALITY gate, which counts
+    digits only; only the match key preserves the point."""
+    return re.sub(r"[^\d.]", "", token)
+
+
 def _strip_metadata(t: str) -> str:
     # Remove date/timestamp AND fiscal-year-tag digits before extraction: both are metadata
     # (when a source was fetched / which period a figure is for), never citable figures.
@@ -79,8 +91,10 @@ def _material_numbers(text: str) -> set[str]:
     factored out so estimate_has_numeric_basis reuses the identical definition of 'a material
     figure' rather than a second, drifting copy."""
     stripped = _strip_metadata(text)
-    material = {_digits(m) for m in _NUMBER.findall(stripped) if len(_digits(m)) >= 3}
-    material |= {_digits(m) for m in _UNIT_NUMBER.findall(stripped)}
+    # Materiality is gated on DIGIT count (>=3) via _digits; the stored value is the _num_key match
+    # key, which preserves the decimal point so 12.34 does not collide with 1234 (see _num_key).
+    material = {_num_key(m) for m in _NUMBER.findall(stripped) if len(_digits(m)) >= 3}
+    material |= {_num_key(m) for m in _UNIT_NUMBER.findall(stripped)}
     return material
 
 
@@ -100,16 +114,19 @@ def numbers_grounded(text: str, source_texts: list[str]) -> bool:
     routinely 1-2 digits; exempting them like a bare small count would silently wave through a
     materially wrong claim ("8%" when the figure is "22%", "45 percent" for "12 per cent", or "50
     crore" when the source said "80 crore") with no check at all. Both symbol and word spellings
-    are covered, so the check is robust to however Indian financial text writes the unit. Digit-normalized exact match (not
-    substring), so '957' does not spuriously ground against '9575', and '5%' does not spuriously
-    ground against '0.5%' (05 != 5). Date/timestamp substrings are stripped before extraction
+    are covered, so the check is robust to however Indian financial text writes the unit. Normalized
+    exact match (not substring) on a key that drops thousands-separator commas but KEEPS the decimal
+    point (see _num_key), so '957' does not ground against '9575', '5%' does not ground against
+    '0.5%', and -- critically -- a fabricated '12.34%' does not ground against an unrelated '1,234
+    crore' 100x its size (12.34 and 1234 are distinct keys, while '1,234' still equals '1234').
+    Date/timestamp substrings are stripped before extraction
     (see _DATE_LIKE), so a source's own fetch-date disclosure can never double as grounding for
     an unrelated fabricated figure."""
     material = _material_numbers(text)
     if not material:
         return True
-    source_digits = {_digits(m) for t in source_texts for m in _all_numbers(t)}
-    return all(d in source_digits for d in material)
+    source_keys = {_num_key(m) for t in source_texts for m in _all_numbers(t)}
+    return all(d in source_keys for d in material)
 
 
 def estimate_has_numeric_basis(text: str, source_texts: list[str]) -> bool:
