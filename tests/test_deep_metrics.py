@@ -330,6 +330,30 @@ def test_plain_points_cheap_valuation_is_hedged_as_a_research_cue_not_a_bargain(
     assert "re-rate" not in fair.lower() and "research" not in fair.lower()  # no hedge when not cheap
 
 
+def test_plain_points_price_tag_tracks_the_framework_valuation_threshold():
+    # WHY (real money, single source of truth; the same divergence _LEVERAGE_WORD / _OCF_WORD close
+    # for the debt and cash lines): the always-visible "Price:" insight's cheap / in-line / pricey
+    # wording must classify on the SAME threshold as the Verdict's valuation tier
+    # (framework.valuation_vs_history / _PE_CHEAP / _PE_EXPENSIVE), never a second hardcoded literal.
+    # The P/E threshold is expert-tunable; a private copy here would let a tuned framework read the
+    # verdict "fair" while this summary still says "cheaper than usual" -- a contradiction the parent
+    # sees. Pin the coupling so re-introducing a literal (or tuning one side only) fails loudly.
+    from src.analysis.framework import _PE_CHEAP, _PE_EXPENSIVE, valuation_vs_history
+    mpe = 20.0
+    # ratios that straddle BOTH framework boundaries from just inside each side
+    for ratio in (_PE_CHEAP - 0.05, _PE_CHEAP + 0.05, 1.0, _PE_EXPENSIVE - 0.05, _PE_EXPENSIVE + 0.05):
+        cpe = ratio * mpe
+        price = next(p for p in plain_points({"current_pe": cpe, "median_pe": mpe}, [])
+                     if p.startswith("Price:"))
+        tier = valuation_vs_history(cpe, mpe).verdict     # "cheap" / "fair" / "expensive"
+        if tier == "cheap":
+            assert "cheaper" in price, f"ratio {ratio}: verdict cheap but insight said: {price}"
+        elif tier == "expensive":
+            assert "pricier" in price, f"ratio {ratio}: verdict expensive but insight said: {price}"
+        else:
+            assert "in line" in price, f"ratio {ratio}: verdict fair but insight said: {price}"
+
+
 def test_plain_points_flags_a_dividend_paid_during_a_net_loss():
     # WHY (real money, quality of earnings): a dividend paid in a LOSS year is funded from past
     # reserves or borrowing, NOT current profit -- a real sustainability question a professional

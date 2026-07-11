@@ -13,6 +13,8 @@ from .framework import (
     MetricResult,
     _avg_denominator,
     _COVERAGE_CANNOT_COVER,
+    _PE_CHEAP,
+    _PE_EXPENSIVE,
     earnings_quality,
     leverage_health,
 )
@@ -296,13 +298,20 @@ def plain_points(v: dict, deep: list[MetricResult], is_real_estate: bool = False
         # cue to research WHY, not proof of a bargain. Kept INSIDE the "Price:" insight so it is
         # excluded from the Ask PRIMARY-fact doc with the rest of the (single-source-median) valuation
         # opinion (see verified_context / PRICE_INSIGHT_PREFIX). Only the CHEAP tier carries it.
+        # WHY _PE_CHEAP/_PE_EXPENSIVE, not bare 0.8/1.2 (real money, single source of truth; the same
+        # divergence _LEVERAGE_WORD and _OCF_WORD close for the debt and cash lines): this always-
+        # visible "Price:" insight must classify cheap/in-line/pricey on the EXACT threshold the
+        # Verdict's valuation tier uses (framework.valuation_vs_history), never a second hardcoded
+        # copy. The threshold is expert-tunable; a literal here would let a tuned framework read the
+        # verdict "fair" while this summary still says "cheaper than usual" -- a contradiction the
+        # parent sees. Sharing the constant makes the two physically incapable of diverging.
         hedge = ""
-        if ratio < 0.8:
+        if ratio < _PE_CHEAP:
             tag = f"cheaper than usual versus its own history (about {ratio:.0%} of its normal)"
             hedge = (" A below-usual multiple is a cue to research WHY, not a bargain on its own: "
                      "the market can permanently re-rate a business lower when its growth slows or "
                      "quality fades, so its old higher multiple may never return.")
-        elif ratio > 1.2:
+        elif ratio > _PE_EXPENSIVE:
             tag = f"pricier than usual versus its own history ({ratio:.1f}x its normal)"
         else:
             tag = "about in line with its own history"
