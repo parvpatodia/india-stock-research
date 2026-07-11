@@ -126,6 +126,25 @@ def test_bank_roa_uses_bank_bands_not_industrial():
     assert bank.concern is False
 
 
+def test_bank_roa_insight_says_for_a_lender():
+    # WHY (real money, sector-aware clarity): a bank/NBFC earns ~1% ROA by nature (banks are among the
+    # most common Indian retail holdings). The ALWAYS-VISIBLE ROA insight must carry the SAME "for a
+    # lender" qualifier the bank verdict's own reason already uses ("strong for a lender"), or a
+    # non-expert reads a bank-normal 1.1% ROA as an unqualified "strong" with no idea why 1% counts
+    # as strong. The verdict TIER is unchanged; only the plain sentence gains the qualifier. An
+    # industrial ROA stays unqualified.
+    from src.analysis.bank_framework import _ROA_STRONG
+    from src.analysis.bank_framework import _ROA_WEAK as _BANK_ROA_WEAK
+    bank = return_on_assets(11 * CR, 1000 * CR, good=_ROA_STRONG, weak=_BANK_ROA_WEAK, for_lender=True)
+    assert "1.1%" in bank.detail and "strong for a lender" in bank.detail
+    assert bank.verdict == "strong"                                       # the tier itself is unchanged
+    assert "for a lender" not in return_on_assets(6 * CR, 100 * CR).detail  # industrial stays unqualified
+    # and the bank path wires it through compute_deep_metrics:
+    roa_line = {m.name: m for m in compute_deep_metrics(
+        {"net_profit": 11 * CR, "total_assets": 1000 * CR}, is_bank=True)}["Return on assets (ROA)"]
+    assert "for a lender" in roa_line.detail
+
+
 def test_compute_deep_metrics_bank_skips_margins():
     v = {"net_profit": 10 * CR, "equity": 100 * CR, "total_assets": 1000 * CR,
          "ebit": 30 * CR, "total_debt": 50 * CR, "revenue": 80 * CR}

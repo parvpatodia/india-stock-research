@@ -94,7 +94,8 @@ def return_on_capital(ebit: float | None, equity: float | None,
 
 def return_on_assets(net_profit: float | None, total_assets: float | None,
                      good: float = _ROA_GOOD, weak: float = _ROA_WEAK,
-                     prior_total_assets: float | None = None) -> MetricResult:
+                     prior_total_assets: float | None = None,
+                     for_lender: bool = False) -> MetricResult:
     name = "Return on assets (ROA)"
     if net_profit is None or total_assets is None or total_assets <= 0:
         return _unknown(name, "net profit or (positive) total assets unavailable.")
@@ -106,9 +107,15 @@ def return_on_assets(net_profit: float | None, total_assets: float | None,
     basis = ", on average assets" if averaged else ""
     # A loss-making company earns a NEGATIVE return; say it LOSES money rather than "earns ₹-6.0".
     verb = f"loses about ₹{abs(roa):.1f}" if roa < 0 else f"earns about ₹{roa:.1f}"
+    # WHY (sector-aware clarity): a bank/NBFC is graded on lender bands (~1% ROA is strong), so the
+    # ALWAYS-VISIBLE insight must say "strong/moderate/weak FOR A LENDER" to match the bank verdict's
+    # own reason -- otherwise a non-expert reads a bank-normal 1.1% ROA as an unqualified "strong"
+    # with no idea why 1% counts as strong. The verdict TIER (v/concern) is unchanged; only the
+    # displayed sentence gains the qualifier. Industrial ROA stays unqualified.
+    verdict_word = f"{v} for a lender" if for_lender else v
     return MetricResult(name, True, v,
                         f"For every ₹100 of everything it owns, it {verb} "
-                        f"(ROA {roa:.1f}%{basis}) — {v}.", concern)
+                        f"(ROA {roa:.1f}%{basis}) — {verdict_word}.", concern)
 
 
 def net_margin(net_profit: float | None, revenue: float | None) -> MetricResult:
@@ -190,7 +197,8 @@ def compute_deep_metrics(v: dict, is_bank: bool = False) -> list[MetricResult]:
     p_eq, p_debt, p_assets = (v.get("prior_equity"), v.get("prior_total_debt"),
                               v.get("prior_total_assets"))
     roa = (return_on_assets(v.get("net_profit"), v.get("total_assets"),
-                            good=_ROA_STRONG, weak=_BANK_ROA_WEAK, prior_total_assets=p_assets)
+                            good=_ROA_STRONG, weak=_BANK_ROA_WEAK, prior_total_assets=p_assets,
+                            for_lender=True)
            if is_bank else
            return_on_assets(v.get("net_profit"), v.get("total_assets"), prior_total_assets=p_assets))
     metrics = [return_on_equity(v.get("net_profit"), v.get("equity"), prior_equity=p_eq), roa]
