@@ -233,14 +233,20 @@ def plain_points(v: dict, deep: list[MetricResult], is_real_estate: bool = False
     cpe, mpe = v.get("current_pe"), v.get("median_pe")
     if cpe and mpe and cpe > 0 and mpe > 0:
         ratio = cpe / mpe
+        # WHY (real money, clarity): the P/E is a MULTIPLE, not the share price. Framing the median
+        # P/E as "traded near ₹24" or "its usual price" reads the valuation LEVEL as a rupee share
+        # price -- confusing next to the real (e.g. ₹1,400) price the parent sees for the same
+        # holding elsewhere. Keep the intuitive "₹ paid per ₹1 of profit" explanation, but tag the
+        # comparison as the valuation level versus the company's OWN history, never a "price".
         if ratio < 0.8:
-            tag = f"cheaper than its usual price (about {ratio:.0%} of normal)"
+            tag = f"cheaper than usual versus its own history (about {ratio:.0%} of its normal)"
         elif ratio > 1.2:
-            tag = f"pricier than usual ({ratio:.1f}x its normal price)"
+            tag = f"pricier than usual versus its own history ({ratio:.1f}x its normal)"
         else:
-            tag = "around its usual price"
+            tag = "about in line with its own history"
         points.append(f"Price: you pay about ₹{cpe:.0f} for every ₹1 of yearly profit "
-                      f"(P/E {cpe:.0f}); historically it traded near ₹{mpe:.0f} — {tag}.")
+                      f"(P/E {cpe:.0f}); historically you'd have paid about ₹{mpe:.0f} for that "
+                      f"same ₹1 of profit — {tag}.")
 
     np_, ocf = v.get("net_profit"), v.get("operating_cash_flow")
     if not is_bank and np_ and ocf and np_ > 0:

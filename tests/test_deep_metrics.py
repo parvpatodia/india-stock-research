@@ -219,6 +219,22 @@ def test_plain_points_unusually_high_dividend_yield_warns_about_price_fall_and_s
     assert "fallen share price" not in normal_high.lower()
 
 
+def test_plain_points_price_reads_as_valuation_not_a_share_price():
+    # WHY (real money, clarity for a non-expert): the median P/E is a MULTIPLE, not the share price.
+    # The old wording ("historically it traded near ₹24", "cheaper than its usual price") read the
+    # P/E LEVEL as a rupee share price -- jarring and confusing next to the real ₹1,400 price a parent
+    # sees for the same holding elsewhere in the app. Keep the intuitive "₹ per ₹1 of profit"
+    # explanation of P/E, but frame the history and the tag as the VALUATION LEVEL versus its own
+    # history, never a "price".
+    price = next(p for p in plain_points({"current_pe": 18.0, "median_pe": 24.0}, [])
+                 if p.startswith("Price:"))
+    assert "P/E 18" in price and "₹18" in price and "₹24" in price   # the figures are still shown
+    assert "traded near" not in price                                # no share-price implication
+    assert "usual price" not in price and "normal price" not in price
+    assert "history" in price.lower()                                # framed vs its own history
+    assert "cheaper" in price                                        # 18/24 = 0.75 < 0.8 -> cheaper
+
+
 def test_plain_points_no_dividend_point_when_unknown():
     assert plain_points({}, []) == []
 
