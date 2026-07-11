@@ -80,11 +80,21 @@ def research_and_rank(symbols: list[str], value_by_symbol: dict[str, float], tot
     return rank_picks(candidates)
 
 
+def _ntfy_body(picks) -> str:
+    """The push-notification text for the daily suggestions. WHY (real money, honesty; the hard
+    "never a buy/sell call" invariant): this pushes to a parent's phone, acted on at a glance, so it
+    must carry the SAME non-advice framing the app applies everywhere else (STANCE_CAVEAT: "not a buy
+    or sell call"). Calling them "picks" reads as a buy tip; frame them as a research shortlist the
+    evidence leans toward, explicitly not advice. Per-name stance is still shown."""
+    lines = "\n".join(f"{i + 1}. {p.symbol} - {p.stance.value}" for i, p in enumerate(picks[:5]))
+    return ("Names your research surfaced today, within your per-stock cap -- to research, "
+            "NOT buy/sell advice:\n" + lines)
+
+
 def push_ntfy(topic: str, picks) -> None:
     if not topic or not picks:
         return
-    body = "Today's long-term picks (within your cap):\n" + "\n".join(
-        f"{i + 1}. {p.symbol} - {p.stance.value}" for i, p in enumerate(picks[:5]))
+    body = _ntfy_body(picks)
     try:
         req = urllib.request.Request(
             f"https://ntfy.sh/{topic}", data=body.encode("utf-8"),

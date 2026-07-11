@@ -1,4 +1,5 @@
 from src.analysis.daily_engine import (
+    _ntfy_body,
     candidate_from_report,
     picks_to_rows,
     refresh_today_if_stale,
@@ -84,6 +85,20 @@ def test_candidate_trend_reads_structured_flag_not_prose():
                  insights=("Track record: sales have been growing 26% a year.",))
     c = candidate_from_report("X", rep, held_value=0.0, total_value=100.0, cap_pct=0.25)
     assert c.trend_improving is False
+
+
+def test_ntfy_body_frames_as_research_not_a_buy_call():
+    # WHY (real money, honesty; hard "never a buy/sell call" invariant): the daily push is a
+    # NOTIFICATION of the suggestions feature, and a parent acts on a phone glance. The app frames
+    # suggestions in-app as "evidence leans favorable ... not a buy or sell call" (STANCE_CAVEAT), but
+    # the notification said "Today's long-term PICKS" with no caveat -- "picks" reads as a buy tip.
+    # The notification must carry the same non-advice framing as the app, and not call them "picks".
+    picks = [RankedPick("RELIANCE", Stance.FAVORABLE, 5.0, "cheap"),
+             RankedPick("TCS", Stance.NEUTRAL, 4.0, "fair")]
+    body = _ntfy_body(picks)
+    assert "RELIANCE - favorable" in body and "TCS - neutral" in body   # the names + stance still shown
+    assert "not buy/sell advice" in body.lower()                        # carries the non-advice framing
+    assert "picks" not in body.lower()                                  # not framed as recommended 'picks'
 
 
 def test_picks_to_rows_floors_the_conviction_fraction():
