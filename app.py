@@ -603,10 +603,17 @@ def build_pdf_report(title: str, report, stance: Stance, guidance=None,
              "figures above do. Context, not a fact, and never a buy/sell signal on their own.",
              size=9, style="I", h=5)
 
+    pdf.ln(2)
+    pdf.set_text_color(90, 90, 90)
     if v is not None:
-        pdf.ln(2)
-        pdf.set_text_color(90, 90, 90)
         line(v.caveat, size=9, style="I", h=5)
+    # WHY (real money, honesty): the PDF is saved/shared OFFLINE, away from the app's always-visible
+    # footer disclaimer, so it must carry the full disclaimer itself. Two gaps this closes: a
+    # no-verdict (insufficient/no-data) report previously had NO caveat at all (the app shows the
+    # DISCLAIMER for a no-verdict report, so the PDF must too); and the verdict caveat alone omits
+    # "verify every figure / data may be delayed or incorrect / you alone are responsible" -- exactly
+    # what a document shared with family, without the app around it, needs.
+    line(DISCLAIMER, size=9, style="I", h=5)
     return bytes(pdf.output())
 
 

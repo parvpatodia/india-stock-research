@@ -55,6 +55,26 @@ def test_pdf_includes_the_single_source_context_signals():
     assert "cannot cross-verify" in text
 
 
+def test_pdf_always_carries_the_full_disclaimer_incl_no_data_report():
+    # WHY (real money, honesty): the "Download full report" PDF is saved/shared OFFLINE, away from
+    # the app's always-visible footer disclaimer. A no-verdict (insufficient/no-data) report carried
+    # NO caveat at all in the PDF -- inconsistent with the app, which shows the full DISCLAIMER for a
+    # no-verdict report. And even a normal report's verdict caveat omits "verify every figure / data
+    # may be delayed or incorrect / you alone are responsible" -- exactly what a shared document needs.
+    # Every PDF must carry the full app disclaimer; a report WITH a verdict keeps its verdict caveat too.
+    app = _import_app_with_clean_env()
+
+    def norm(pdf_bytes):
+        return " ".join(_pdf_text(pdf_bytes).split()).lower()
+
+    no_data = norm(app.build_pdf_report("XYZ (live)", Report(company="XYZ", verdict=None),
+                                        Stance.INSUFFICIENT_DATA))
+    assert "not investment advice" in no_data and "verify every figure" in no_data
+    normal = norm(app.build_pdf_report("RELIANCE (live)", _report(), Stance.NEUTRAL))
+    assert "verify every figure" in normal          # the full disclaimer is present
+    assert "caveated opinion" in normal             # AND the verdict-specific caveat is still there
+
+
 def test_pdf_omits_the_section_entirely_when_no_signal_is_available():
     # WHY: don't show an empty/misleading "Additional context" header when nothing was fetched
     # (e.g. Screener was unreachable) -- omission must read as "nothing shown", not "nothing
