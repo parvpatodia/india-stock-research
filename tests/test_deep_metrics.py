@@ -270,6 +270,19 @@ def test_plain_points_cash_quality_word_matches_earnings_quality_on_negative_ocf
     assert "only partly backed by cash" not in joined
 
 
+def test_plain_points_negative_cash_flow_reads_as_flowing_out_not_collected():
+    # WHY (real money, clarity for a non-expert): when operating cash flow is NEGATIVE, the line
+    # read "it actually collected a net outflow of ₹0.50 of cash" -- you don't "collect" an
+    # outflow, a self-contradictory phrasing for the exact red-flag pattern this line exists to
+    # warn about. Say plainly that cash flowed OUT of the business.
+    joined = " ".join(plain_points({"net_profit": 100 * CR, "operating_cash_flow": -50 * CR}, []))
+    assert "collected a net outflow" not in joined
+    assert "flowed out of the business" in joined.lower() and "₹0.50" in joined
+    # a POSITIVE cash flow still reads "collected ₹X of cash" (unchanged):
+    pos = " ".join(plain_points({"net_profit": 100 * CR, "operating_cash_flow": 90 * CR}, []))
+    assert "collected ₹0.90 of cash" in pos
+
+
 def test_plain_points_debt_line_flags_an_operating_loss_not_a_negative_cover():
     # WHY (real money, clarity): a leveraged loss-maker showed "operating profit covers its interest
     # bill about -2x over" -- a confusing negative "cover". Say its operating profit is negative and

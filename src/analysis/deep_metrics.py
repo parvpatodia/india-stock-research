@@ -253,9 +253,15 @@ def plain_points(v: dict, deep: list[MetricResult], is_real_estate: bool = False
         # merely-thin-but-positive ratio, so the always-visible summary understated exactly the
         # pattern the collapsed evidence panel now calls a red flag.
         word = _OCF_WORD.get(earnings_quality(ocf, np_).verdict, "reasonably backed by cash")
-        cash_txt = f"₹{r:.2f}" if r >= 0 else f"a net outflow of ₹{abs(r):.2f}"
-        points.append(f"Cash quality: for every ₹1 of reported profit it actually collected "
-                      f"{cash_txt} of cash — profits are {word}.")
+        # WHY (clarity): a NEGATIVE ratio means cash left the business; "collected a net outflow of
+        # cash" is a self-contradiction ("collected" an outflow), so phrase the negative case as
+        # cash flowing OUT. The positive case is unchanged ("collected ₹X of cash").
+        if r >= 0:
+            cash_clause = f"it actually collected ₹{r:.2f} of cash"
+        else:
+            cash_clause = f"₹{abs(r):.2f} of cash actually flowed OUT of the business"
+        points.append(f"Cash quality: for every ₹1 of reported profit {cash_clause} — "
+                      f"profits are {word}.")
 
     debt, eq = v.get("total_debt"), v.get("equity")
     if not is_bank and debt is not None and eq and eq > 0:
