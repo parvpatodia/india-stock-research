@@ -25,6 +25,29 @@ def _single_source(name, value) -> VerifiedFigure:
                           (SourcedValue(value, "yfinance"),), "only one independent source")
 
 
+def _verified_fy(name, value, year, note="2 independent sources agree") -> VerifiedFigure:
+    return VerifiedFigure(name, VerificationStatus.VERIFIED, value,
+                          (SourcedValue(value, "yfinance", locator=f"FY{year}"),
+                           SourcedValue(value, "screener", locator=f"FY{year}")), note)
+
+
+def test_document_tags_each_annual_figure_with_its_fiscal_year():
+    # WHY (real money, honesty): an Ask answer about "net profit" must disclose WHICH fiscal year it
+    # is for -- an annual figure is the latest COMPLETED year (possibly a year+ old), not "current".
+    # The fiscal year is already on each figure's source locators ("FY2024"); surface it on the
+    # figure line so the model's grounded answer carries it. Point figures (P/E, dividend yield) have
+    # no fiscal-year period and must not get a fabricated FY tag. (The FY year is stripped in
+    # numbers_grounded so it can never itself ground a fabricated figure -- see test_engine.py.)
+    report = Report(company="X", figures=(
+        _verified_fy("net_profit", 736700000000.0, 2024),
+        _verified("current_pe", 18.2),   # point figure -> no FY tag
+    ))
+    doc = verified_figures_document("RELIANCE", report)
+    assert "Net profit (FY2024):" in doc.text          # annual figure carries its fiscal year
+    assert "73,670 crore" in doc.text                  # value still rendered in the crore convention
+    assert "P/E (FY" not in doc.text                    # a point figure gets no fabricated FY tag
+
+
 def test_document_includes_only_cross_verified_figures():
     # WHY (real money): the Ask tab must ground answers only in numbers that ALREADY passed the
     # >=2-source cross-verification bar. A single-source or conflicting figure must never appear

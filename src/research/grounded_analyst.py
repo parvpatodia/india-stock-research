@@ -49,6 +49,13 @@ _UNIT_NUMBER = re.compile(
 # a citable financial figure, so it must not contribute a digit sequence (e.g. the 4-digit year)
 # that a fabricated claim could coincidentally match and pass numeric grounding on.
 _DATE_LIKE = re.compile(r"\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}Z?)?")
+# Fiscal-year tags (e.g. "FY2024", "FY 24"). Like a date, an FY tag is metadata -- it says WHICH
+# period a figure belongs to, not a citable value -- so its 4-digit year must not ground an
+# unrelated fabricated figure. The verified-figures doc and the trend insights both print these
+# ("Net profit, FY2024: ...", "Leverage ... 0.44 in FY2024 to ..."), so without this a made-up
+# "2024 crore" could match the year in an FY tag and pass grounding. A BARE year not written as an
+# FY tag (e.g. a genuine "2024 crore" revenue) is untouched, so real figures still ground normally.
+_FY_TAG = re.compile(r"\bFY\s?\d{2,4}\b", re.IGNORECASE)
 
 
 def numbers_grounded(text: str, source_texts: list[str]) -> bool:
@@ -74,10 +81,14 @@ def numbers_grounded(text: str, source_texts: list[str]) -> bool:
     an unrelated fabricated figure."""
     def digits(token: str) -> str:
         return re.sub(r"\D", "", token)
+    def _strip_metadata(t: str) -> str:
+        # Remove date/timestamp AND fiscal-year-tag digits before extraction: both are metadata
+        # (when a source was fetched / which period a figure is for), never citable figures.
+        return _FY_TAG.sub(" ", _DATE_LIKE.sub(" ", t or ""))
     def numbers_in(t: str) -> list[str]:
-        return _NUMBER.findall(_DATE_LIKE.sub(" ", t or ""))
+        return _NUMBER.findall(_strip_metadata(t))
     def unit_figures_in(t: str) -> list[str]:
-        return _UNIT_NUMBER.findall(_DATE_LIKE.sub(" ", t or ""))
+        return _UNIT_NUMBER.findall(_strip_metadata(t))
     material = {digits(m) for m in numbers_in(text) if len(digits(m)) >= 3}
     material |= {digits(m) for m in unit_figures_in(text)}
     if not material:

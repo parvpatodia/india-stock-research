@@ -485,6 +485,20 @@ def test_numbers_grounded_ignores_timestamp_dates_as_figures():
     assert numbers_grounded("Current P/E was 18.2", src)                 # real figure still grounds
 
 
+def test_numbers_grounded_ignores_fiscal_year_tags_as_figures():
+    # WHY (real money): the verified-figures doc tags each annual figure with its fiscal year
+    # ("Net profit, FY2024: ...") so an Ask answer discloses WHICH year it is for, and the trend
+    # insights already print "FY2024"/"FY2026". The 4-digit YEAR in an FY tag is metadata (which
+    # period), not a citable figure, so it must not "ground" an unrelated fabricated figure that
+    # happens to share those digits -- a made-up "2024 crore" citing that doc must still be flagged.
+    src = ["Net profit, FY2024: 73,670 crore (cross-verified: 2 sources agree)."]
+    assert not numbers_grounded("net profit was 2024 crore", src)   # matches only the FY tag -> caught
+    assert numbers_grounded("net profit was 73,670 crore", src)     # the real figure still grounds
+    # A bare year NOT written as an FY tag stays a normal number, so a genuine ~2024-crore figure
+    # still grounds (only the "FYnnnn" form is treated as metadata).
+    assert numbers_grounded("revenue was 2024 crore", ["revenue reached 2024 crore that year"])
+
+
 def test_build_user_prompt_fences_sources_as_untrusted_data():
     # WHY (prompt injection): news/filing text is third-party and ingested into the prompt. It must
     # be framed as untrusted DATA to quote, never instructions to obey, so a crafted headline like

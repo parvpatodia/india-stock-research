@@ -37,6 +37,18 @@ _LABELS = {
 }
 
 
+def _fiscal_year_tag(fig) -> str:
+    """The fiscal-year tag (e.g. 'FY2024') carried on a figure's source locators, or '' for a
+    point/current figure (P/E, dividend yield, pledge) that has no fiscal-year period. Mirrors the
+    Research tab's own period lookup (app._period), so the Ask doc and the evidence table name the
+    same year for the same figure."""
+    for sv in getattr(fig, "sources", ()):
+        loc = str(getattr(sv, "locator", "") or "")
+        if loc.upper().startswith("FY"):
+            return loc
+    return ""
+
+
 def verified_figures_document(symbol: str, report: Report | None) -> FetchedDocument | None:
     """A citable document of ONLY cross-verified figures + derived insights for `symbol`, or
     None if there is no report or nothing on it cleared cross-verification. Registered at
@@ -48,7 +60,15 @@ def verified_figures_document(symbol: str, report: Report | None) -> FetchedDocu
     for fig in report.figures:
         if fig.is_trustworthy:
             label = _LABELS.get(fig.name, fig.name)
-            lines.append(f"{label}: {format_figure_value(fig.name, fig.value)} "
+            # WHY (real money, honesty): disclose WHICH fiscal year an annual figure is for, so an
+            # Ask answer ("net profit ₹73,670 crore") can't be misread as current when it is the
+            # latest COMPLETED year (possibly a year+ old). The fiscal year is already carried on the
+            # figure's source locators ("FY2024"); a point figure (P/E, dividend yield) has none and
+            # gets no tag. The FY year is stripped in numbers_grounded, so disclosing it here never
+            # lets the year itself ground a fabricated figure (see grounded_analyst._FY_TAG).
+            period = _fiscal_year_tag(fig)
+            labelled = f"{label} ({period})" if period else label
+            lines.append(f"{labelled}: {format_figure_value(fig.name, fig.value)} "
                         f"(cross-verified: {fig.note}).")
     if not lines:
         return None
