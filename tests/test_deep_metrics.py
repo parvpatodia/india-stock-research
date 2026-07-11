@@ -222,6 +222,18 @@ def test_plain_points_still_shows_debt_and_cash_lines_for_a_non_bank():
     assert "D/E 0.84" in joined and "Cash quality:" in joined
 
 
+def test_plain_points_debt_line_says_it_does_not_cover_interest_below_one_x():
+    # WHY (real money, honesty; pairs with the leverage_health severe fix): rounding a sub-1x coverage
+    # with :.0f read "covers its interest bill about 1x over" for e.g. 0.8x -- i.e. it told a parent
+    # the company COVERS its interest when operating profit is actually BELOW the interest bill. A
+    # company that can't cover its interest from operations must be shown as not covering, not rounded
+    # up to a reassuring "about 1x over".
+    v = {"total_debt": 80 * CR, "equity": 100 * CR, "ebit": 80 * CR, "interest_expense": 100 * CR}
+    joined = " ".join(plain_points(v, [], is_bank=False))
+    assert "not cover" in joined.lower()             # explicitly says it does NOT cover
+    assert "1x over" not in joined.lower()            # never the misleading "covers about 1x over"
+
+
 def test_plain_points_omit_unknowns():
     v = {"current_pe": None, "median_pe": None, "net_profit": None}    # nothing cross-verified
     assert plain_points(v, compute_deep_metrics(v)) == []

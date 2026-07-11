@@ -12,6 +12,7 @@ from .framework import (
     REAL_ESTATE_LEVERAGE_CAVEAT,
     MetricResult,
     _avg_denominator,
+    _COVERAGE_CANNOT_COVER,
     earnings_quality,
     leverage_health,
 )
@@ -337,7 +338,13 @@ def plain_points(v: dict, deep: list[MetricResult], is_real_estate: bool = False
         # two different things.
         word = _LEVERAGE_WORD.get(leverage_health(debt, eq, ebit, interest).verdict, "moderate")
         s = f"Debt: it owes ₹{de:.2f} for every ₹1 of owners' money (D/E {de:.2f}) — {word}"
-        if cover is not None:
+        if cover is not None and cover < _COVERAGE_CANNOT_COVER:
+            # WHY (real money, honesty): :.0f rounded a sub-1x cover UP to "about 1x over", telling a
+            # parent the company covers its interest when operating profit is actually below the
+            # interest bill. Show it does NOT cover, with a decimal so 0.8x never reads as 1x.
+            s += (f", and operating profit does NOT cover its interest bill (only {cover:.1f}x, "
+                  "below 1x)")
+        elif cover is not None:
             s += f", and operating profit covers its interest bill about {cover:.0f}x over"
         elif operating_loss:
             s += (", and its operating profit is negative, so it isn't covering its interest "

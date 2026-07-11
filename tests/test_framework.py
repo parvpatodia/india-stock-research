@@ -113,6 +113,39 @@ def test_leverage_health_debt_light_operating_loss_is_not_flagged_on_coverage():
     assert leverage_health(1, 100, -40, 0).verdict == "healthy"    # D/E 0.01, no interest
 
 
+def test_interest_cover_below_one_is_a_severe_solvency_concern():
+    # WHY (real money; mirrors the negative-OCF and negative-ROA severe fixes): interest cover BELOW
+    # 1x means operating profit does NOT cover the interest bill -- the company services its debt from
+    # reserves/asset sales/fresh borrowing, a serious solvency-distress signal, not merely "stretched".
+    # As an ordinary lone concern it only reached MIXED quality -> a suggestible NEUTRAL.
+    r = leverage_health(80, 100, 80, 100)             # D/E 0.8, EBIT 80 < interest 100 -> cover 0.8x
+    assert r.verdict == "stretched" and r.concern is True
+    assert r.severe is True
+    assert "1x" in r.detail.lower() and "cover" in r.detail.lower()
+
+
+def test_interest_cover_of_two_covers_tightly_and_is_not_severe():
+    # The boundary: coverage of 1-3x covers the interest bill (tightly) -- an ordinary "stretched"
+    # concern, NOT the severe can't-cover case, so it isn't swept into WEAK.
+    r = leverage_health(20, 100, 6, 3)                # cover 2.0x -- covers, but under the 3x comfort line
+    assert r.verdict == "stretched" and r.concern is True
+    assert r.severe is False
+
+
+def test_a_company_that_cannot_cover_interest_reads_weak_not_a_suggestible_neutral():
+    # A lone can't-cover-interest concern drags quality to WEAK -> CAUTIOUS -> UNFAVORABLE, so a zombie
+    # servicing debt it can't afford from operations is never surfaced on a cheap valuation.
+    v = assemble_verdict(
+        valuation_vs_history(15, 25),                       # cheap
+        [earnings_quality(90, 100),                         # clean (positive OCF, strong)
+         leverage_health(80, 100, 80, 100),                 # cover 0.8x -> cannot cover -> severe
+         promoter_pledge(0)],
+    )
+    assert v.quality == QualityTier.WEAK
+    assert v.leaning == Leaning.CAUTIOUS
+    assert stance_from_verdict(v) == Stance.UNFAVORABLE
+
+
 def test_promoter_pledge():
     assert promoter_pledge(0).verdict == "none"
     assert promoter_pledge(10).verdict == "watch"

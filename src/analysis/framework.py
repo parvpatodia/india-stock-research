@@ -31,6 +31,8 @@ _OCF_WEAK = 0.50        # below 50% = a quality-of-earnings concern
 _DE_HEALTHY = 0.50      # debt/equity below this is comfortable
 _DE_STRETCHED = 1.00    # above this is stretched
 _COVERAGE_MIN = 3.0     # interest coverage (EBIT/interest) below this is a concern
+_COVERAGE_CANNOT_COVER = 1.0  # below 1x, operating profit does not even cover the interest bill:
+#                               a serious solvency-distress signal (severe), not merely "stretched"
 _PLEDGE_HIGH = PROMOTER_PLEDGE_HIGH_PCT  # promoter pledge AT OR ABOVE this % is a serious red flag
 _MIN_SIGNALS_FOR_STRONG = 2  # "strong" needs >=2 verified quality dimensions, not one lucky one
 
@@ -169,18 +171,32 @@ def leverage_health(total_debt: float | None, equity: float | None,
     # negative-coverage-below-3 path did, and the ebit<=0 quirk (coverage ignored) is preserved.
     coverage = ebit / interest if (has_interest and ebit is not None and ebit > 0) else None
     operating_loss_vs_interest = has_interest and ebit is not None and ebit < 0
-    weak_cover = operating_loss_vs_interest or (coverage is not None and coverage < _COVERAGE_MIN)
+    # WHY (real money, severity; mirrors the negative-OCF and negative-ROA severe fixes): interest
+    # cover BELOW 1x -- or a negative operating profit with an interest bill -- means operating profit
+    # does NOT cover the interest due, so the company is servicing its debt from reserves, asset sales,
+    # or fresh borrowing. That is a serious solvency-distress signal, not merely "stretched"; as an
+    # ordinary lone concern it only reached MIXED quality -> a suggestible NEUTRAL on a cheap price.
+    # Mark it severe so a lone can't-cover-interest concern drags quality to WEAK -> CAUTIOUS ->
+    # UNFAVORABLE (assemble_verdict's severe_concern path). Cover of 1-3x (covers, but tightly) stays
+    # an ordinary "stretched" concern, unchanged.
+    cannot_cover = (operating_loss_vs_interest
+                    or (coverage is not None and coverage < _COVERAGE_CANNOT_COVER))
+    weak_cover = cannot_cover or (coverage is not None and coverage < _COVERAGE_MIN)
     stretched = de > _DE_STRETCHED or weak_cover
     healthy = de < _DE_HEALTHY and not weak_cover
     v = "stretched" if stretched else ("healthy" if healthy else "moderate")
-    if coverage is not None:
+    if coverage is not None and coverage < _COVERAGE_CANNOT_COVER:
+        detail = (f"debt/equity {de:.2f}; operating profit does NOT cover the interest bill "
+                  f"(interest cover {coverage:.1f}x, below 1x) -- a serious solvency concern.")
+    elif coverage is not None:
         detail = f"debt/equity {de:.2f}, interest cover {coverage:.1f}x reads {v}."
     elif operating_loss_vs_interest:
         detail = (f"debt/equity {de:.2f} reads {v}; operating profit is negative, so it isn't "
-                  "covering its interest bill from operations.")
+                  "covering its interest bill from operations -- a serious solvency concern.")
     else:
         detail = f"debt/equity {de:.2f} reads {v}."
-    return MetricResult(name, True, v, detail, concern=stretched, critical=True, positive=healthy)
+    return MetricResult(name, True, v, detail, concern=stretched, critical=True, positive=healthy,
+                        severe=cannot_cover)
 
 
 def promoter_pledge(pledge_pct: float | None) -> MetricResult:
