@@ -539,3 +539,40 @@ def test_screener_fetches_page_once_per_symbol():
 def test_source_fetch_failure_returns_all_none():
     src = ScreenerFigureSource(fetcher=lambda symbol: None)
     assert all(v is None for v in src.figures("X").values())
+
+
+def test_num_rejects_non_finite_not_just_nan():
+    # WHY (real money, cross-verification safety): a non-finite figure must never enter the
+    # pipeline. An inf spuriously CROSS-VERIFIES against any finite value (abs(inf - x) <= tol*inf
+    # is inf <= inf -> True), so it lands as a "verified" inf -- a fabricated number reaching a
+    # parent as fact, the exact failure this app exists to prevent. The old `f == f` caught only
+    # NaN; it let inf straight through, whether from an overflow-sized digit string OR a literal
+    # "inf"/"infinity" cell (which the string guard does not list). Mirrors figure_sources._num,
+    # the loader's _to_float, and parse_navall, which all reject non-finite. Finite values -- incl.
+    # comma- and percent-formatted strings -- are unchanged.
+    from src.data.screener_source import _num
+    assert _num("inf") is None
+    assert _num("-inf") is None
+    assert _num("infinity") is None
+    assert _num("9" * 309) is None          # overflow -> inf, now rejected
+    assert _num("nan") is None              # unchanged
+    assert _num("24.5") == 24.5             # finite unchanged
+    assert _num("1,234.5") == 1234.5        # comma-stripped finite unchanged
+    assert _num("15%") == 15.0              # percent-stripped finite unchanged
+    assert _num("") is None
+    assert _num(None) is None
+
+
+def test_parse_screener_figures_never_emits_a_non_finite_pe_or_yield():
+    # WHY (real money, cross-verification safety, end-to-end): the full Screener parse must never
+    # hand a non-finite figure to cross-verification. A pathological overflow-sized P/E / dividend
+    # yield in the page previously coerced to inf, which would then "cross-verify" against any
+    # finite yfinance value. Non-finite must be treated as missing (None), never a verified fact.
+    import math
+    huge = "9" * 309
+    html = f"<li>Stock P/E <span>{huge}</span></li><li>Dividend Yield <span>{huge}</span> %</li>"
+    out = parse_screener_figures(html)
+    assert out["current_pe"] is None or math.isfinite(out["current_pe"])
+    assert out["dividend_yield_pct"] is None or math.isfinite(out["dividend_yield_pct"])
+    assert out["current_pe"] is None        # this specific pathological input -> missing
+    assert out["dividend_yield_pct"] is None

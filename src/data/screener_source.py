@@ -10,6 +10,7 @@ before it is trusted; a parse error or a page change shows up as a conflict, not
 from __future__ import annotations
 
 import io
+import math
 import re
 from typing import Callable
 
@@ -41,7 +42,14 @@ def _num(value) -> float | None:
         if s in ("", "nan", "-", "none"):
             return None
         f = float(s)
-        return f if f == f else None
+        # WHY math.isfinite (real money, cross-verification safety): reject NaN AND +/-inf, treating
+        # a non-finite value as missing. The old `f == f` caught only NaN; it let inf through -- from
+        # an overflow-sized digit string, or a literal "inf"/"infinity" cell the string guard above
+        # does not list. An inf figure spuriously CROSS-VERIFIES against any finite value
+        # (abs(inf - x) <= tol*inf is inf <= inf -> True), landing as a "verified" inf: a fabricated
+        # number reaching a parent as fact. This is the last of the numeric coercers to be hardened;
+        # figure_sources._num, the CSV loader's _to_float, and parse_navall already reject non-finite.
+        return f if math.isfinite(f) else None
     except (TypeError, ValueError):
         return None
 
