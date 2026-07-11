@@ -7,10 +7,18 @@ missing, because guessing a column wrong would corrupt every downstream number.
 from __future__ import annotations
 
 import math
+import re
 
 import pandas as pd
 
 from .models import Holding
+
+# Rupee currency prefixes/suffixes to strip before parsing a number cell. WHY (real money, data
+# quality): Indian portfolio CSVs and manual entries commonly write "Rs 1,520" / "Rs.1,520" /
+# "INR 1520" far more than the ₹ symbol (harder to type). Matching these -- not just "₹" -- keeps a
+# real holding from being silently dropped. Only these exact tokens are removed (never a bare letter),
+# so scientific notation like "1.2e3" is untouched: the 'e' is not a currency token.
+_CURRENCY_TOKEN = re.compile(r"₹|rs\.?|inr", re.IGNORECASE)
 
 # Candidate header names per role, matched case-insensitively. ORDER MATTERS: first match
 # wins, so the most specific names come first and generic fallbacks ("name", "cost") come
@@ -46,13 +54,14 @@ def normalize_symbol(raw: object) -> str:
 
 
 def _to_float(value: object) -> float:
-    """Parse '1,520.75' or '₹ 1,520.75' to float.
+    """Parse '1,520.75', '₹ 1,520.75', or 'Rs 1,520.75' / 'Rs.1,520' / 'INR 1520' to float.
 
     Rejects nan/inf. WHY: float('nan') parses fine but then slips past every `<= 0` guard
     (nan <= 0 is False), so a single bad cell would poison total value, P&L, and weights
-    with nan and show no error.
+    with nan and show no error. Common rupee prefixes are stripped so an "Rs"-priced holding
+    (the usual Indian format, not the ₹ symbol) is not silently dropped -- see _CURRENCY_TOKEN.
     """
-    s = str(value).replace(",", "").replace("₹", "").strip()
+    s = _CURRENCY_TOKEN.sub("", str(value)).replace(",", "").strip()
     parsed = float(s)
     if not math.isfinite(parsed):
         raise ValueError(f"non-finite number: {value!r}")

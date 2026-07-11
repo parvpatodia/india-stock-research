@@ -28,6 +28,29 @@ def test_generic_format_with_commas_and_rupee():
     assert holdings[1].avg_cost == 3380.0
 
 
+def test_accepts_rs_and_inr_currency_prefixes_so_rows_are_not_silently_dropped():
+    # WHY (real money, data quality): Indian portfolio CSVs / manual entries commonly write costs as
+    # "Rs 1,520" / "Rs.1,520" / "INR 1520", not the ₹ symbol (harder to type). _to_float stripped only
+    # "₹", so an "Rs"-priced cell raised ValueError and load_holdings SILENTLY DROPPED that holding --
+    # understating the parent's portfolio value, P&L and weights with no error shown. The common rupee
+    # prefixes must parse like a plain number; scientific notation (1.2e3) must stay untouched.
+    from src.portfolio.loader import _to_float
+    assert _to_float("Rs 1,520.75") == 1520.75
+    assert _to_float("Rs.1,520") == 1520.0
+    assert _to_float("INR 1520") == 1520.0
+    assert _to_float("1520 rs") == 1520.0
+    assert _to_float("₹ 1,520.75") == 1520.75      # still handled
+    assert _to_float("1,00,000") == 100000.0        # Indian digit grouping still handled
+    assert _to_float("1.2e3") == 1200.0             # scientific notation NOT corrupted (no 'e' strip)
+    df = pd.DataFrame({
+        "Symbol": ["RELIANCE", "TCS", "HDFCBANK"],
+        "Quantity": [10, 5, 8],
+        "Avg Cost": ["Rs 2,000", "Rs.3,000", "INR 1500"],
+    })
+    got = {h.symbol: h.avg_cost for h in load_holdings(df)}
+    assert got == {"RELIANCE": 2000.0, "TCS": 3000.0, "HDFCBANK": 1500.0}   # none silently dropped
+
+
 def test_zerodha_like_headers_and_default_sector():
     df = pd.DataFrame({"Instrument": ["INFY-EQ"], "Qty.": [20], "Avg. cost": [1410.25]})
     holdings = load_holdings(df)
