@@ -228,6 +228,29 @@ def test_trend_improving_false_when_shrinking():
     assert trend_improving(rev, prof) is False
 
 
+def test_trend_improving_false_when_revenue_grows_but_profit_shrinks():
+    # WHY (real money, value trap / unprofitable growth): sales compounding while PROFIT actually
+    # SHRINKS is the textbook top-line-at-any-cost value trap -- a value investor reads it as
+    # deterioration, not improvement. Crediting it +1 in the suggestion score also flatly
+    # contradicts the "profit shrinking / margins under pressure" lines trend_points prints for the
+    # SAME numbers, breaking the flag<->prose agreement this signal promises. Revenue growth no
+    # longer rescues a falling bottom line; profit growth or a real margin expansion still stands.
+    rev = {2020: 100 * CR, 2021: 110 * CR, 2022: 121 * CR}      # sales up ~10%/yr
+    prof = {2020: 20 * CR, 2021: 15 * CR, 2022: 11 * CR}        # profit DOWN ~26%/yr
+    assert margins_improving(rev, prof) is False
+    assert trend_improving(rev, prof) is False                 # was True on the revenue leg alone
+
+
+def test_trend_improving_true_on_profit_growth_even_if_margins_compress():
+    # WHY: a bottom line compounding above the floor is genuine improvement and stands on its own,
+    # even when revenue grew FASTER (so margins technically compressed). Only revenue growth with a
+    # FALLING bottom line is the value trap; a rising bottom line is not, so it must still count.
+    rev = {2020: 100 * CR, 2021: 130 * CR, 2022: 169 * CR}     # sales up ~30%/yr
+    prof = {2020: 10 * CR, 2021: 11.5 * CR, 2022: 13.2 * CR}   # profit up ~15%/yr (real growth)
+    assert margins_improving(rev, prof) is False               # slower than sales -> margins compressed
+    assert trend_improving(rev, prof) is True                  # profit growth stands on its own
+
+
 # --- margin direction must compare revenue vs profit growth over the SAME period ---
 
 def test_margin_direction_not_claimed_when_windows_do_not_overlap_enough():
