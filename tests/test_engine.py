@@ -445,6 +445,26 @@ def test_numbers_grounded_catches_word_form_percentages():
     assert not numbers_grounded("ROE is 22 percent", ["Return on equity: 18%."])
 
 
+def test_numbers_grounded_catches_short_figures_in_crore_lakh_and_bps():
+    # WHY (real money, HIGH severity): crore / lakh are THE units Indian financial answers are
+    # quoted in -- this app's own verified-figures doc formats every rupee figure in crore (see
+    # format_rupees_crore_lakh) -- and rate/margin news is quoted in "basis points" / "bps". A SHORT
+    # (1-2 digit) figure in one of these units ("50 crore", "90 lakh", "40 basis points") is under
+    # 3 digits AND carries no "%", so it fell through the numeric-grounding net entirely, the same
+    # blind spot the word-"per cent" fix closed. A model misquoting "profit was 50 crore" when its
+    # source said "80 crore" then rendered as clean context, unflagged. Any digit count once a
+    # material financial unit follows the number; a bare short number (a plain count) stays exempt.
+    assert numbers_grounded("Net profit was 80 crore", ["Net profit was 80 crore in FY2024."])
+    assert not numbers_grounded("Net profit was 50 crore", ["Net profit was 80 crore in FY2024."])
+    assert not numbers_grounded("It holds 90 lakh", ["The company holds 12 lakh in cash."])
+    assert not numbers_grounded("NIM expanded 40 basis points", ["NIM expanded 15 basis points."])
+    assert not numbers_grounded("NIM rose 40 bps", ["NIM rose 15 bps this quarter."])
+    # "cr" abbreviation (common in news) grounds like the full word, without matching "crore"/"credit".
+    assert not numbers_grounded("an order worth 25 cr", ["an order worth 60 cr was announced"])
+    # A bare short number that is NOT unit-bearing (a plain count) still stays exempt, unchanged.
+    assert numbers_grounded("it runs 5 plants", ["the group runs 8 plants"])
+
+
 def test_numbers_grounded_percentage_with_decimal_matches_exactly():
     # WHY: "0.5%" and "5%" must NOT be treated as the same figure just because both are short --
     # digit-normalizing preserves the distinction (05 vs 5), so a genuinely different value is

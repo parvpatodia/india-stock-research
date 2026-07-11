@@ -28,16 +28,22 @@ from .grounding import DocumentStore, RetrievedChunk
 _ALLOWED_KINDS = {FACT, OPINION, ESTIMATE}
 
 _NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
-# A number immediately followed by a percent unit -- the '%' symbol OR the words 'percent'/'per
-# cent'. WHY: ROE/ROCE/margins/dividend-yield/pledge/other-income-share are all formatted as whole-
-# or 1-decimal percentages in this app's own generated source text (see deep_metrics.py,
-# screener_source.py), so they are routinely 1-2 digits -- exactly the figures the general <3-digit
-# exemption below would otherwise wave through ungrounded, even though a percentage is essentially
-# always the figure itself, not incidental noise like a bare year or small count. The WORD form is
-# matched too because Indian financial press (news is the Ask tab's most-cited source) overwhelmingly
-# writes "12 per cent"/"12 percent", not "12%"; a symbol-only guard left a 2-digit word-form figure
-# checked by NEITHER rule, so a misquoted "45 percent" slipped through ungrounded. See numbers_grounded.
-_PERCENT_NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?\s*(?:%|per\s*cent)", re.IGNORECASE)
+# A number immediately followed by a material FINANCIAL UNIT: a percent ('%', 'percent', 'per
+# cent'), an Indian rupee scale word ('crore(s)', 'lakh(s)', or the 'cr' abbreviation), or a rate
+# unit ('bps', 'basis point(s)'). WHY: these are the units the figures in this app are quoted in --
+# ROE/ROCE/margins/dividend-yield/pledge are formatted as whole- or 1-decimal PERCENTAGES, every
+# rupee figure is rendered in CRORE/lakh (see format_rupees_crore_lakh + the verified-figures doc),
+# and rate/margin news is quoted in BASIS POINTS -- so they are routinely 1-2 digits, exactly the
+# figures the general <3-digit exemption below would otherwise wave through ungrounded even though a
+# unit-bearing number is essentially always the figure itself, not incidental noise like a bare year
+# or plain count. Word forms are matched because Indian financial press (news is the Ask tab's most-
+# cited source) writes "12 per cent"/"80 crore"/"15 basis points", not symbols; a symbol/large-number
+# -only guard left a short unit-bearing figure checked by NEITHER rule, so a misquoted "50 crore" (or
+# "45 percent", or "40 bps") slipped through ungrounded. 'cr\b' matches the standalone abbreviation
+# without matching 'crore'/'credit'. See numbers_grounded.
+_UNIT_NUMBER = re.compile(
+    r"\d[\d,]*(?:\.\d+)?\s*(?:%|per\s*cent|crores?|lakhs?|cr\b|bps|basis\s*points?)",
+    re.IGNORECASE)
 # ISO date/timestamp shapes (e.g. "2026-07-09" or "2026-07-09T09:00:00Z"), used to self-disclose
 # WHEN a source was fetched (see verified_context.py, NewsItem.as_text). A date is metadata, not
 # a citable financial figure, so it must not contribute a digit sequence (e.g. the 4-digit year)
@@ -53,14 +59,15 @@ def numbers_grounded(text: str, source_texts: list[str]) -> bool:
     the exact failure this app exists to prevent. The bias is deliberately conservative: a
     wrongly-flagged true fact merely shows as 'reported, not independently verified' (safe),
     never a false green tick. Bare numbers under 3 digits (years, small counts) are skipped: too
-    common to ground meaningfully and not the high-stakes misquote case. PERCENTAGES are the
-    exception to that exemption, checked at ANY digit count and in BOTH the '%'-symbol and the
-    word ('45 percent'/'45 per cent') spellings: ROE/ROCE/margins/dividend-yield/pledge/other-
-    income-share are all formatted as whole- or 1-decimal percentages in this app's own generated
-    source text, and Indian financial news (the Ask tab's most-cited source) writes them as words,
-    so they are routinely 1-2 digits -- exempting them the same way as a bare small count would
-    silently wave through a materially wrong ROE/margin claim (e.g. "8%" when the verified figure
-    is "22%", or "45 percent" when the source said "12 per cent") with no check at all. Digit-normalized exact match (not
+    common to ground meaningfully and not the high-stakes misquote case. UNIT-BEARING FIGURES are
+    the exception to that exemption, checked at ANY digit count: a number followed by a percent
+    ('%'/'percent'/'per cent'), a rupee scale word ('crore(s)'/'lakh(s)'/'cr'), or a rate unit
+    ('bps'/'basis point(s)'). These are the units this app's figures are quoted in -- percentages
+    for the ratios, crore/lakh for every rupee figure, basis points in rate news -- so they are
+    routinely 1-2 digits; exempting them like a bare small count would silently wave through a
+    materially wrong claim ("8%" when the figure is "22%", "45 percent" for "12 per cent", or "50
+    crore" when the source said "80 crore") with no check at all. Both symbol and word spellings
+    are covered, so the check is robust to however Indian financial text writes the unit. Digit-normalized exact match (not
     substring), so '957' does not spuriously ground against '9575', and '5%' does not spuriously
     ground against '0.5%' (05 != 5). Date/timestamp substrings are stripped before extraction
     (see _DATE_LIKE), so a source's own fetch-date disclosure can never double as grounding for
@@ -69,10 +76,10 @@ def numbers_grounded(text: str, source_texts: list[str]) -> bool:
         return re.sub(r"\D", "", token)
     def numbers_in(t: str) -> list[str]:
         return _NUMBER.findall(_DATE_LIKE.sub(" ", t or ""))
-    def percents_in(t: str) -> list[str]:
-        return _PERCENT_NUMBER.findall(_DATE_LIKE.sub(" ", t or ""))
+    def unit_figures_in(t: str) -> list[str]:
+        return _UNIT_NUMBER.findall(_DATE_LIKE.sub(" ", t or ""))
     material = {digits(m) for m in numbers_in(text) if len(digits(m)) >= 3}
-    material |= {digits(m) for m in percents_in(text)}
+    material |= {digits(m) for m in unit_figures_in(text)}
     if not material:
         return True
     source_digits = {digits(m) for t in source_texts for m in numbers_in(t)}
