@@ -134,6 +134,7 @@ def assemble_bank_verdict(valuation: MetricResult, roa: MetricResult) -> Verdict
     # what the caveat already says in words, and so a bank never out-ranks a fully cross-verified
     # industrial on conviction it structurally cannot earn. There is no bank scenario where HIGH is
     # warranted from these feeds, so the cap is unconditional for the bank/NBFC path.
-    if verdict.confidence == Confidence.HIGH:
-        verdict = replace(verdict, confidence=Confidence.MEDIUM)
-    return verdict
+    # is_bank=True lets the display layer use lender-appropriate phrasing (ROA-based profitability,
+    # never "balance sheet", which this framework cannot assess for a lender).
+    capped = Confidence.MEDIUM if verdict.confidence == Confidence.HIGH else verdict.confidence
+    return replace(verdict, confidence=capped, is_bank=True)

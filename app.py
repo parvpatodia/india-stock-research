@@ -453,10 +453,21 @@ def plain_summary(verdict, stance: Stance) -> str:
            "fair": "looks fairly priced versus its own history",
            "expensive": "looks expensive versus its own history",
            "unknown": "valuation could not be verified"}[verdict.valuation.value]
-    qual = {"strong": "a strong balance sheet",
-            "mixed": "a mixed balance sheet",
-            "weak": "balance-sheet concerns",
-            "unknown": "balance-sheet quality unconfirmed"}[verdict.quality.value]
+    # WHY (real money, sector-aware honesty): a bank/NBFC's quality tier is its RETURNS (ROA), not
+    # balance-sheet strength -- and the app cannot assess a lender's actual balance-sheet quality
+    # (asset quality/GNPA, capital adequacy) from the free feeds. So a bank must never be summarized
+    # as having a "strong balance sheet"; describe its profitability for a lender instead (the full
+    # "check the filing" caveat is shown separately as a sector caveat).
+    if verdict.is_bank:
+        qual = {"strong": "strong profitability for a lender",
+                "mixed": "middling profitability for a lender",
+                "weak": "weak profitability for a lender",
+                "unknown": "profitability that couldn't be confirmed"}[verdict.quality.value]
+    else:
+        qual = {"strong": "a strong balance sheet",
+                "mixed": "a mixed balance sheet",
+                "weak": "balance-sheet concerns",
+                "unknown": "balance-sheet quality unconfirmed"}[verdict.quality.value]
     _, headline = _STANCE_UI[stance]
     return f"It {val}, with {qual}. {headline}."
 

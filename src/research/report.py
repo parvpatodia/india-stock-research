@@ -75,6 +75,12 @@ class Verdict:
     # current P/E as a fraction of its own historical median (margin-of-safety magnitude); None
     # when the median is unavailable. Lets the ranker weigh HOW cheap, not just the CHEAP tier.
     valuation_ratio: float | None = None
+    # WHY (real money, sector-aware honesty): a bank/NBFC verdict's quality tier comes from ROA
+    # (profitability), NOT balance-sheet strength -- and a lender's actual balance-sheet quality
+    # (asset quality/GNPA, capital adequacy) is not in the free feeds. The display layer reads this
+    # so it never tells a parent a bank has a "strong balance sheet" it could not have assessed.
+    # Kept last so existing positional Verdict(...) construction stays valid.
+    is_bank: bool = False
 
 
 @dataclass(frozen=True)
