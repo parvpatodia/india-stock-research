@@ -431,6 +431,39 @@ def test_earnings_volatility_keeps_percentage_wording_for_all_positive_cyclicals
     assert point is not None and "percentage-point range" in point
 
 
+def test_earnings_volatility_qualitative_for_a_near_zero_positive_base():
+    # WHY (real money, honesty; the mirror of the loss-crossing guard): a near-BREAKEVEN but still
+    # POSITIVE trough year crosses NO sign, so that guard never fires -- yet it explodes one
+    # year-over-year growth rate into an absurd figure just the same. A real deep-cyclical trough
+    # (steel: profit 5000 -> 50 -> 4000 cr) printed "a 7999-percentage-point range" a parent reads
+    # as a typo. Fire the SAME cyclical caveat, phrased qualitatively, never quoting the nonsense.
+    point = earnings_volatility_point(
+        {2022: 5000 * CR, 2023: 50 * CR, 2024: 4000 * CR, 2025: 4500 * CR})
+    assert point is not None
+    assert "percentage-point range" not in point       # no absurd precise number
+    assert "7999" not in point
+    assert "extremely widely" in point.lower() or "near-breakeven" in point.lower()
+    # the cyclical value-trap guidance (the whole point of the caveat) still travels with it
+    assert "cyclical" in point.lower() and "mid-cycle" in point.lower()
+    # a genuine (non-artifact) cyclical swing keeps its precise pp number (JSW-like, ~176pp)
+    real = earnings_volatility_point({2023: 4142 * CR, 2024: 8892 * CR, 2025: 3498 * CR})
+    assert real is not None and "percentage-point range" in real
+
+
+def test_revenue_volatility_qualitative_for_a_near_zero_base():
+    # WHY: the same near-zero-base artifact for REVENUE, which has NO sign-change guard at all
+    # (revenue is ~always positive), so a near-zero revenue year is the one way its swing explodes
+    # (probe: 0.4 -> 100 -> 120 -> 130 cr printed "a 24892-percentage-point range").
+    point = revenue_volatility_point(
+        {2022: 0.4 * CR, 2023: 100 * CR, 2024: 120 * CR, 2025: 130 * CR})
+    assert point is not None
+    assert "percentage-point range" not in point
+    assert "extremely widely" in point.lower() or "near-zero" in point.lower()
+    # a real project-based revenue swing keeps its precise pp number (Brigade-like, ~63pp)
+    real = revenue_volatility_point({2022: 1000 * CR, 2023: 1387 * CR, 2024: 1050 * CR, 2025: 1450 * CR})
+    assert real is not None and "percentage-point range" in real
+
+
 # --- revenue_volatility_point: fills a real gap earnings_volatility_point cannot ---
 
 def test_revenue_volatility_flags_lumpy_project_based_revenue():

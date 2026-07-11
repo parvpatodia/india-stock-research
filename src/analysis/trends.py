@@ -239,6 +239,17 @@ _VOLATILITY_SWING = 40.0
 # recognition). 25.0 sits with wide margin on both sides of that real-data gap.
 _REVENUE_VOLATILITY_SWING = 25.0
 
+# Above this swing (percentage points) the "range" is no longer a meaningful volatility read but a
+# BASE EFFECT: a near-zero (near-breakeven but still positive) base year explodes one year-over-year
+# growth rate into thousands of percent. Quoting that precise figure ("a 7999-percentage-point
+# range") reads as a typo and destroys trust -- the same failure the sign-change guard already
+# avoids for a loss-crossing year, still reachable through a POSITIVE near-zero base (a real
+# deep-cyclical trough). Above it, fire the SAME caveat qualitatively. Calibrated well clear of every
+# genuine swing in the live data (worst real case JSW's profit at ~176pp; real revenue swings
+# 2-39pp) and far below any near-zero-base artifact (thousands of pp), so no real cyclical loses its
+# precise number. Shared by profit and revenue: a near-zero base explodes the ratio identically.
+_VOLATILITY_SWING_ABSURD = 500.0
+
 
 def _yoy_swing(series: dict[int, float]) -> tuple[float, int] | None:
     """Max-min spread of year-over-year growth rates (percentage points) plus the year count, or
@@ -280,6 +291,16 @@ def earnings_volatility_point(profit_series: dict[int, float]) -> str | None:
                 "the multi-year trend, not just the latest year.")
     if swing < _VOLATILITY_SWING:
         return None
+    # WHY (mirror of the loss-crossing guard above): a swing beyond the absurd ceiling is a base
+    # effect from a near-breakeven but still POSITIVE year (which crosses no sign, so the guard above
+    # never fires); quote it qualitatively instead of an uninterpretable precise range. See
+    # _VOLATILITY_SWING_ABSURD.
+    if swing >= _VOLATILITY_SWING_ABSURD:
+        lead = (f"Profit's annual growth has swung extremely widely over the last {n_years} years, "
+                "driven by one or more near-breakeven years that make a precise range meaningless")
+    else:
+        lead = (f"Profit has swung sharply year to year (a {swing:.0f}-percentage-point range in "
+                f"annual growth over the last {n_years} years)")
     # WHY name the P/E, not just ROE/margin (real money, THE cyclical value trap): the P/E-based
     # valuation is computed from the SAME latest-year earnings as ROE/margin, so it is distorted the
     # same way -- and for a cyclical the P/E moves INVERSELY to profits, so a LOW P/E coincides with
@@ -287,8 +308,7 @@ def earnings_volatility_point(profit_series: dict[int, float]) -> str | None:
     # a HIGH P/E with a trough. Omitting valuation left the single most important cyclical mistake a
     # non-expert makes uncaveated. State it in both directions and point at mid-cycle (normalized)
     # earnings as the corrective.
-    return (f"Profit has swung sharply year to year (a {swing:.0f}-percentage-point range in "
-            f"annual growth over the last {n_years} years) — common in cyclical or "
+    return (f"{lead} — common in cyclical or "
             "project-based businesses. A single year's ROE, margin, or P/E may not represent "
             "long-term earning power: for a cyclical the P/E moves opposite to profits, so a LOW "
             "P/E can reflect peak earnings that won't last (a value trap) and a HIGH one a "
@@ -311,10 +331,18 @@ def revenue_volatility_point(revenue_series: dict[int, float]) -> str | None:
     swing, n_years = result
     if swing < _REVENUE_VOLATILITY_SWING:
         return None
-    return (f"Revenue has swung sharply year to year (a {swing:.0f}-percentage-point range in "
-            f"annual growth over the last {n_years} years) — common in project-based or "
-            f"cyclical businesses (e.g. real estate revenue recognized by project completion). "
-            f"A single year's figures may not represent the long-term run rate.")
+    # Same near-zero-base artifact as profit (revenue has no sign-change guard -- it is ~always
+    # positive -- so a near-zero revenue year is the only way its swing explodes): above the absurd
+    # ceiling, quote qualitatively rather than an uninterpretable precise range. See _VOLATILITY_SWING_ABSURD.
+    if swing >= _VOLATILITY_SWING_ABSURD:
+        lead = (f"Revenue's annual growth has swung extremely widely over the last {n_years} years, "
+                "driven by one or more near-zero years that make a precise range meaningless")
+    else:
+        lead = (f"Revenue has swung sharply year to year (a {swing:.0f}-percentage-point range in "
+                f"annual growth over the last {n_years} years)")
+    return (f"{lead} — common in project-based or "
+            "cyclical businesses (e.g. real estate revenue recognized by project completion). "
+            "A single year's figures may not represent the long-term run rate.")
 
 
 def limited_history_note(years: int) -> str | None:
