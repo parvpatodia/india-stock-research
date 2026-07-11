@@ -3,6 +3,7 @@ from src.analysis.trends import (
     cash_conversion_quality_point,
     earnings_volatility_point,
     leverage_trend_point,
+    margins_improving,
     revenue_volatility_point,
     trend_improving,
     trend_points,
@@ -201,6 +202,42 @@ def test_trend_improving_false_when_shrinking():
     rev = {2020: 121 * CR, 2021: 110 * CR, 2022: 100 * CR}       # declining
     prof = {2020: 15 * CR, 2021: 12 * CR, 2022: 10 * CR}
     assert trend_improving(rev, prof) is False
+
+
+# --- margin direction must compare revenue vs profit growth over the SAME period ---
+
+def test_margin_direction_not_claimed_when_windows_do_not_overlap_enough():
+    # WHY (real money, CA-level correctness): revenue cross-verified FY2019-FY2021, profit only
+    # FY2021-FY2023. They share ONE year (2021), so there is no >=3-year common window to compare
+    # growth over. The end-to-end margin identity (margin_last/margin_first = profit_ratio /
+    # revenue_ratio) only holds when both cover the SAME first and last year; pitting profit's
+    # 2021-2023 rise against revenue's 2019-2021 rise is two different eras. No margin claim.
+    rev = {2019: 100 * CR, 2020: 110 * CR, 2021: 121 * CR}
+    prof = {2021: 10 * CR, 2022: 13 * CR, 2023: 17 * CR}
+    assert margins_improving(rev, prof) is None
+    assert "margin" not in " ".join(trend_points(rev, prof))
+
+
+def test_trend_improving_not_faked_by_comparing_mismatched_windows():
+    # Sales cross-verified FY2015-FY2021 (declining), profit only FY2021-FY2023 (barely up).
+    # Neither is "growing" on its own, and the windows overlap in a single year, so there is no
+    # valid common period to judge margins over. The old code compared profit's recent 2021-2023
+    # growth against sales' 2015-2021 DECLINE -- fabricating a "margins improving" signal for two
+    # different eras that would wrongly bump this name up the suggestion ranking.
+    rev = {2015: 200 * CR, 2018: 150 * CR, 2021: 100 * CR}
+    prof = {2021: 10 * CR, 2022: 10 * CR, 2023: 10.2 * CR}
+    assert trend_improving(rev, prof) is False
+
+
+def test_margin_direction_uses_common_window_and_ignores_interior_gaps():
+    # Revenue cross-verified only FY2020/FY2022/FY2024 (FY2021, FY2023 didn't agree across
+    # sources), profit in all of FY2020-FY2024. The endpoints match, so margins ARE comparable
+    # over the common window despite revenue's interior gaps -- a same-year-SET guard would wrongly
+    # suppress this; a common-window comparison keeps the real signal.
+    rev = {2020: 100 * CR, 2022: 110 * CR, 2024: 121 * CR}       # ~5%/yr
+    prof = {2020: 10 * CR, 2021: 11 * CR, 2022: 13 * CR, 2023: 15 * CR, 2024: 18 * CR}  # faster
+    assert margins_improving(rev, prof) is True
+    assert "margins have been improving" in " ".join(trend_points(rev, prof))
 
 
 # --- earnings_volatility_point: no blind spots for cyclical/lumpy-revenue businesses ---

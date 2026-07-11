@@ -156,19 +156,47 @@ def leverage_trend_point(debt_series: dict[int, float],
             "deleveraging, usually a positive for balance-sheet resilience (cross-verified).")
 
 
+def margins_improving(revenue_series: dict[int, float],
+                      profit_series: dict[int, float]) -> bool | None:
+    """End-to-end net-margin direction from revenue vs profit growth: True (margins expanded),
+    False (under pressure), or None (roughly flat, or not comparable).
+
+    WHY compare over the COMMON window, not each series' own endpoints (real money, CA-level
+    correctness): the margin identity margin_last / margin_first = (profit_last/profit_first) /
+    (revenue_last/revenue_first) only holds when both ratios span the SAME first and last year.
+    Cross-verified revenue and profit routinely cover DIFFERENT year windows (a source leaves one
+    figure's newest or oldest cell empty), so comparing revenue's FY19-FY24 CAGR against profit's
+    FY22-FY24 CAGR pits two different eras against each other -- it could read a recent profit
+    recovery as a full-period margin expansion, both on the page and in the suggestion score.
+    Restricting BOTH to their shared years makes the two growth rates cover one identical period
+    (equal span => the annualized comparison is monotonic with the true end-to-end margin change),
+    while interior gaps are harmless (only the shared endpoints drive an endpoint CAGR). Needs a
+    >=3-year overlap with positive endpoints (see cagr); otherwise there is no honest comparison
+    and this abstains rather than guess."""
+    common = set(revenue_series) & set(profit_series)
+    rev = cagr({y: revenue_series[y] for y in common})
+    prof = cagr({y: profit_series[y] for y in common})
+    if rev is None or prof is None:
+        return None
+    if prof[0] > rev[0] + _MARGIN_MIN:
+        return True
+    if prof[0] < rev[0] - _MARGIN_MIN:
+        return False
+    return None
+
+
 def trend_improving(revenue_series: dict[int, float],
                     profit_series: dict[int, float]) -> bool:
     """Structured multi-year signal for the ranker: True iff sales OR profit have compounded above
     the growth floor, or margins have been improving. WHY (real money): the suggestion score must
     read this from the numbers, not by substring-matching the plain-language insight prose, so a
-    wording change can never silently flip a scoring input. Shares the thresholds with trend_points
-    so the flag and the words always agree. Needs >=3 cross-verified years (see cagr) or returns
-    False — no history, no claimed trend."""
+    wording change can never silently flip a scoring input. Shares the thresholds AND the
+    common-window margin comparison with trend_points so the flag and the words always agree. Needs
+    >=3 cross-verified years (see cagr) or returns False — no history, no claimed trend."""
     rev = cagr(revenue_series)
     prof = cagr(profit_series)
     growing = (rev is not None and rev[0] > _GROWTH_MIN) or (prof is not None and prof[0] > _GROWTH_MIN)
-    margins_up = rev is not None and prof is not None and prof[0] > rev[0] + _MARGIN_MIN
-    return bool(growing or margins_up)
+    return bool(growing or margins_improving(revenue_series, profit_series) is True)
 
 
 # Max-min spread of year-over-year PROFIT growth rates (percentage points) beyond which earnings
@@ -269,11 +297,14 @@ def trend_points(revenue_series: dict[int, float],
         rate, span = prof
         points.append(f"Track record: profit has been {_word(rate)} about {rate:.0f}% a year over "
                       f"the last {span} years.")
-    if rev and prof:
-        if prof[0] > rev[0] + _MARGIN_MIN:
-            points.append("Profit has grown faster than sales, so margins have been improving.")
-        elif prof[0] < rev[0] - _MARGIN_MIN:
-            points.append("Profit has grown slower than sales, so margins have been under pressure.")
+    # Margin direction compares the two growth rates over their COMMON window (see
+    # margins_improving) so a revenue/profit year-coverage mismatch can't read two different eras
+    # against each other. The per-series CAGR lines above keep each figure's own full window.
+    margin = margins_improving(revenue_series, profit_series)
+    if margin is True:
+        points.append("Profit has grown faster than sales, so margins have been improving.")
+    elif margin is False:
+        points.append("Profit has grown slower than sales, so margins have been under pressure.")
     # Prefer the profit signal (the bottom line, more decision-relevant) whenever there is ENOUGH
     # profit data to judge it at all -- whether it turns out volatile or confirmed smooth. Fall
     # back to revenue only when profit data ITSELF is too thin to compute a swing (see
