@@ -54,8 +54,32 @@ class EvalResult:
         return sum(1 for r in self.results if r.outcome == Outcome.TRUSTED_WRONG)
 
     @property
+    def withheld(self) -> int:
+        """Figures the system correctly refused to trust (conflict/single-source). The SAFE
+        outcome: it asserted nothing false, so this is never counted as an error."""
+        return sum(1 for r in self.results if r.outcome == Outcome.WITHHELD)
+
+    @property
+    def missing(self) -> int:
+        return sum(1 for r in self.results if r.outcome == Outcome.MISSING)
+
+    @property
     def accuracy(self) -> float:
+        """Coverage-weighted correctness: matches / total. Counts safe WITHHOLDS in the
+        denominator, so it reads LOW for a (correctly) cautious run -- use trusted_accuracy for the
+        parent-facing headline, and keep this only as a coverage signal."""
         return self.matches / self.total if self.total else 1.0
+
+    @property
+    def trusted_accuracy(self) -> float:
+        """Precision over the figures the system actually TRUSTED: matches / (matches +
+        trusted_wrong). WHY (real money, honest metric): a WITHHELD figure (sources conflicted, so
+        the system refused to assert a value) is the SAFE outcome, not an error, so it must not drag
+        the headline correctness number the way coverage-based `accuracy` does -- that would read a
+        cautious, correct run as inaccurate to a non-expert. This is 1.0 exactly while trusted_wrong
+        is 0 (the goal), and 1.0 vacuously when nothing was trusted (it asserted nothing false)."""
+        trusted = self.matches + self.trusted_wrong
+        return self.matches / trusted if trusted else 1.0
 
 
 def ground_truth_from_report(report: Report, figure: str, correct_value: float,

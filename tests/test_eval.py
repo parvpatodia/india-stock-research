@@ -33,6 +33,31 @@ def test_withheld_is_not_a_mistake():
     assert res.trusted_wrong == 0
 
 
+def test_trusted_accuracy_and_withheld_do_not_penalize_safe_withholds():
+    # WHY (real money, honest metric): the parent-facing "learning loop" line must not read a SAFE
+    # withhold (a figure the system correctly refused to trust because the sources conflicted) as if
+    # it were an inaccuracy. accuracy=matches/total folds every safe withhold into the denominator,
+    # so a cautious run of mostly-correct WITHHOLDS shows a low "accuracy" that misrepresents the
+    # system to a non-expert. trusted_accuracy is precision over the decisions it actually MADE: of
+    # the figures it TRUSTED, how many were right -- a withhold is not counted against it, and it is
+    # a perfect 1.0 exactly while trusted-but-wrong stays 0 (the real goal).
+    matched = _report_with_net_profit([(80000, "a"), (80000, "b")])     # agree -> trusted, matches
+    withheld = _report_with_net_profit([(80000, "a"), (95000, "b")])    # conflict -> safely withheld
+    res = evaluate([ground_truth_from_report(matched, "net_profit", 80000),
+                    ground_truth_from_report(withheld, "net_profit", 80000)])
+    assert res.matches == 1 and res.withheld == 1 and res.trusted_wrong == 0
+    assert res.accuracy == 0.5              # coverage unchanged: 1 of 2 figures were verifiable
+    assert res.trusted_accuracy == 1.0      # of what it TRUSTED, 100% right; a safe withhold is no miss
+
+
+def test_trusted_accuracy_is_one_when_nothing_was_trusted():
+    # A run that withheld everything asserted nothing false -> vacuously perfect trusted-accuracy,
+    # never a division error. The withheld count is what tells the reader coverage was zero.
+    withheld = _report_with_net_profit([(80000, "a"), (95000, "b")])    # conflict -> withheld
+    res = evaluate([ground_truth_from_report(withheld, "net_profit", 80000)])
+    assert res.matches == 0 and res.withheld == 1 and res.trusted_accuracy == 1.0
+
+
 def test_store_roundtrip_and_replay(tmp_path):
     store = EvalStore(tmp_path / "cases.jsonl")
     report = _report_with_net_profit([(80000, "a"), (80100, "b")])

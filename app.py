@@ -1156,8 +1156,18 @@ with tab_research:
     cases = EvalStore(EVAL_STORE).load()
     if cases:
         ev = evaluate(cases)
-        st.caption(f"Learning loop: {len(cases)} recorded corrections, accuracy {ev.accuracy:.0%} "
-                   f"({ev.matches}/{ev.total}), trusted-but-wrong {ev.trusted_wrong} (must be 0).")
+        # WHY (real money, honest metric): headline trusted-but-wrong (the safety number that must
+        # stay 0) and precision over what the system actually TRUSTED -- never a bare matches/total
+        # "accuracy", which folds SAFE withholds (a figure it correctly refused to trust because
+        # sources conflicted) into the denominator and so reads a cautious, correct run as inaccurate.
+        trusted = ev.matches + ev.trusted_wrong
+        correctness = (f"when it trusted a figure it was right {ev.trusted_accuracy:.0%} "
+                       f"({ev.matches}/{trusted})" if trusted
+                       else "it trusted none here (all withheld or unavailable)")
+        st.caption(
+            f"Learning loop over {len(cases)} recorded corrections: trusted-but-wrong "
+            f"{ev.trusted_wrong} (must be 0); {correctness}; it safely withheld {ev.withheld} "
+            "it couldn't cross-verify (withholding is the safe outcome, not an error).")
 
 
 # ==================== TAB 3: INVEST A LUMP SUM ====================
