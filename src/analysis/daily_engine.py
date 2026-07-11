@@ -15,6 +15,15 @@ from .suggestions import Candidate, rank_picks
 
 TODAY_HEADER = ["date", "symbol", "stance", "score", "reason"]
 
+# Notification presentation. WHY "mag" (a magnifying glass = research), NOT a market-direction/hype
+# icon (real money, the hard "never a buy/sell call" invariant): _ntfy_body is "acted on at a
+# glance", so the notification ICON is part of that framing, not decoration. The previous
+# "chart_with_upwards_trend" (an up-trend chart) reads as a bullish buy signal, directly
+# contradicting the body's own "to research, NOT buy/sell advice". A magnifying glass matches
+# "to research" and implies no market direction.
+NTFY_TITLE = "India Equity Research"
+NTFY_TAG = "mag"
+
 
 def _first_sentence(text: str) -> str:
     """The core first sentence of an insight, for the compact daily-shortlist 'reason' bullet.
@@ -111,7 +120,7 @@ def push_ntfy(topic: str, picks) -> None:
     try:
         req = urllib.request.Request(
             f"https://ntfy.sh/{topic}", data=body.encode("utf-8"),
-            headers={"Title": "India Equity Research", "Tags": "chart_with_upwards_trend"})
+            headers={"Title": NTFY_TITLE, "Tags": NTFY_TAG})
         urllib.request.urlopen(req, timeout=15)
     except Exception:
         pass

@@ -197,3 +197,17 @@ def test_research_and_rank_logs_symbols_that_raise_during_fetch():
     assert "BROKEN" in skipped[0]
     assert "fetch failed" in skipped[0]
     assert "network timeout" in skipped[0]
+
+
+def test_daily_notification_icon_is_not_a_buy_or_market_direction_signal():
+    # WHY (real money, the hard "never a buy/sell call" invariant): the daily push is "acted on at a
+    # glance" (see _ntfy_body), so the notification ICON is part of the framing, not decoration. A
+    # market-direction / hype emoji -- an up- or down-trend chart, a rocket, a moneybag -- reads as a
+    # bullish buy tip and contradicts the body's own explicit "to research, NOT buy/sell advice". The
+    # icon must stay neutral / research-oriented.
+    from src.analysis.daily_engine import NTFY_TAG
+    hype_or_directional = {
+        "chart_with_upwards_trend", "chart_with_downwards_trend", "rocket", "moneybag",
+        "money_with_wings", "fire", "rotating_light", "boom", "100",
+    }
+    assert NTFY_TAG not in hype_or_directional
