@@ -201,12 +201,23 @@ def trend_improving(revenue_series: dict[int, float],
     shrinking / margins under pressure" lines trend_points prints for the very same numbers, and a
     value investor treats it as deterioration, not progress. Profit growth or a genuine margin
     expansion still stands on its own; a merely-flat bottom line still lets sales growth count (a
-    judgment call trend_points leaves open, not a contradiction)."""
+    judgment call trend_points leaves open, not a contradiction).
+
+    WHY both-lines-shrinking is never "improving" (the mirror trap, the "melting ice cube"): a
+    business whose sales AND profit have BOTH compounded downward is contracting. When profit shrinks
+    SLOWER than sales, margins_improving is True (profit "outpaced" sales) and would short-circuit
+    this to True below -- handing a shrinking business the same +1 as a growing one. Widening margins
+    on a falling top line is managing decline, not progress; withhold the flag. trend_points still
+    prints the honest sub-signals (both shrinking; margins improving) -- only the overall flag is
+    withheld, so the score never treats a contracting business as an improving one."""
     rev = cagr(revenue_series)
     prof = cagr(profit_series)
     profit_growing = prof is not None and prof[0] > _GROWTH_MIN
     profit_shrinking = prof is not None and prof[0] < -_GROWTH_MIN
     sales_growing = rev is not None and rev[0] > _GROWTH_MIN
+    sales_shrinking = rev is not None and rev[0] < -_GROWTH_MIN
+    if profit_shrinking and sales_shrinking:
+        return False
     if profit_growing or margins_improving(revenue_series, profit_series) is True:
         return True
     return bool(sales_growing and not profit_shrinking)

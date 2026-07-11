@@ -271,6 +271,22 @@ def test_trend_improving_false_when_shrinking():
     assert trend_improving(rev, prof) is False
 
 
+def test_trend_improving_false_when_both_lines_shrink_even_if_margins_widen():
+    # WHY (real money, the "melting ice cube" value trap): a business whose sales AND profit have
+    # BOTH compounded DOWNWARD over the window is contracting. When profit shrinks SLOWER than sales,
+    # margins_improving is True (profit "outpaced" sales), which short-circuited trend_improving to
+    # True -- handing a shrinking business the same +1 in the suggestion score as a growing one, the
+    # mirror of the sales-up/profit-down trap already guarded. Widening margins on a falling top line
+    # is managing decline, not an improving trend; no long-term investor credits it. trend_points
+    # still prints the honest sub-signals (both shrinking; margins improving); only the OVERALL
+    # positive flag is withheld, so the flag never claims "improving" for a contracting business.
+    rev = {2020: 200 * CR, 2021: 150 * CR, 2022: 110 * CR}      # sales down ~26%/yr
+    prof = {2020: 20 * CR, 2021: 17 * CR, 2022: 15 * CR}        # profit down ~13%/yr (slower)
+    assert margins_improving(rev, prof) is True                 # profit outpaced sales -> margins widened
+    assert trend_improving(rev, prof) is False                  # but the business is CONTRACTING
+    assert sum("shrink" in p for p in trend_points(rev, prof)) >= 2   # prose still flags both lines down
+
+
 def test_trend_improving_false_when_revenue_grows_but_profit_shrinks():
     # WHY (real money, value trap / unprofitable growth): sales compounding while PROFIT actually
     # SHRINKS is the textbook top-line-at-any-cost value trap -- a value investor reads it as
