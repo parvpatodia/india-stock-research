@@ -1,3 +1,6 @@
+# Python runtime is pinned in runtime.txt (python-3.12). The versions below are the exact set
+# verified in a clean local venv; keep them in sync when bumping so Streamlit Cloud builds match
+# what was tested locally. WHY: reproducible, deterministic Cloud builds for a real-money app.
 streamlit==1.58.0
 yfinance==1.4.1
 pandas==3.0.3
