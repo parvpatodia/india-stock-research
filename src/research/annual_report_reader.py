@@ -51,6 +51,11 @@ def read_filing(ar_text: str | None, client: LLMClient | None = None,
     registry = SourceRegistry([
         Source(AR_SOURCE_ID, "Annual report (company filing)", CredibilityTier.PRIMARY)])
     store = DocumentStore(registry=registry)
-    store.add_document(AR_SOURCE_ID, ar_text, locator_prefix="annual report")
+    # WHY structured=True (W3, SPEC v4 §2): a filing's financial tables must be ingested element-
+    # aware -- kept intact with their caption/units/period so their cells become TYPED numeric
+    # records with the right scale. That is what lets a grounded reading's stated figure resolve to
+    # an actual extracted record (grounded_analyst.numbers_record_backed), not just substring-match
+    # the prose, which is the record-backed numeric grounding this increment adds.
+    store.add_document(AR_SOURCE_ID, ar_text, locator_prefix="annual report", structured=True)
     return [FilingReading(topic, analyst.answer(question, store, registry, as_of=as_of))
             for topic, question in AR_TOPICS]

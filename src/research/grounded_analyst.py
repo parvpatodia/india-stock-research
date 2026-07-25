@@ -23,7 +23,7 @@ from .claims import (
     build_citation,
     enforce_citations,
 )
-from .grounding import DocumentStore, RetrievedChunk
+from .grounding import DocumentStore, RetrievedChunk, find_record, numeric_records
 
 _ALLOWED_KINDS = {FACT, OPINION, ESTIMATE}
 
@@ -145,6 +145,27 @@ def estimate_has_numeric_basis(text: str, source_texts: list[str]) -> bool:
         return True
     return any(_material_numbers(t) for t in source_texts)
 
+
+def numbers_record_backed(text: str, records) -> bool:
+    """True unless the claim states a MATERIAL number that does not resolve to a typed NumericRecord
+    among `records`. WHY (real money, W3 compute-don't-generate, SPEC v4 §2/§3): numbers_grounded
+    checks a SUBSTRING match against the cited prose, which a coincidence can satisfy -- a bare year
+    ("2024") sitting in the text passes it, so a phantom "2024 crore" slips through as a fact. A
+    typed NumericRecord is a number the structured extractor actually RECOGNIZED as a figure (with a
+    unit/scale/currency and provenance); requiring the claim's number to resolve to one (via
+    find_record, the same comma-dropping-decimal-keeping key numbers_grounded uses) strengthens the
+    check from 'appears as text' to 'is an extracted figure'. Same conservative bias as
+    numbers_grounded: a material number with no backing record downgrades the claim (renders as
+    'reported, not verified'), never a false green tick. No material number -> nothing to resolve ->
+    True. Composed WITH numbers_grounded (both must hold), so the number must be in the cited text
+    AND be a typed record in the retrieved corpus."""
+    material = _material_numbers(text)
+    if not material:
+        return True
+    # find_record re-normalizes its argument with the same key, so passing the match key is safe.
+    return all(find_record(key, records) is not None for key in material)
+
+
 _SYSTEM = """You answer questions about Indian investments for a non-expert reader, using \
 ONLY the SOURCES provided. The reader uses your answer with real money, so accuracy and \
 honesty about uncertainty matter more than completeness.
@@ -264,6 +285,13 @@ def _assemble_result(question: str, payload: dict, retrieved: list[RetrievedChun
         return ResearchResult.abstain(question, "model returned no usable claims")
 
     chunk_by_id = {rc.chunk.chunk_id: rc.chunk for rc in retrieved}
+    # W3 (compute-don't-generate, SPEC v4 §2/§3): the typed numeric records carried by the
+    # retrieved chunks. A FACT/OPINION's material number must resolve to one of these, not merely
+    # appear as a substring in the cited prose (see numbers_record_backed). Computed ONCE. When the
+    # corpus yielded NO typed records at all (nothing was extractable -- e.g. a purely prose news
+    # chunk, or a test store), the record layer stays inert and the existing substring
+    # numbers_grounded contract is unchanged, so no genuine fact on record-less text is lost.
+    available_records = numeric_records(retrieved)
     claims: list[Claim] = []
     seen_texts: set[str] = set()
     for raw_claim in raw_claims:
@@ -309,8 +337,14 @@ def _assemble_result(question: str, payload: dict, retrieved: list[RetrievedChun
         # numeric raw material -- estimate_has_numeric_basis downgrades an estimate that states a
         # material figure while NO cited source carries any figure at all (an invented number
         # mislabeled "estimate" to bypass the numeric guard), without touching real arithmetic.
-        if kind in (FACT, OPINION) and not numbers_grounded(text, cited_texts):
-            kind = UNVERIFIED
+        if kind in (FACT, OPINION):
+            if not numbers_grounded(text, cited_texts):
+                kind = UNVERIFIED
+            # W3: even a number present in the cited prose must resolve to a TYPED record (a figure
+            # the extractor recognized), or it is not a verified figure -> downgrade. Gated on the
+            # corpus actually having typed records so record-less prose keeps the substring contract.
+            elif available_records and not numbers_record_backed(text, available_records):
+                kind = UNVERIFIED
         elif kind == ESTIMATE and not estimate_has_numeric_basis(text, cited_texts):
             kind = UNVERIFIED
         # WHY (Ask-tab + annual-report-reader quality): a model can restate the SAME fact more than

@@ -101,5 +101,11 @@ def build_library(registry: SourceRegistry, documents_dir: str | Path,
             failed.append(path.name)
             continue
         if text.strip():
-            store.add_document(source_id, text, locator_prefix=path.name)
+            # WHY structured=True (W3, SPEC v4 §2): element-aware ingestion keeps tables intact with
+            # their caption/units/period line and mines their cells into TYPED numeric records, so a
+            # grounded answer's stated figure can be resolved to an actual extracted record (see
+            # grounded_analyst.numbers_record_backed) rather than merely substring-matched. Blind
+            # ingestion still extracts inline unit-bearing figures, but not a scaled table's bare
+            # cells; enabling it here is what gives record-backed numeric grounding its raw material.
+            store.add_document(source_id, text, locator_prefix=path.name, structured=True)
     return store, skipped, failed

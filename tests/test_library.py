@@ -1,5 +1,6 @@
 import pytest
 
+from src.research.grounding import find_record, numeric_records
 from src.research.library import (
     build_library,
     load_document_text,
@@ -37,6 +38,30 @@ def test_build_library_ingests_registered_and_skips_unregistered(tmp_path):
     assert "rogue_source" not in store.source_ids()  # untiered id never ingested
     assert failed == []
     assert len(store) >= 1
+
+
+def test_build_library_ingests_structured_so_table_cells_become_typed_records(tmp_path):
+    # W3: the grounded analyst's document ingestion is STRUCTURED, so a table's bare cells inherit
+    # the caption scale and become typed numeric records. A bare cell has no inline unit, so blind
+    # ingestion (default_scale=None) would extract NO record for it -- a crore-scaled record here
+    # can only exist because structured ingestion is enabled, which is what record-backed numeric
+    # grounding needs to have raw material to resolve against.
+    docs = tmp_path / "documents"
+    docs.mkdir()
+    (docs / "acme_ar_fy24.txt").write_text(
+        "Statement of Profit and Loss\n"
+        "(Rs in crore)\n"
+        "Particulars    FY2024    FY2023\n"
+        "Net profit       73,670    66,700\n")
+    reg = SourceRegistry([Source("acme_ar_fy24", "Acme AR", CredibilityTier.PRIMARY)])
+
+    store, skipped, failed = build_library(reg, docs)
+
+    recs = numeric_records(store.retrieve("net profit"))
+    npr = find_record("73,670", recs)
+    assert npr is not None                              # bare cell became a record => structured
+    assert npr.scale == "crore"                         # scale inherited from the "(Rs in crore)" caption
+    assert npr.absolute_value == 73670.0 * 1e7
 
 
 def test_build_library_missing_dir_is_empty(tmp_path):

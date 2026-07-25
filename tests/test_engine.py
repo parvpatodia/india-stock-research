@@ -16,8 +16,10 @@ from src.research.grounded_analyst import (
     _build_user_prompt,
     estimate_has_numeric_basis,
     numbers_grounded,
+    numbers_record_backed,
 )
-from src.research.grounding import Chunk, DocumentStore, RetrievedChunk
+from src.research.grounding import Chunk, DocumentStore, RetrievedChunk, numeric_records
+from src.research.numeric_records import extract_records
 from src.sources.registry import CredibilityTier, Source, SourceRegistry
 
 
@@ -446,6 +448,57 @@ def test_numbers_grounded_helper():
     assert numbers_grounded("The outlook is positive", src)         # no number -> grounded
     assert not numbers_grounded("Profit was 9575 cr", src)          # 9575 not in source (no substring)
     assert not numbers_grounded("Revenue was 4000 cr", src)         # fabricated figure
+
+
+def test_numbers_record_backed_helper():
+    # W3: a material number must resolve to a TYPED NumericRecord, not merely appear as a substring.
+    recs = extract_records("Net profit was Rs 73,670 crore and ROE was 22.5%.")
+    assert numbers_record_backed("Net profit was 73,670 crore", recs)   # rupee record resolves
+    assert numbers_record_backed("ROE was 22.5%", recs)                 # percent record resolves
+    assert numbers_record_backed("The outlook is positive", recs)       # no material number -> True
+    assert not numbers_record_backed("Debt was 5000 crore", recs)       # fabricated, no record
+    # THE point of the record layer over numbers_grounded: '2024' has no typed record here even
+    # though it substring-matches a bare year in prose, so a phantom "2024 crore" is not backed.
+    assert not numbers_record_backed("Profit was 2024 crore", recs)
+
+
+def test_fact_number_absent_as_a_record_is_downgraded_even_when_it_substring_matches():
+    # W3 core property (SPEC v4 §2/§3): strengthen the grounded-answer path so a FACT's material
+    # number must resolve to a typed NumericRecord among the retrieved chunks' records, not merely
+    # appear in the cited prose. A bare year "2024" substring-matches numbers_grounded (it is in
+    # the text) but is NOT an extracted figure, so a phantom "2024 crore" must be downgraded --
+    # while the genuine "73,670 crore", which resolves to a record, stays a verified fact.
+    reg = SourceRegistry([Source("annual_report", "AR", CredibilityTier.PRIMARY)])
+    store = DocumentStore(registry=reg)
+    store.add_document("annual_report", "Net profit was Rs 73,670 crore in the year 2024.")
+    retrieved = store.retrieve("net profit crore")
+    assert numeric_records(retrieved)                                   # the record-backed gate is active
+    cid = retrieved[0].chunk.chunk_id
+    payload = {"abstain": False, "claims": [
+        {"text": "Net profit was 73,670 crore", "chunk_ids": [cid], "kind": "fact"},
+        {"text": "Company profit was 2024 crore", "chunk_ids": [cid], "kind": "fact"},
+    ]}
+    by = {c.text: c for c in _assemble_result("q", payload, retrieved, reg, None).claims}
+    assert by["Net profit was 73,670 crore"].kind == FACT
+    assert by["Net profit was 73,670 crore"].is_verified_fact           # backed by a typed record
+    assert by["Company profit was 2024 crore"].kind == UNVERIFIED       # phantom -> no record -> withheld
+
+
+def test_record_backed_check_does_not_downgrade_when_corpus_has_no_records():
+    # Conservative fallback: when NOTHING was extractable as a record (no typed figures in the
+    # retrieved corpus), the record-backed layer stays inert and the existing substring
+    # numbers_grounded contract is unchanged -- so a genuine fact on record-less prose still stands.
+    reg = SourceRegistry([Source("amfi", "AMFI", CredibilityTier.PRIMARY)])
+    store = DocumentStore(registry=reg)
+    store.add_document("amfi", "A SIP invests a fixed amount every month into a mutual fund.")
+    retrieved = store.retrieve("SIP mutual fund")
+    assert numeric_records(retrieved) == []                             # no typed records at all
+    cid = retrieved[0].chunk.chunk_id
+    payload = {"abstain": False, "claims": [
+        {"text": "A SIP invests a fixed amount monthly", "chunk_ids": [cid], "kind": "fact"},
+    ]}
+    res = _assemble_result("q", payload, retrieved, reg, None)
+    assert res.claims[0].kind == FACT and res.claims[0].is_verified_fact
 
 
 def test_numbers_grounded_checks_short_percentages_too():
