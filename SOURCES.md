@@ -17,10 +17,29 @@ browser fallback for sites that block plain HTTP.
 | BSE annual reports / announcements | unofficial API (BseIndiaApi) or browser | free | to wire; may need browser fallback |
 | SEBI corporate filings (`sebi.gov.in`) | HttpDocumentAdapter / browser | free | to wire |
 | Company IR pages (AR, AGM, investor PPT, transcripts) | HttpDocumentAdapter (per-URL) | free | works for direct PDF/HTML URLs |
-| NSE/BSE announcements (results, pledge, ratings) | unofficial API or browser | free | to wire |
+| NSE/BSE announcements (results, board meetings, dividends, allotments, AGM notices) | `AnnouncementSource` (injectable fetcher; default primes NSE cookies) | free (personal-use) | **wired, offline-tested**: parser mirrors the real `/api/corporate-announcements` JSON; feeds the freshness log |
 
 Note: `api.nseindia.com` JSON endpoints block datacenter IPs; the `nsearchives` PDF host does
 not. For blocked hosts (NSE api, Screener behind login) use the browser MCP.
+
+## Freshness ingestion (SPEC v4 W1)
+Scheduled ingestion keeps the corpus up to date. `scripts/ingest_freshness.py` runs, per symbol,
+three feeds into ONE append-only event log (`src/freshness`, JSONL; content-hash dedup + version
+supersession + as-of/staleness fall out of the stream):
+
+| Feed | Source module | Log `kind` | as-of date |
+|---|---|---|---|
+| Recent news | `NewsSource` (Google News RSS + yfinance) | `news` | publisher's published date |
+| Corporate announcements | `AnnouncementSource` (NSE/BSE) | `announcement` | disclosure datetime |
+| Latest annual report | `NseAnnualReportResolver.latest_report` | `annual_report` | fiscal-year end (31 Mar) |
+
+Run (owner's Mac, residential IP): `./.venv/bin/python scripts/ingest_freshness.py "NSE:RELIANCE=Reliance Industries" INFY`.
+Log path: `FRESHNESS_LOG_PATH` or `data/freshness/events.jsonl` (`/data/` is gitignored).
+**ToS reality (SPEC v4 §5):** the exchange endpoints are personal-use / non-redistributable and
+block datacenter IPs, so this runs on the owner's Mac like the daily job, NOT on Streamlit Cloud;
+every fetcher is an injectable seam so a licensed feed (GDFL/TrueData/indianapi) swaps in for a
+public product without touching the parser or ingestion path. Scheduling is documented in the
+script docstring; **no launchd/cron job is installed by the build** — the owner wires it.
 
 ## Tier 2 — Aggregators (cross-check against primary; shown as such)
 | Source | Access | Cost | Status |

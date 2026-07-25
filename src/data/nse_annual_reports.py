@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from typing import Callable
 
 from ..sources.adapters import HttpDocumentAdapter
@@ -30,6 +31,25 @@ def _year(value) -> int:
     return int(m.group(1)) if m else -1
 
 
+def _fy_end_iso(year: int) -> str:
+    """The as-of date for a report covering fiscal year `year`. Indian fiscal years end 31 March,
+    so a report tagged toYr=2024 is dated 2024-03-31. WHY use the FY-end, not the (unavailable)
+    publication date: it is the most conservative honest as-of -- a report cannot be effective
+    before its financial year closes, and for a real-money staleness flag erring OLDER (surfacing
+    "stale" a few months early) is the safe direction, never fresher-than-reality."""
+    return f"{year:04d}-03-31" if year and year > 0 else ""
+
+
+@dataclass(frozen=True)
+class AnnualReportRef:
+    """The latest available annual report for a symbol: its URL plus the coverage date the
+    freshness log dates it by."""
+    symbol: str
+    url: str
+    fiscal_year: int       # calendar year the report's financial year ended (from toYr)
+    as_of: str             # ISO date the report is effective (FY end), or "" if the year is unknown
+
+
 class NseAnnualReportResolver:
     def __init__(self, fetcher: Callable[[str], str | None] | None = None):
         self._fetcher = fetcher or self._http_fetch
@@ -48,21 +68,31 @@ class NseAnnualReportResolver:
         except Exception:
             return None
 
-    def latest_report_url(self, symbol: str) -> str | None:
-        raw = self._fetcher(symbol.strip().upper())
+    def latest_report(self, symbol: str) -> "AnnualReportRef | None":
+        """The latest available annual report for a symbol as a dated ref, or None if the listing
+        is blocked/empty/unparseable. Picks the newest fiscal year among the PDF entries (a
+        report with an unparseable year never wins). The freshness log dates the record by the
+        report's fiscal-year end."""
+        key = symbol.strip().upper()
+        raw = self._fetcher(key)
         if not raw:
             return None
         try:
             records = json.loads(raw).get("data", [])
         except (json.JSONDecodeError, ValueError, AttributeError):
             return None
-        best_url, best_year = None, -1
+        best: AnnualReportRef | None = None
         for rec in records:
             url = rec.get("fileName")
             year = _year(rec.get("toYr"))
-            if url and str(url).lower().endswith(".pdf") and year > best_year:
-                best_url, best_year = url, year
-        return best_url
+            if url and str(url).lower().endswith(".pdf") and year > (best.fiscal_year if best else -1):
+                best = AnnualReportRef(symbol=key, url=str(url), fiscal_year=year,
+                                       as_of=_fy_end_iso(year))
+        return best
+
+    def latest_report_url(self, symbol: str) -> str | None:
+        ref = self.latest_report(symbol)
+        return ref.url if ref else None
 
 
 def nse_annual_report_source(client=None,

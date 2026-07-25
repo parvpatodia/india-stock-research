@@ -103,3 +103,31 @@ def test_ingest_news_survives_a_single_bad_item(tmp_path):
     # the good item still lands; the batch did not crash on the empty-title one
     assert summary.new >= 1
     assert any("Reliance profit rises" in ev.title for ev in log.current())
+
+
+def test_ingest_news_errors_counter_covers_both_bad_input_classes(tmp_path):
+    # WHY (coverage, real money): the errors counter must catch BOTH ways a record fails and the
+    # batch must survive either -- (1) a cluster whose representative has no usable item_key (blank
+    # title AND blank url), and (2) a record the core rejects hard at the boundary (empty source_id
+    # -> ValueError). Neither aborts the run; the one good item still lands. Fully offline via a
+    # stub source returning crafted NewsItems (the parse/cluster layers are covered elsewhere).
+    from src.data.news_source import NewsItem
+
+    good = NewsItem(title="Infosys wins a large cloud deal in Europe today", publisher="Mint",
+                    url="https://x/good", published="2026-07-08", source_id="news_google")
+    no_key = NewsItem(title="", publisher="", url="", published="2026-07-08",
+                      source_id="news_google")            # blank title AND url -> empty item_key
+    bad_source = NewsItem(title="Adani ports posts record cargo volume this quarter",
+                          publisher="ET", url="https://x/adani", published="2026-07-08",
+                          source_id="")                    # empty source_id -> core rejects hard
+
+    class StubSource:
+        def fetch(self, symbol, company_name=""):
+            return [good, no_key, bad_source]
+
+    log = IngestionLog(tmp_path / "events.jsonl", clock=_clock)
+    summary = ingest_news(log, StubSource(), symbol="X", cluster_threshold=0.5)
+    assert summary.errors == 2          # one no-key + one hard-rejected
+    assert summary.new == 1             # the good item survived the bad neighbours
+    assert len(log.current()) == 1
+    assert log.current()[0].source_id == "news_google"

@@ -1,5 +1,26 @@
 # PROGRESS
 
+## 2026-07-25 — SPEC v4 W1 freshness engine, increment 2 (filings coverage + scheduled entrypoint)
+Built on increment 1's `src/freshness/` event log. Extended freshness COVERAGE beyond news:
+- `src/data/announcements_source.py`: NSE/BSE corporate-announcement source (results, board
+  meetings, dividends, allotments, AGM notices) behind an injectable fetcher; parser mirrors the
+  real `/api/corporate-announcements` JSON; tier PRIMARY; degrades to [] on fetch failure. ToS
+  reality documented (personal-use; licensed feed swaps in behind the seam).
+- `src/data/nse_annual_reports.py`: added `AnnualReportRef` + `latest_report()` (URL + fiscal
+  year + FY-end as-of); `latest_report_url()` now delegates to it. Conservative as-of = FY end
+  (31 Mar), so staleness errs older, never fresher-than-reality.
+- `src/freshness/filings_ingest.py`: `ingest_announcements` + `ingest_annual_report` record into
+  the SAME log; one logical AR record per symbol so next year's report supersedes; reject-hard at
+  the core, degrade-per-item at the batch.
+- `scripts/ingest_freshness.py`: runnable scheduled entrypoint (mirrors daily_suggestions.py) —
+  news + announcements + AR per symbol into the log, per-symbol summary. Thin, tested
+  orchestration (`run_ingest`/`parse_symbol_args`/`format_summary`). launchd/cron documented, NOT
+  installed. Log at `data/freshness/events.jsonl` (gitignored).
+- Coverage: added a regression exercising `news_ingest`'s `errors` counter across BOTH bad-input
+  classes (no-key cluster + core-rejected record) with the batch surviving.
+- VERIFIED: `./verify.sh` ALL GREEN — 582 -> 611 tests (+29), app smoke clean. Offline (no live
+  endpoints hit).
+
 ## 2026-07 — v3 expert-grade platform (V1-V6 complete)
 Built the SPEC v3 platform for the parents' real-money use, all FREE (no paid keys):
 - V1 cross-verification engine (consensus rule, 2% tolerance, computed-identity checks).
