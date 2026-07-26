@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import replace
 
 from ..llm.client import LLMClient, LiteLLMClient
 from ..sources.registry import SourceRegistry
@@ -193,6 +194,84 @@ def numbers_unit_consistent(text: str, records) -> bool:
         if same_digit and all(r.scale != cr.scale for r in same_digit):
             return False  # same digits, but every matching record is a different scale -> trap
     return True
+
+
+# --- W6 span-level citations (SPEC v4 §4 W6, §3 "cited but not verified") ----------------------
+# A citation must carry the EXACT supporting text span inside its cited chunk -- the fragment that
+# actually contains the claim's material number (or, absent a number, its best key-phrase match).
+# That span is the click-through payload a UI renders AND the basis of a citation-QUALITY check: a
+# FACT whose cited chunks contain no supporting span for its material number is "cited but not
+# verified" and is downgraded, so a green fact can never carry a citation that does not actually
+# back its figure. The number match reuses the SAME metadata-stripping (_all_numbers) + key
+# (_num_key) as numbers_grounded, so a fragment is credited with exactly the numbers grounding
+# would credit -- the two guards enforce one invariant from different angles (pooled presence vs a
+# locatable span), and neither can green-light a figure the other would reject.
+_WORD = re.compile(r"[a-z0-9]+")
+# Split a chunk into sentence/line fragments: after sentence-ending punctuation, or on a newline
+# (so an intact table's rows become separate fragments instead of one giant quote).
+_SPAN_SPLIT = re.compile(r"(?<=[.!?;])\s+|\n+")
+
+
+def _fragments(text: str) -> list[str]:
+    return [p.strip() for p in _SPAN_SPLIT.split(text or "") if p.strip()]
+
+
+def _fragment_keys(fragment: str) -> set[str]:
+    """The material-number match keys present in a single fragment (metadata stripped), using the
+    SAME extraction + key as numbers_grounded so a fragment credits exactly the numbers grounding
+    would (a bare year / FY tag / date can never count as a figure here either)."""
+    return {_num_key(m) for m in _all_numbers(fragment)}
+
+
+def _numeric_span(claim_text: str, chunk_text: str) -> str:
+    """The first fragment of chunk_text that contains one of the claim's material numbers, or ''.
+    This is the span that literally backs the claim's figure."""
+    material = _material_numbers(claim_text)
+    if not material:
+        return ""
+    for frag in _fragments(chunk_text):
+        if material & _fragment_keys(frag):
+            return frag
+    return ""
+
+
+def _keyphrase_span(claim_text: str, chunk_text: str) -> str:
+    """Fallback for a claim with no material number: the fragment sharing the most CONTENT words
+    (length >= 3, so stopwords don't dominate the pick) with the claim, or '' if nothing overlaps.
+    Provenance only -- it NEVER feeds the citation-quality downgrade."""
+    claim_words = {w for w in _WORD.findall(claim_text.lower()) if len(w) >= 3}
+    if not claim_words:
+        return ""
+    best, best_score = "", 0
+    for frag in _fragments(chunk_text):
+        score = len(claim_words & {w for w in _WORD.findall(frag.lower()) if len(w) >= 3})
+        if score > best_score:
+            best, best_score = frag, score
+    return best
+
+
+def supporting_span(claim_text: str, chunk_text: str) -> str:
+    """The exact supporting quote to attach to a citation: the fragment that contains the claim's
+    material number, else its best key-phrase fragment, else ''. NEVER fabricates -- when the
+    claim's number is absent from the chunk, the numeric span is '' and only a key-phrase fragment
+    (which cannot contain the claimed figure) can be returned, so a wrong number is never quoted
+    back as if the chunk had stated it."""
+    return _numeric_span(claim_text, chunk_text) or _keyphrase_span(claim_text, chunk_text)
+
+
+def citation_supports_numbers(claim_text: str, cited_texts: list[str]) -> bool:
+    """True unless the claim states a material number that has NO supporting span in ANY cited chunk
+    -- the SPEC v4 §3 'cited but not verified' check. EVERY material number must be locatable as a
+    fragment inside some cited chunk (all-of semantics), so a FACT can never render green while a
+    citation fails to actually contain the figure. Composes with numbers_grounded (which enforces
+    the same digit-for-digit presence over the pooled cited text): this is the span-anchored
+    restatement of that invariant that ALSO yields the per-citation quote. No material number ->
+    nothing to locate -> True. Conservative real-money bias: a missing span only ever DOWNGRADES."""
+    material = _material_numbers(claim_text)
+    if not material:
+        return True
+    fragments = [frag for t in cited_texts for frag in _fragments(t)]
+    return all(any(key in _fragment_keys(frag) for frag in fragments) for key in material)
 
 
 _SYSTEM = """You answer questions about Indian investments for a non-expert reader, using \
@@ -400,6 +479,11 @@ def _assemble_result(question: str, payload: dict, retrieved: list[RetrievedChun
             citation = build_citation(chunk.source_id, chunk.locator or chunk.chunk_id,
                                       registry, as_of)
             if citation is not None:
+                # W6: attach the EXACT supporting span inside THIS chunk so a UI can click through to
+                # "source · locator: '<quote>'". Computed per (claim, chunk) from the real text; a
+                # wrong number is never quoted back (supporting_span falls back to a key-phrase
+                # fragment that cannot contain the absent figure).
+                citation = replace(citation, quote=supporting_span(text, chunk.text))
                 citations.append(citation)
                 cited_texts.append(chunk.text)
         # WHY: no chunk, no claim. A claim with no resolved citation is unsourced and must
@@ -421,6 +505,12 @@ def _assemble_result(question: str, payload: dict, retrieved: list[RetrievedChun
         # mislabeled "estimate" to bypass the numeric guard), without touching real arithmetic.
         if kind in (FACT, OPINION):
             if not numbers_grounded(text, cited_texts):
+                kind = UNVERIFIED
+            # W6 citation quality ('cited but not verified', SPEC v4 §3): require a LOCATABLE
+            # supporting SPAN for every material number in some cited chunk, so a green fact always
+            # carries a citation whose quote actually backs its figure -- never a citation that
+            # doesn't. Composes with numbers_grounded (equivalent necessary condition, span-anchored).
+            elif not citation_supports_numbers(text, cited_texts):
                 kind = UNVERIFIED
             # W3: even a number present in the cited prose must resolve to a TYPED record (a figure
             # the extractor recognized), or it is not a verified figure -> downgrade. Gated on the
