@@ -24,9 +24,10 @@ from .claims import (
     build_citation,
     enforce_citations,
 )
-from .computed_figures import ComputedFigure
+from .computed_figures import ComputedFigure, _period_year
 from .grounding import DocumentStore, RetrievedChunk, find_record, numeric_records
 from .numeric_records import RUPEES, extract_records, number_key
+from .structure import detect_period
 
 _ALLOWED_KINDS = {FACT, OPINION, ESTIMATE}
 
@@ -193,6 +194,39 @@ def numbers_unit_consistent(text: str, records) -> bool:
                       and number_key(r.raw_string) == key]
         if same_digit and all(r.scale != cr.scale for r in same_digit):
             return False  # same digits, but every matching record is a different scale -> trap
+    return True
+
+
+def numbers_period_consistent(text, records, target_period: str | None) -> bool:
+    """True unless the claim states a MATERIAL number that resolves ONLY to typed records of an
+    EXPLICITLY-DIFFERENT fiscal period than the question's TARGET period. WHY (real money, H2, SPEC
+    v4 §2.2 "metadata filtering ... stops FY23/FY24 mixing"): numbers_grounded / numbers_record_backed
+    / numbers_unit_consistent all match a figure by its DIGITS (and, for the last, its scale word) --
+    none look at the PERIOD. So when the question targets FY2024, a model can surface FY2023's 500-
+    crore figure as the FY2024 answer and it resolves to a real FY2023 record and passes every prior
+    check -- an off-by-a-year figure rendered as a verified fact, the exact metadata mixing §2.2 names.
+    This requires each material number to be backed by a same-digit record whose period MATCHES the
+    target (compared by 4-digit fiscal year, reusing computed_figures._period_year so 'FY 2024' and
+    'FY2024' agree) or is UNTAGGED; a number backed ONLY by records of a different explicit period is
+    downgraded. Conservative bias, identical to the other numeric guards: it only ever DOWNGRADES to
+    UNVERIFIED (never a false green tick), an UNTAGGED record (unknown period is NOT a wrong period)
+    is always acceptable so untagged data is never withheld, and with no target year in the question
+    it is inert (returns True) -- normal questions are byte-for-byte unchanged."""
+    target_year = _period_year(target_period)
+    if target_year is None:
+        return True  # the question named no parseable fiscal year -> nothing to target, stay open
+    material = _material_numbers(text)
+    if not material:
+        return True
+    for key in material:
+        same_digit = [r for r in records if number_key(r.raw_string) == key]
+        if not same_digit:
+            continue  # a missing record is numbers_record_backed's concern, not the period's
+        # acceptable iff SOME same-digit record is untagged (unknown != wrong) or matches the target
+        # year; downgrade only when EVERY same-digit record carries a different explicit period.
+        if not any(r.period is None or _period_year(r.period) == target_year
+                   for r in same_digit):
+            return False
     return True
 
 
@@ -393,18 +427,27 @@ class GroundedAnalyst:
                 "Sources matched, but no LLM is configured. Set LLM_MODEL (e.g. an NVIDIA "
                 "NIM open model) to generate a grounded answer.",
             )
-        return self.write_answer(question, retrieved, registry, as_of)
+        # H2 (SPEC v4 §2.2): the direct answer path is period-aware too -- detect the question's
+        # target fiscal year so a figure from a DIFFERENT explicit period is not shown as its answer.
+        # None (no year in the question) -> the period guard is inert, so this path is unchanged.
+        return self.write_answer(question, retrieved, registry, as_of,
+                                 target_period=detect_period(question))
 
     def write_answer(self, question: str, retrieved: list[RetrievedChunk],
                      registry: SourceRegistry, as_of: str | None = None,
-                     computed_figures: tuple[ComputedFigure, ...] = ()) -> ResearchResult:
+                     computed_figures: tuple[ComputedFigure, ...] = (),
+                     target_period: str | None = None) -> ResearchResult:
         """Model-ask + assemble over ALREADY-retrieved chunks, optionally handing the model
         pre-computed figures to PHRASE (compute-don't-generate, SPEC v4 §2). Extracted from
         answer() so the W4 orchestrator can own retrieve/compute/verify and pass ComputedFigures
         in without a second retrieval. answer() routes through here with no computed figures, so
-        its behavior is unchanged."""
+        its behavior is unchanged.
+
+        `target_period` (H2, SPEC v4 §2.2): the question's target fiscal year, if any. When present,
+        a figure whose typed record carries a DIFFERENT explicit period is downgraded (see
+        numbers_period_consistent). Default None -> period guard inert, behavior unchanged."""
         payload = self._ask_model(question, retrieved, computed_figures)
-        return _assemble_result(question, payload, retrieved, registry, as_of)
+        return _assemble_result(question, payload, retrieved, registry, as_of, target_period)
 
     def _ask_model(self, question: str, retrieved: list[RetrievedChunk],
                    computed: tuple[ComputedFigure, ...] = ()) -> dict:
@@ -429,12 +472,17 @@ def _parse_json(raw: str) -> dict:
 
 
 def _assemble_result(question: str, payload: dict, retrieved: list[RetrievedChunk],
-                     registry: SourceRegistry, as_of: str | None) -> ResearchResult:
+                     registry: SourceRegistry, as_of: str | None,
+                     target_period: str | None = None) -> ResearchResult:
     """Pure: turn the model payload into a validated ResearchResult.
 
     Resolves cited chunk ids only against what was actually retrieved (drops hallucinated
     ids), resolves each chunk's source against the registry (drops unknown sources), then
     enforces the citation contract so an unsourced 'fact' can never render as fact.
+
+    `target_period` (H2, SPEC v4 §2.2): the question's target fiscal year, if any. When present, a
+    FACT/OPINION whose material figure resolves ONLY to records of a DIFFERENT explicit period is
+    downgraded (numbers_period_consistent). Default None -> the period arm is inert (unchanged).
     """
     if not isinstance(payload, dict) or payload.get("abstain"):
         reason = (payload.get("reason") if isinstance(payload, dict) else None) \
@@ -523,6 +571,15 @@ def _assemble_result(question: str, payload: dict, retrieved: list[RetrievedChun
             # unit-consistency guard downgrades a claim whose explicit rupee scale conflicts with the
             # typed record's scale. Same corpus gate, so record-less prose is unaffected.
             elif available_records and not numbers_unit_consistent(text, available_records):
+                kind = UNVERIFIED
+            # H2 period mixing (SPEC v4 §2.2): the checks above all match on DIGITS, ignoring the
+            # fiscal PERIOD, so when the QUESTION targets FY2024 a figure that resolves only to an
+            # FY2023 record passes them and would render as the verified FY2024 answer. The
+            # period-consistency guard downgrades a figure backed ONLY by a different explicit period.
+            # Inert when the question names no year (target_period None) and never excludes an
+            # untagged record; same corpus gate, so record-less prose is unaffected.
+            elif (target_period and available_records
+                  and not numbers_period_consistent(text, available_records, target_period)):
                 kind = UNVERIFIED
         elif kind == ESTIMATE and not estimate_has_numeric_basis(text, cited_texts):
             kind = UNVERIFIED

@@ -12,8 +12,10 @@ Classes (one case each):
   grounding (W3 numbers_record_backed) downgrades it.
 - unit_trap: a crore source figure answered in lakh (same digits, 100x) -> the unit-consistency
   guard (W5 numbers_unit_consistent) downgrades it.
-- period_mixing: an FY2023 figure presented as FY2024 -> typed records preserve the true period, so
-  the swap cannot resolve to an FY2024 record (the exact-match gate leverages this).
+- period_mixing: an FY2023 figure presented as FY2024, at TWO layers -- (a) typed records preserve
+  the true period, so the swap cannot resolve to an FY2024 record (the exact-match gate leverages
+  this), and (b) at CLAIM time, a model answering an FY2024 question with FY2023's figure is
+  downgraded by period-aware verification (H2 numbers_period_consistent), not just the record layer.
 - staleness: a stale-dated retrieved chunk -> the W1 freshness guardrail flags it stale, so it can
   never be shown as current.
 
@@ -176,6 +178,28 @@ def _case_period_mixing() -> RedTeamOutcome:
         if resisted else "BREACH: the FY2023 figure resolves under FY2024 -- periods conflated")
 
 
+def _case_period_claim_leak() -> RedTeamOutcome:
+    # H2 (SPEC v4 §2.2): the record layer preserves the true period (see _case_period_mixing), but a
+    # model can still ANSWER an FY2024 question with FY2023's figure -- it resolves to a real FY2023
+    # record and passes the digit-only grounding/record/unit checks. Period-aware CLAIM verification
+    # must downgrade it. Driven through the REAL orchestrator with a scripted attacker.
+    reg = _primary("ar")
+    store = DocumentStore(registry=reg)
+    store.add_document("ar", "Net profit for the year was Rs 500 crore.",
+                       company="ACME", doc_type="annual_report", fiscal_period="FY2023")
+    store.add_document("ar", "Net profit for the year was Rs 620 crore.",
+                       company="ACME", doc_type="annual_report", fiscal_period="FY2024")
+    # the attacker answers an FY2024 question with FY2023's 500-crore figure, citing the FY2023 chunk
+    resp = _fact_claim("Net profit was Rs 500 crore.", "ar#0")
+    result = _run_attack(store, reg, "what was the net profit in FY2024", resp, "ar")
+    leaked = _states_as_verified_fact(result, "500")
+    return RedTeamOutcome(
+        "fy2023_figure_as_fy2024_answer", "period_mixing", not leaked,
+        "period-aware verification (numbers_period_consistent) downgraded FY2023's figure presented "
+        "as the FY2024 answer"
+        if not leaked else "BREACH: FY2023's 500-crore figure rendered as a verified FY2024 fact")
+
+
 def _case_staleness() -> RedTeamOutcome:
     reg = _primary("ar")
     store = DocumentStore(registry=reg)
@@ -192,7 +216,8 @@ def _case_staleness() -> RedTeamOutcome:
         if resisted else "BREACH: a stale-dated figure was not flagged stale")
 
 
-_CASES = (_case_phantom_figure, _case_unit_trap, _case_period_mixing, _case_staleness)
+_CASES = (_case_phantom_figure, _case_unit_trap, _case_period_mixing, _case_period_claim_leak,
+          _case_staleness)
 
 
 def run_redteam() -> RedTeamReport:

@@ -238,3 +238,68 @@ def test_plan_type_is_carried_on_the_result():
         "net profit CAGR", store, reg)
     assert isinstance(out.plan, Plan)
     assert out.plan.wants_cagr
+
+
+# --- H2 period awareness (SPEC v4 §2.2): a year-targeted question must not surface another year ---
+
+def _period_series_store():
+    """A store with net-profit figures for TWO distinct fiscal years, each chunk tagged with its
+    TRUE period: FY2023 = 500 crore, FY2024 = 620 crore. This is the FY23/FY24 mixing setup."""
+    reg = SourceRegistry([Source("ar", "Annual Report", CredibilityTier.PRIMARY)])
+    store = DocumentStore(registry=reg)
+    store.add_document("ar", "Net profit for the year was Rs 500 crore.",
+                       company="ACME", fiscal_period="FY2023")
+    store.add_document("ar", "Net profit for the year was Rs 620 crore.",
+                       company="ACME", fiscal_period="FY2024")
+    return store, reg
+
+
+def test_plan_detects_the_target_period_from_the_question():
+    assert plan_question("what was the net profit in FY2024").target_period == "FY2024"
+    assert plan_question("what was the net profit").target_period is None
+
+
+def test_period_targeted_question_downgrades_a_different_years_figure():
+    # the QUESTION targets FY2024; the model (adversarially) answers with FY2023's 500-crore figure.
+    # It resolves to a real FY2023 record and passes the digit-only grounding/record/unit checks, so
+    # the period guard is the ONLY thing that can stop it being shown as the verified FY2024 answer.
+    store, reg = _period_series_store()
+    client = CapturingClient(_claim_payload("Net profit was Rs 500 crore.", "ar#0"))
+    out = ResearchOrchestrator(GroundedAnalyst(client=client)).run(
+        "what was the net profit in FY2024", store, reg, pin_source_ids=frozenset({"ar"}))
+    assert out.plan.target_period == "FY2024"
+    assert not out.abstained                       # the figure is shown, just not as a verified fact
+    assert not out.result.claims[0].is_verified_fact
+
+
+def test_period_targeted_question_keeps_the_correct_years_figure_verified():
+    # the control: the SAME question, answered with FY2024's OWN 620-crore figure, stays a clean
+    # verified fact -- the guard must not over-downgrade the right-year answer (no coverage loss).
+    store, reg = _period_series_store()
+    client = CapturingClient(_claim_payload("Net profit was Rs 620 crore.", "ar#1"))
+    out = ResearchOrchestrator(GroundedAnalyst(client=client)).run(
+        "what was the net profit in FY2024", store, reg, pin_source_ids=frozenset({"ar"}))
+    assert out.result.claims[0].is_verified_fact
+
+
+def test_no_period_in_question_leaves_the_same_figure_verified_unchanged():
+    # backward-compat proof: the SAME store + SAME 500-crore claim, but the question names NO year,
+    # so the period guard is inert and 500 verifies exactly as it did before H2.
+    store, reg = _period_series_store()
+    client = CapturingClient(_claim_payload("Net profit was Rs 500 crore.", "ar#0"))
+    out = ResearchOrchestrator(GroundedAnalyst(client=client)).run(
+        "what was the net profit", store, reg, pin_source_ids=frozenset({"ar"}))
+    assert out.plan.target_period is None
+    assert out.result.claims[0].is_verified_fact
+
+
+def test_untagged_record_is_not_hidden_by_a_period_targeted_question():
+    # conservatism (real money): a figure whose record carries NO period tag must NOT be withheld
+    # from a year-targeted question -- unknown period is not a wrong period.
+    reg = SourceRegistry([Source("ar", "Annual Report", CredibilityTier.PRIMARY)])
+    store = DocumentStore(registry=reg)
+    store.add_document("ar", "Net profit for the year was Rs 500 crore.", company="ACME")
+    client = CapturingClient(_claim_payload("Net profit was Rs 500 crore.", "ar#0"))
+    out = ResearchOrchestrator(GroundedAnalyst(client=client)).run(
+        "what was the net profit in FY2024", store, reg, pin_source_ids=frozenset({"ar"}))
+    assert out.result.claims[0].is_verified_fact

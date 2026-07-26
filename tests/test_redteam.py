@@ -55,6 +55,16 @@ def test_staleness_violation_is_flagged_stale_not_current():
     assert out.resisted, out.detail
 
 
+def test_period_mixing_at_claim_time_is_downgraded_not_shown_as_fact():
+    # H2 (SPEC v4 §2.2): the record layer preserves the true period, but a model can still ANSWER an
+    # FY2024 question with FY2023's figure -- it resolves to a real FY2023 record and passes the
+    # digit-only checks. Period-aware verification must downgrade it at CLAIM time. Driven through the
+    # real orchestrator with a scripted attacker.
+    by_name = {o.name: o for o in run_redteam().outcomes}
+    out = by_name["fy2023_figure_as_fy2024_answer"]
+    assert out.resisted, out.detail
+
+
 def test_report_all_resisted_is_true_when_every_case_resists():
     report = run_redteam()
     assert report.all_resisted, [o.detail for o in report.breaches]

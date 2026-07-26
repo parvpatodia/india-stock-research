@@ -53,6 +53,7 @@ from .computed_figures import (
 from .grounded_analyst import GroundedAnalyst
 from .grounding import DocumentStore, RetrievedChunk, numeric_records
 from .numeric_records import NumericRecord
+from .structure import detect_period
 
 # WHY module-level keyword sets (real money, transparency): the plan is a deterministic, auditable
 # intent read, not an LLM call. A reviewer can see exactly which words trigger a derived-figure
@@ -66,10 +67,13 @@ _MARGIN_WORDS = ("margin",)
 @dataclass(frozen=True)
 class Plan:
     """What the question needs, as booleans a reviewer can audit. `derivation_requested` is the
-    gate/compute trigger: the question asks for a figure that must be COMPUTED, not just quoted."""
+    gate/compute trigger: the question asks for a figure that must be COMPUTED, not just quoted.
+    `target_period` (H2, SPEC v4 §2.2) is the fiscal year the question targets ('FY2024') or None --
+    a deterministic, auditable read used to keep a figure from ANOTHER year off this year's answer."""
     wants_growth: bool
     wants_cagr: bool
     wants_margin: bool
+    target_period: str | None = None
 
     @property
     def derivation_requested(self) -> bool:
@@ -128,13 +132,15 @@ class OrchestratorState:
 
 
 def plan_question(question: str) -> Plan:
-    """Deterministically read the question's intent for a DERIVED figure. Substring keyword match
-    on the lowercased text; no LLM, no network, fully auditable."""
+    """Deterministically read the question's intent for a DERIVED figure AND its target fiscal
+    period. Substring keyword match on the lowercased text + the shared structure.detect_period FY
+    parser; no LLM, no network, fully auditable."""
     q = (question or "").lower()
     return Plan(
         wants_growth=any(w in q for w in _GROWTH_WORDS),
         wants_cagr=any(w in q for w in _CAGR_WORDS),
         wants_margin=any(w in q for w in _MARGIN_WORDS),
+        target_period=detect_period(question or ""),
     )
 
 
@@ -142,7 +148,8 @@ def _plan(state: OrchestratorState) -> OrchestratorState:
     plan = plan_question(state.question)
     wants = [name for name, on in (("growth", plan.wants_growth), ("cagr", plan.wants_cagr),
                                    ("margin", plan.wants_margin)) if on]
-    detail = f"derived-figure need: {', '.join(wants) or 'none'}"
+    period = f"; target period {plan.target_period}" if plan.target_period else ""
+    detail = f"derived-figure need: {', '.join(wants) or 'none'}{period}"
     return replace(state, plan=plan).log("PLAN", True, detail)
 
 
@@ -250,7 +257,8 @@ def _write(state: OrchestratorState, analyst: GroundedAnalyst,
             ResearchResult.abstain(state.question, state.gate_reason), "skipped: gate abstained")
     result = analyst.write_answer(
         state.question, list(state.retrieved), registry, as_of=state.as_of,
-        computed_figures=state.computed)
+        computed_figures=state.computed,
+        target_period=state.plan.target_period if state.plan else None)
     if result.abstained:
         detail = f"writer abstained: {result.abstain_reason}"
     else:
