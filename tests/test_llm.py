@@ -79,6 +79,37 @@ def test_grounded_analyst_end_to_end_with_fake_client():
     assert res.claims[0].citations[0].source_id == "amfi"
 
 
+def test_write_answer_over_retrieved_chunks_supports_computed_figures():
+    # W4: answer() is refactored to delegate to write_answer(retrieved, ...), which the orchestrator
+    # calls directly with pre-computed figures. Here: over already-retrieved chunks, a supplied
+    # ComputedFigure reaches the model prompt (compute-don't-generate), and the answer still assembles.
+    from src.research.computed_figures import ComputedFigure
+
+    class Capturing(LLMClient):
+        def __init__(self, response):
+            self._response = response
+            self.last_user = None
+
+        @property
+        def available(self):
+            return True
+
+        def complete(self, system, user, max_tokens=1000, json_mode=False, json_schema=None):
+            self.last_user = user
+            return self._response
+
+    store, reg = _store_and_registry()
+    retrieved = store.retrieve("SIP mutual fund")
+    payload = ('{"abstain": false, "claims": [{"text": "A SIP invests a fixed amount monthly.", '
+               '"chunk_ids": ["amfi#0"], "kind": "fact"}]}')
+    client = Capturing(payload)
+    fig = ComputedFigure("year-over-year growth", 12.0, "percent", (1e9, 1.12e9),
+                         "(current - previous) / |previous| * 100")
+    res = GroundedAnalyst(client=client).write_answer("q", retrieved, reg, computed_figures=(fig,))
+    assert not res.abstained
+    assert "12.00%" in (client.last_user or "")          # the computed value reached the model
+
+
 def test_grounded_analyst_abstains_without_llm():
     store, reg = _store_and_registry()
     a = GroundedAnalyst(client=FakeClient("", available=False))

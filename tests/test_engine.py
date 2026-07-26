@@ -626,6 +626,32 @@ def test_build_user_prompt_fences_sources_as_untrusted_data():
     assert "untrusted" in low or "not instructions" in low or "do not follow" in low
 
 
+def test_build_user_prompt_without_computed_figures_is_byte_identical():
+    # W4 backward-compatibility invariant: the default (no pre-computed figures) prompt must be
+    # byte-identical to the current one, so every existing test and the deployed behavior are
+    # unchanged. Only supplying computed figures adds a block.
+    rc = [RetrievedChunk(Chunk("ar#0", "ar", "Revenue was 100 cr in FY24.", "p1"), 0.9)]
+    assert _build_user_prompt("q", rc) == _build_user_prompt("q", rc, ())
+    assert "already computed" not in _build_user_prompt("q", rc).lower()
+    assert "PRE-COMPUTED" not in _build_user_prompt("q", rc)
+
+
+def test_build_user_prompt_includes_precomputed_figures_as_phrase_only():
+    # W4 compute-don't-generate wiring (SPEC v4 §2 decision #1): a ComputedFigure is placed in the
+    # prompt as an ALREADY-COMPUTED value the model must only PHRASE -- never two raw operands to
+    # divide itself. The finished value and its unit are present; the framing forbids recomputation.
+    from src.research.computed_figures import ComputedFigure
+    rc = [RetrievedChunk(Chunk("ar#0", "ar", "Net profit FY23 121 cr, FY22 110 cr.", "p1"), 0.9)]
+    fig = ComputedFigure(label="year-over-year growth", value=10.0, unit="percent",
+                         inputs=(1.1e9, 1.21e9), formula="(current - previous) / |previous| * 100")
+    prompt = _build_user_prompt("How fast did profit grow?", rc, (fig,))
+    assert "year-over-year growth" in prompt
+    assert "10.00%" in prompt                                    # the finished RESULT, not operands
+    low = prompt.lower()
+    assert "already computed" in low
+    assert "do not recompute" in low or "not recompute" in low   # the model may only phrase it
+
+
 def test_injected_directive_from_news_cannot_become_a_verified_fact():
     # WHY (defense in depth): even if the model echoes an injected "buy", the citation contract +
     # analyst tier + numeric grounding keep it from ever rendering as a verified ✓ fact.
