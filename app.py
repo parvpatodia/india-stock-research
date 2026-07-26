@@ -52,6 +52,7 @@ from src.data.figure_sources import (  # noqa: E402
 from src.data.news_source import NewsSource, registry_with_news  # noqa: E402
 from src.formatting import format_rupees  # noqa: E402
 from src.data.nse_annual_reports import (  # noqa: E402
+    NseAnnualReportResolver,
     fetch_annual_report_text,
     nse_annual_report_source,
 )
@@ -382,6 +383,24 @@ def fetch_ar_text(symbol: str, url: str = ""):
     return fetch_annual_report_text(symbol, url)
 
 
+@st.cache_data(ttl=86400, show_spinner=False)
+def fetch_ar_ref(symbol: str):
+    """Resolve the symbol's latest NSE annual-report ref (fiscal year + FY-end as-of date) for the
+    Research-tab freshness banner. Returns an AnnualReportRef or None.
+
+    DEGRADE-SAFE (real money, live app): NSE blocks datacenter IPs (Streamlit Cloud), so this
+    commonly returns None there and the banner then renders NOTHING rather than a fabricated date.
+    Cached per symbol (ttl 24h, matching fetch_ar_text) so a report render does at most ONE light
+    resolve per symbol per day, never a per-rerun refetch -- the report path itself discards the
+    ref it resolves internally (see nse_annual_report_source), so this is the one place that
+    surfaces it. The resolver's own fetch already swallows network errors and returns None; the
+    extra guard is belt-and-suspenders so a parse/attr error can never crash the report view."""
+    try:
+        return NseAnnualReportResolver().latest_report(symbol.strip().upper())
+    except Exception:
+        return None
+
+
 @st.cache_resource(ttl=3600)
 def get_screener_source() -> ScreenerFigureSource:
     # WHY ttl MUST match fetch_promoter_trend's own ttl below: ScreenerFigureSource memoizes
@@ -638,6 +657,13 @@ def ask_source_caption(citations, registry) -> str:
 # by the Research tab's annual-vintage caveat instead), so this threshold only governs dated news.
 _ASK_STALE_DAYS = 30
 
+# An annual report older than this reads as stale and is FLAGGED in the Research tab. Indian fiscal
+# years end 31 March, so the latest available AR is dated its FY-end and can legitimately be up to
+# ~14 months old before the next year's report is filed; 400 days keeps the most recently completed
+# FY's report reading "fresh" while flagging a report a full extra year behind (recent results not
+# reflected). Tuned for a once-a-year document, unlike the 30-day news window above.
+_AR_STALE_DAYS = 400
+
 
 def claim_badge(claim, registry) -> tuple[str, str]:
     """(label, color) for a claim's visible trust badge, mirroring the Ask tab's own message
@@ -686,6 +712,28 @@ def claim_freshness_lines(claim, today, stale_days: int = _ASK_STALE_DAYS):
         verdict = freshness(as_of, today, stale_days)
         out.append((line, verdict.stale, not verdict.known))
     return out
+
+
+def annual_report_freshness_line(ref, today, stale_days: int = _AR_STALE_DAYS):
+    """Freshness line + (stale, unknown) flags for the PRIMARY source behind a Research-tab report:
+    the latest annual report resolved for the symbol. `ref` is an AnnualReportRef (needs .fiscal_year
+    and .as_of) or None.
+
+    Returns None when there is no ref OR no usable as-of date, so the caller renders NOTHING
+    (degrade) -- never a fabricated date for an unresolved/undated report. Dates the report by its
+    FY-end as_of and reuses describe_freshness/freshness (never reimplements date logic), mirroring
+    the Ask tab's dated-source freshness. The subject reads 'FY2026 annual report' when the fiscal
+    year is known, else a bare 'annual report'."""
+    if ref is None:
+        return None
+    as_of = str(getattr(ref, "as_of", "") or "")
+    verdict = freshness(as_of, today, stale_days)
+    if not verdict.known:                     # resolved but undated -> nothing to date it by
+        return None
+    fy = getattr(ref, "fiscal_year", 0) or 0
+    subject = f"FY{fy} annual report" if isinstance(fy, int) and fy > 0 else "annual report"
+    line = describe_freshness(as_of, today, stale_days, subject=subject)
+    return (line, verdict.stale, not verdict.known)
 
 
 def format_computed_figure(fig) -> str:
@@ -1328,6 +1376,25 @@ with tab_research:
         _vintage = data_vintage_note(report.figures)
         if _vintage:
             st.caption(_vintage)
+        # H6 freshness banner (additive, degrade-safe): the vintage + a fresh/stale flag for the
+        # PRIMARY source, the latest NSE annual report on file for this symbol, resolved on demand
+        # and cached per symbol (fetch_ar_ref). If NSE didn't resolve one (e.g. it blocks the cloud
+        # server) or anything fails, this renders NOTHING -- never a fabricated date, never a crash
+        # (LESSONS: abstain at every boundary). Mirrors the Ask tab's ⏳ freshness style: a warning
+        # when the newest report is over a year old, a quiet ⏳ caption when it is current.
+        try:
+            _ar_fresh = annual_report_freshness_line(fetch_ar_ref(sym),
+                                                     datetime.now().strftime("%Y-%m-%d"))
+            if _ar_fresh is not None:
+                _ar_line, _ar_stale, _ar_unknown = _ar_fresh
+                if _ar_stale:
+                    st.warning(f"⏳ Analysis based on the {_ar_line}. That is over a year old, so "
+                               "recent results are not reflected; check the latest annual report "
+                               "and recent quarters before deciding.")
+                else:
+                    st.caption(f"⏳ Analysis based on the {_ar_line}.")
+        except Exception:  # pragma: no cover - a freshness banner must never crash the report view
+            pass
         if report.insights:
             st.markdown("**Why, in plain terms:**")
             for point in report.insights:
