@@ -33,6 +33,7 @@ from src.analysis.sizing import (  # noqa: E402
     suggest_allocation,
 )
 from src.constants import (  # noqa: E402
+    AI_DISCLOSURE,
     CONCENTRATION_HHI_WARN,
     CONCENTRATION_TOP_HOLDING_WARN,
     DEFAULT_BENCHMARK,
@@ -909,6 +910,11 @@ def build_pdf_report(title: str, report, stance: Stance, guidance=None,
     # "verify every figure / data may be delayed or incorrect / you alone are responsible" -- exactly
     # what a document shared with family, without the app around it, needs.
     line(DISCLAIMER, size=9, style="I", h=5)
+    # WHY (SEBI, real money): a saved/shared PDF leaves the app entirely, so it must carry the same
+    # AI-usage disclosure the live page shows -- AI-assisted, cross-checked, human-reviewed, research
+    # only, no return/accuracy claim. The operator owns the AI output (Reg 16C); the document that
+    # gets forwarded to family must say so on its face, not only inside the app.
+    line(AI_DISCLOSURE, size=9, style="I", h=5)
     return bytes(pdf.output())
 
 
@@ -1906,6 +1912,14 @@ with tab_ask:
                                        "model never did the arithmetic itself.")
                 except Exception:
                     pass
+            # W8 AI-usage disclosure (SPEC v4 §6, SEBI): render the disclosure right beside the answer
+            # (whether it answered or abstained) so a parent reading an AI-assisted answer always sees
+            # what it is -- AI-assisted, cross-checked, human-reviewed, research only, no return claim.
+            # Degrade-safe: a failure here must never drop the answer above it.
+            try:
+                st.caption(AI_DISCLOSURE)
+            except Exception:
+                pass
 
 
 # --- footer: funds/SIP + glossary + disclaimer ---
@@ -1961,3 +1975,24 @@ with st.expander("Mutual funds & SIP projection"):
 with st.expander("Glossary"):
     for term, meaning in GLOSSARY.items():
         st.markdown(f"**{term}** — {meaning}")
+
+# --- persistent compliance footer (SPEC v4 §6, SEBI): always-visible AI-usage disclosure ---
+# WHY (real money, SEBI Reg 16C / Jan-2025 guidelines): the parents must always be able to see, in
+# the app's own calm voice, that this is AI-assisted, cross-checked, human-reviewed research -- NOT
+# advice, NOT a buy/sell call, with no return/accuracy/win-rate claim. The operator owns the AI
+# output and must DISCLOSE that AI is used; this footer is that disclosure, shown at the bottom of
+# every page alongside the standard not-advice/verify-every-figure line. Degrade-safe: a markup
+# failure falls back to plain captions, and the whole block is wrapped so it can never blank the page.
+try:
+    st.divider()
+    try:
+        st.markdown(
+            '<div class="ier-note">'
+            '<div class="ier-note-title">About this tool</div>'
+            f'{AI_DISCLOSURE}<br>{DISCLAIMER}'
+            '</div>', unsafe_allow_html=True)
+    except Exception:  # pragma: no cover - the disclosure must always show
+        st.caption(AI_DISCLOSURE)
+        st.caption(DISCLAIMER)
+except Exception:  # pragma: no cover - never let the footer blank the page
+    st.caption(AI_DISCLOSURE)

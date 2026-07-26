@@ -52,7 +52,22 @@ def test_numeric_gate_fails_when_a_figure_mismatches():
     assert not ok
 
 
+def test_compliance_gate_passes_on_the_shipped_copy():
+    mod = _load_run_eval()
+    ok, summary = mod.compliance_gate()
+    assert ok, summary
+    assert "compliance" in summary.lower()
+
+
+def test_compliance_gate_fails_on_a_planted_advice_claim():
+    # a build that introduces self-voice advice must fail the gate (SEBI, real money)
+    mod = _load_run_eval()
+    ok, summary = mod.compliance_gate(extra_texts=("You should buy Reliance now.",))
+    assert not ok
+    assert "buy" in summary.lower()
+
+
 def test_main_returns_zero_when_all_gates_pass():
     mod = _load_run_eval()
-    # empty/absent ground-truth store -> that gate is vacuously green; red-team + numeric pass.
+    # empty/absent ground-truth store -> that gate is vacuously green; red-team + numeric + compliance pass.
     assert mod.main() == 0

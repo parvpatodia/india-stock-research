@@ -42,3 +42,18 @@ DISCLAIMER = (
     "solicitation to buy or sell. Data may be delayed or incorrect. Verify every figure "
     "before acting. You alone are responsible for your decisions."
 )
+
+# AI-usage disclosure (SPEC v4 §6, SEBI Reg 16C / Jan-2025 guidelines). The operator owns AI
+# output, must DISCLOSE that AI is used, and must not market returns / accuracy / win-rates. This is
+# the app's OWN-VOICE statement of what it is: AI-assisted, cross-checked, human-reviewed, research
+# only, with no performance claim. Kept as its own constant (rendered alongside DISCLAIMER in the
+# footer, near Ask answers, and on exports) and phrased so the compliance lint reads it as clean --
+# every trade word here sits in a NEGATED, anti-advice clause. WHY separate from DISCLAIMER: this one
+# carries the specific "AI is used + a human reviews + no return/accuracy claim" disclosure the SEBI
+# guidelines require; DISCLAIMER carries the not-advice / verify-every-figure legal line. Both show.
+AI_DISCLOSURE = (
+    "AI-assisted research. Answers are generated with the help of AI and cross-checked against "
+    "dated sources, and a human reviews them before anything here is treated as reliable. This is "
+    "personal research for one family's own holdings, not investment advice and not a call to buy "
+    "or sell. It makes no performance, profit, or accuracy claims."
+)

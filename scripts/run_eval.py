@@ -2,7 +2,7 @@
 
     ./.venv/bin/python scripts/run_eval.py
 
-Runs three offline gates and prints a clear pass/fail summary; exits non-zero if ANY gate fails,
+Runs four offline gates and prints a clear pass/fail summary; exits non-zero if ANY gate fails,
 so it can block a build:
 
   1. ground-truth replay  -- no figure is trusted-but-wrong vs an expert correction
@@ -11,9 +11,13 @@ so it can block a build:
      as-of/staleness) is fully resisted; a regression here fails the gate.
   3. numeric-exact-match  -- every India golden-set figure matches ground truth EXACTLY after
      unit normalization (crore/lakh/million); a scale error drops the rate below threshold.
+  4. compliance-lint     -- the SYSTEM'S OWN static copy (app.py string literals + the grounded
+     system prompt + the disclaimers) contains no self-voice buy/sell recommendation, promised
+     return, or accuracy/win-rate claim (SPEC v4 §6, SEBI). A build that adds advice phrasing fails.
 
-Deterministic and offline: the red-team suite injects fake LLM clients and the golden set is inline
-text, so no network or key is needed and the gate runs in CI.
+Deterministic and offline: the red-team suite injects fake LLM clients, the golden set is inline
+text, and the compliance gate reads app.py as source text (no import, no Streamlit), so no network
+or key is needed and the gate runs in CI.
 """
 from __future__ import annotations
 
@@ -22,12 +26,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from src.compliance.lint import iter_string_literals, lint_texts  # noqa: E402
+from src.constants import AI_DISCLOSURE, DISCLAIMER  # noqa: E402
 from src.eval.cases import EvalStore  # noqa: E402
 from src.eval.harness import Outcome, evaluate  # noqa: E402
 from src.eval.numeric_match import GOLDEN_FIXTURES, numeric_exact_match  # noqa: E402
 from src.eval.redteam import RedTeamReport, run_redteam  # noqa: E402
+from src.research.grounded_analyst import _SYSTEM  # noqa: E402
 
 STORE = Path(__file__).resolve().parents[1] / "data" / "eval_cases.jsonl"
+APP = Path(__file__).resolve().parents[1] / "app.py"
 
 # The numeric-exact-match gate is all-or-nothing by default: on a real-money tool a single wrong
 # figure (a crore read as million) is a hard failure, not a tolerable drop.
@@ -67,8 +75,26 @@ def numeric_gate(fixtures=GOLDEN_FIXTURES, threshold: float = NUMERIC_THRESHOLD)
     return res.exact_match_rate >= threshold, "\n".join(lines)
 
 
+def _self_voice_corpus() -> list[str]:
+    """The SYSTEM'S OWN static text: every string literal in app.py (its rendered UI copy) plus the
+    grounded-analyst system prompt and both shipped disclaimers. Read as source, never imported, so
+    the gate stays offline and does not execute Streamlit."""
+    app_src = APP.read_text(encoding="utf-8")
+    return list(iter_string_literals(app_src)) + [_SYSTEM, DISCLAIMER, AI_DISCLOSURE]
+
+
+def compliance_gate(extra_texts: tuple[str, ...] = ()) -> tuple[bool, str]:
+    """No self-voice buy/sell recommendation, promised return, or accuracy/win-rate claim may live in
+    the app's own copy (SPEC v4 §6, SEBI). extra_texts lets a test inject a planted violation."""
+    violations = lint_texts(list(_self_voice_corpus()) + list(extra_texts))
+    lines = [f"compliance-lint: {len(violations)} self-voice violation(s) in the system's own copy"]
+    for v in violations:
+        lines.append(f"    [{v.rule}] '{v.match}' in: {v.context[:80]}")
+    return not violations, "\n".join(lines)
+
+
 def main() -> int:
-    gates = [ground_truth_gate(), redteam_gate(), numeric_gate()]
+    gates = [ground_truth_gate(), redteam_gate(), numeric_gate(), compliance_gate()]
     all_ok = True
     for ok, summary in gates:
         print(summary)
