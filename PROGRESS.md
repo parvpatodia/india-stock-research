@@ -1,5 +1,31 @@
 # PROGRESS
 
+## 2026-07-26 — H7: freshness snapshot reaches the DEPLOYED app (closes the biggest residual)
+The W1 freshness engine only ever saw live data on the owner's Mac (NSE/BSE block Streamlit
+Cloud's datacenter IP; Cloud can't run the scheduler), so the parents never saw freshness on the
+deployed app. H7 bridges that gap through the EXISTING Sheets backend — no Apps Script change (the
+bridge already does generic tab read/write):
+- `src/freshness/snapshot.py`: `SymbolSnapshot` + `snapshot_for` project each symbol's ingest-run
+  summaries (news/announcements/AR) into a compact row; `as_row`/`from_row` round-trip through the
+  gateway's `{header: value}` shape (from_row tolerant — Sheets returns strings); `parse_snapshot`
+  groups rows by symbol. Built from the RUN summaries (symbol is unambiguous at ingest time), never
+  reverse-engineered from a log key; never fabricates a date (AR sentinels -1 / "").
+- `scripts/ingest_freshness.py`: `--publish` flag → after ingest, `build_snapshot` +
+  `publish_snapshot` write the `Freshness` tab via `gateway_from_env` (APPS_SCRIPT_URL/TOKEN).
+  Best-effort: a Sheet blip or missing config prints `publish: skipped/failed`, never aborts the
+  run. `load_dotenv()` in `main()` (CLI only) so the launchd job picks up `.env`.
+- `app.py`: `load_freshness_snapshot()` (cached 30 min, degrades to `{}` on any backend failure) +
+  the pure `freshness_snapshot_line()` → a "🔄 Data last refreshed …; tracking N news and M filings
+  from the last 120 days; latest annual report FY2026 (…)." banner in the Research tab, right after
+  the H6 live-AR block (which shows nothing on Cloud). Flags a 🔄 "refresh looks overdue" after 3
+  days so a stalled Mac pipeline is visible, not silent. Every new access try/except-guarded.
+- DEPLOY.md §4d documents the launchd `--publish` cron.
+- VERIFIED: `./verify.sh` ALL GREEN 818 → 840 tests (+22, incl. an AppTest that renders the banner
+  through Streamlit's own runtime with the Sheets read injected at the src-level gateway);
+  `run_eval.py` 4-gate PASS. Additive: with no `--publish` / no snapshot, ingest + app behaviour
+  byte-unchanged. HONEST residual: the live round-trip (Mac cron → real Sheet → Cloud read) is
+  offline-unverified here — needs the owner's Sheet URL/token + the launchd install.
+
 ## 2026-07-25 — SPEC v4 W7 UI, increment 1 (functional integration + trust UI)
 First user-visible wiring of the W3/W4/W6 spine into the deployed app (app.py). Ask tab only;
 research-only, additive, degrade-safe at every new boundary.

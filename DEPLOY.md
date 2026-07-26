@@ -85,6 +85,30 @@ results), but not from a residential IP. So run the batch on the Mac; the app ju
 Tradeoff: the Mac must be awake for it to run; it's daily-when-on, not truly 24/7. For real
 overnight autonomy, use a paid datacenter-reachable data source instead.
 
+## 4d. Freshness snapshot on a Mac (launchd) — makes "keep up to date" visible on Cloud
+The W1 freshness engine (news + NSE/BSE corporate announcements + latest annual report) only sees
+live data from a residential IP — NSE/BSE block Streamlit Cloud's datacenter IP, and Cloud can't
+run a scheduler. So the Mac ingests and PUBLISHES a per-symbol snapshot to the Sheet's `Freshness`
+tab; the deployed app reads it and shows a "Data last refreshed …" banner in the Research tab. No
+Apps Script change is needed — the bridge already does generic tab read/write.
+1. Reuse the same `.env` from 4c (`APPS_SCRIPT_URL`, `APPS_SCRIPT_TOKEN`). `main()` `load_dotenv`s
+   it, so `--publish` picks them up. Test it:
+   `./.venv/bin/python scripts/ingest_freshness.py --publish "RELIANCE=Reliance Industries" "INFY=Infosys"`
+   → prints a per-symbol summary and `publish: ok -> Freshness tab (N symbols)`. Pass the holdings
+   as `SYMBOL=Company Name` pairs (a bare ticker is an unsafe news query; see NewsSource).
+2. Create `~/Library/LaunchAgents/com.parvpatodia.freshness.plist` running the venv python on
+   `scripts/ingest_freshness.py --publish <your symbols>`, `StartCalendarInterval` daily (e.g. 07:00),
+   `RunAtLoad` true, logging to `data/freshness_ingest.log`.
+3. Load / run now / pause (same pattern as 4c):
+   - load:   `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.parvpatodia.freshness.plist`
+   - run now: `launchctl kickstart -k gui/$(id -u)/com.parvpatodia.freshness`
+   - pause:  `launchctl bootout gui/$(id -u)/com.parvpatodia.freshness`
+Degrade: publishing is best-effort — if the Sheet is unreachable or the env is unset, the ingest
+still records to the log and the run prints a `publish: skipped/failed` note (never an error). If a
+run stops happening, the app's banner flips to "🔄 … refresh looks overdue" after 3 days, so a
+stalled pipeline is visible, not silent. The exchange feeds are personal-use / against ToS from a
+datacenter IP (SPEC v4 §5), which is the whole reason this runs on your Mac, not on Cloud.
+
 ## 5. Verify after deploy
 - Password gate appears and only the shared password gets in.
 - Portfolio loads (from the Sheet if configured, else an uploaded CSV).

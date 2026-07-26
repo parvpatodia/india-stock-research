@@ -92,6 +92,7 @@ from src.research.grounded_analyst import GroundedAnalyst  # noqa: E402
 from src.research.grounding import DocumentStore  # noqa: E402
 from src.research.orchestrator import ResearchOrchestrator  # noqa: E402
 from src.freshness.staleness import describe_freshness, freshness  # noqa: E402
+from src.freshness.snapshot import FRESHNESS_TAB, parse_snapshot  # noqa: E402
 from src.research.verified_context import (  # noqa: E402
     CASH_CONVERSION_TREND_SOURCE_ID,
     OTHER_INCOME_SHARE_SOURCE_ID,
@@ -470,6 +471,23 @@ def get_gateway():
     return build_gateway(creds_dict, _secret("sheet_key"), _ROOT / "data" / "reports.json")
 
 
+@st.cache_data(ttl=1800, show_spinner=False)
+def load_freshness_snapshot() -> dict:
+    """Read the per-symbol freshness snapshot the Mac-side scheduled run publishes to the Sheets
+    backend (H7, SPEC v4 W1 + §5) -> {SYMBOL: SymbolSnapshot}.
+
+    This is the CLOUD-visible half of the W1 engine: Streamlit Cloud can't run the ingest scheduler
+    and the exchange endpoints block its datacenter IP, so the residential-IP Mac ingests and
+    publishes, and the app reads the result here. DEGRADE-SAFE (real money): an unconfigured or
+    unreachable backend, or a Freshness tab that isn't there yet, yields {} so the banner simply
+    shows nothing -- never a crash on the parents' page. Cached 30 min so a browse doesn't re-hit
+    the Sheet on every rerun."""
+    try:
+        return parse_snapshot(get_gateway().read(FRESHNESS_TAB))
+    except Exception:
+        return {}
+
+
 def _persist_review(report, sym: str, stance, action: str, reviewer: str, note: str) -> None:
     """Persist an approve/reject to the gateway (Sheet or local JSON). Best-effort: a
     persistence error must never block the in-session review action."""
@@ -734,6 +752,49 @@ def annual_report_freshness_line(ref, today, stale_days: int = _AR_STALE_DAYS):
     subject = f"FY{fy} annual report" if isinstance(fy, int) and fy > 0 else "annual report"
     line = describe_freshness(as_of, today, stale_days, subject=subject)
     return (line, verdict.stale, not verdict.known)
+
+
+# The published freshness snapshot should be refreshed by the daily Mac-side run; if the newest
+# snapshot is older than this, the automated pipeline itself looks stalled and the parents are told
+# so (rather than trusting a silently frozen snapshot as current). A few days of slack covers a
+# missed run / weekend without crying wolf.
+_SNAPSHOT_STALE_DAYS = 3
+
+
+def freshness_snapshot_line(snap, today, stale_days: int = _SNAPSHOT_STALE_DAYS):
+    """One-line 'data freshness' summary from the published snapshot (Mac-side ingest -> Sheets ->
+    app), or None if there is nothing dated to show (H7, SPEC v4 W1 + §5). `snap` is a SymbolSnapshot
+    or None.
+
+    Returns (line, stale) where `stale` means the AUTOMATED REFRESH itself looks overdue (the newest
+    snapshot is older than `stale_days`). DEGRADE (real money, honesty): no snapshot, or a snapshot
+    with no/unparseable checked_at, returns None so the caller shows nothing -- never a fabricated
+    date. Reuses the freshness() date engine; never reimplements date math. The counts / annual-report
+    pieces are dropped when absent, so a sparse snapshot still shows the honest refresh date alone."""
+    if snap is None:
+        return None
+    checked = str(getattr(snap, "checked_at", "") or "").strip()
+    if not checked:
+        return None
+    verdict = freshness(checked, today, stale_days)
+    if not verdict.known:                     # unparseable date -> nothing to date it by
+        return None
+    parts = [f"Data last refreshed {checked}"]
+    bits = []
+    if getattr(snap, "news_recent", 0):
+        bits.append(f"{snap.news_recent} news")
+    if getattr(snap, "announcements_recent", 0):
+        bits.append(f"{snap.announcements_recent} filings")
+    if bits and getattr(snap, "window_days", 0):
+        parts.append(f"tracking {' and '.join(bits)} from the last {snap.window_days} days")
+    fy = getattr(snap, "annual_report_fy", -1)
+    if isinstance(fy, int) and fy > 0:
+        ar = f"latest annual report FY{fy}"
+        ar_as_of = str(getattr(snap, "annual_report_as_of", "") or "").strip()
+        if ar_as_of:
+            ar += f" ({ar_as_of})"
+        parts.append(ar)
+    return ("; ".join(parts) + ".", verdict.stale)
 
 
 def format_computed_figure(fig) -> str:
@@ -1393,6 +1454,25 @@ with tab_research:
                                "and recent quarters before deciding.")
                 else:
                     st.caption(f"⏳ Analysis based on the {_ar_line}.")
+        except Exception:  # pragma: no cover - a freshness banner must never crash the report view
+            pass
+        # H7 freshness SNAPSHOT banner (additive, degrade-safe): the CLOUD-visible half of the W1
+        # engine. The block above resolves the AR LIVE, which NSE blocks from the Cloud server (so it
+        # shows nothing there); this reads the snapshot the residential-IP Mac published to the Sheets
+        # backend, so the parents see a real "data last refreshed ..." line ON CLOUD. Renders NOTHING
+        # when no snapshot is published yet, and 🔄-warns if the automated refresh looks overdue.
+        try:
+            _snap = load_freshness_snapshot().get(sym)
+            _snap_fresh = freshness_snapshot_line(_snap, datetime.now().strftime("%Y-%m-%d"))
+            if _snap_fresh is not None:
+                _snap_line, _snap_stale = _snap_fresh
+                if _snap_stale:
+                    # A stalled refresh is a real-money staleness flag -> use the prominent warning
+                    # style (matching the H6 stale-AR banner), not an easy-to-miss grey caption.
+                    st.warning(f"🔄 {_snap_line} The automated refresh looks overdue, so treat "
+                               "this as a snapshot, not live.")
+                else:
+                    st.caption(f"🔄 {_snap_line}")
         except Exception:  # pragma: no cover - a freshness banner must never crash the report view
             pass
         if report.insights:
