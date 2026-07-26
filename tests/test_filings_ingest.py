@@ -111,6 +111,74 @@ def test_ingest_announcements_errors_counter_survives_bad_items(tmp_path):
     assert len(log.current()) == 1
 
 
+# --- recency window (H1: a routine run records only recent filings, log stays bounded) --------
+
+def _ann(as_of, ref):
+    """One announcement fixture dated `as_of` with a unique ref (so keys never collide)."""
+    return Announcement(symbol="RELIANCE", title="Board meeting outcome", as_of=as_of,
+                        source_id=NSE_ANNOUNCE_SOURCE_ID, ref=ref, category="Board Meeting")
+
+
+class _AnnStub:
+    def __init__(self, items):
+        self._items = items
+
+    def fetch(self, symbol):
+        return list(self._items)
+
+
+def test_recency_window_skips_old_keeps_recent(tmp_path):
+    # today = 2026-07-09, window = 120 days -> cutoff 2026-03-11. One recent, one old.
+    today = date(2026, 7, 9)
+    src = _AnnStub([_ann("2026-07-01", "https://x/recent.pdf"),   # 8 days old -> kept
+                   _ann("2024-07-19", "https://x/old.pdf")])      # ~2 years old -> skipped
+    log = IngestionLog(tmp_path / "events.jsonl", clock=_clock())
+    summary = ingest_announcements(log, src, symbol="RELIANCE", window_days=120, today=today)
+    assert summary.fetched == 2
+    assert summary.new == 1                     # only the recent one recorded
+    assert summary.skipped_old == 1             # the old one skipped by the window
+    assert len(log.current()) == 1
+    assert log.current()[0].ref.endswith("recent.pdf")
+
+
+def test_recency_window_boundary_exactly_window_days_is_included(tmp_path):
+    today = date(2026, 7, 9)                          # 2026-05-10 is exactly 60 days before this
+    src = _AnnStub([_ann("2026-05-10", "https://x/edge.pdf"),      # exactly 60 days old -> in
+                   _ann("2026-05-09", "https://x/over.pdf")])      # 61 days old -> out
+    log = IngestionLog(tmp_path / "events.jsonl", clock=_clock())
+    summary = ingest_announcements(log, src, symbol="RELIANCE", window_days=60, today=today)
+    assert summary.new == 1
+    assert summary.skipped_old == 1
+    assert log.current()[0].ref.endswith("edge.pdf")
+
+
+def test_recency_window_keeps_and_counts_undated(tmp_path):
+    # WHY (never drop a filing that lacks a date): an undated announcement is recorded AND counted
+    # separately, never silently dropped by the recency window.
+    today = date(2026, 7, 9)
+    src = _AnnStub([_ann("", "https://x/undated.pdf"),
+                   _ann("2024-01-01", "https://x/old.pdf")])
+    log = IngestionLog(tmp_path / "events.jsonl", clock=_clock())
+    summary = ingest_announcements(log, src, symbol="RELIANCE", window_days=120, today=today)
+    assert summary.undated == 1                 # counted separately
+    assert summary.new == 1                     # the undated one WAS recorded
+    assert summary.skipped_old == 1
+    assert any(ev.ref.endswith("undated.pdf") for ev in log.current())
+
+
+def test_recency_window_default_today_none_ingests_everything(tmp_path):
+    # Backward compatibility: with no `today` reference the window cannot be computed, so nothing
+    # is filtered (existing callers keep their behavior). The window activates only for a run that
+    # supplies its 'today'.
+    src = _AnnStub([_ann("2020-01-01", "https://x/ancient.pdf"),
+                   _ann("2026-07-01", "https://x/recent.pdf")])
+    log = IngestionLog(tmp_path / "events.jsonl", clock=_clock())
+    summary = ingest_announcements(log, src, symbol="RELIANCE")   # no today -> no filtering
+    assert summary.new == 2
+    assert summary.skipped_old == 0
+    assert len(log.current()) == 2
+
+
 # --- annual-report availability ---------------------------------------------------------------
 
 def test_ingest_annual_report_records_latest_with_fy_end_as_of(tmp_path):

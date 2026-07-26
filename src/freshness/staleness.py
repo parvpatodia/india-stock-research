@@ -11,6 +11,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime
 
+# Default ingestion recency window (H1): a routine ingest run records only filings/news dated
+# within this many days of the run's "today", so the append-only log stays bounded and reads as
+# "recent" rather than the entire filing history. Tunable per call / via the CLI. One home for the
+# constant (no duplicate literal elsewhere).
+DEFAULT_RECENCY_WINDOW_DAYS = 120
+
 
 def parse_iso_date(value) -> date | None:
     """Parse a date, datetime, or ISO string ('YYYY-MM-DD' or a full timestamp) to a date.
@@ -79,6 +85,29 @@ def freshness(as_of, today, threshold_days: int) -> Freshness:
     return Freshness(as_of=as_of_date.isoformat(), today=ref.isoformat(),
                      threshold_days=threshold_days, age_days=age,
                      stale=age > threshold_days, known=True)
+
+
+def is_recent(as_of, today, window_days: int) -> bool | None:
+    """Is `as_of` within `window_days` before `today`? The ingestion recency gate (H1).
+
+    Returns True if the date is recent (age <= window_days), False if strictly older, and None if
+    the date is missing/unparseable. The boundary is INCLUSIVE: an item exactly `window_days` old
+    is recent (mirrors the freshness threshold). A future-dated item is recent.
+
+    None (undated) is deliberately distinct from False: the caller must KEEP-and-count an undated
+    item, never let the window silently drop a filing that simply lacks a parseable date. Reuses
+    parse_iso_date (the one date parser). `window_days` must be a positive int -- a non-positive
+    window is a caller bug (it would keep nothing or everything), rejected hard like threshold_days.
+    """
+    if not isinstance(window_days, int) or isinstance(window_days, bool) or window_days <= 0:
+        raise ValueError(f"window_days must be a positive int, got {window_days!r}")
+    ref = parse_iso_date(today)
+    if ref is None:
+        raise ValueError(f"unparseable 'today' reference date: {today!r}")
+    as_of_date = parse_iso_date(as_of)
+    if as_of_date is None:
+        return None
+    return (ref - as_of_date).days <= window_days
 
 
 def describe_freshness(as_of, today, threshold_days: int, subject: str = "latest update") -> str:

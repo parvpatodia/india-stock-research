@@ -2,7 +2,7 @@
 announcements + annual-report ingestion per symbol into the shared log. The orchestration is a
 thin, testable function; the network is injected so this runs fully offline."""
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from src.data.announcements_source import AnnouncementSource
 from src.data.news_source import NewsItem
@@ -105,6 +105,34 @@ def test_parse_symbol_args_normalizes_and_reads_company_names():
     assert symbols == ["RELIANCE", "INFY", "TCS"]
     assert names["RELIANCE"] == "Reliance Industries"
     assert "INFY" not in names                       # no company name supplied
+
+
+OLD_ANN_FIXTURE = json.dumps([
+    {"symbol": "RELIANCE", "desc": "Financial Results",
+     "attchmntFile": "https://nsearchives.nseindia.com/corporate/OLD.pdf",
+     "attchmntText": "Old audited results from years ago",
+     "sort_date": "2020-01-15 10:00:00"},
+    {"symbol": "RELIANCE", "desc": "Board Meeting",
+     "attchmntFile": "https://nsearchives.nseindia.com/corporate/NEW.pdf",
+     "attchmntText": "Recent board meeting outcome",
+     "sort_date": "2026-07-01 10:00:00"}])
+
+
+def test_run_ingest_applies_recency_window(tmp_path):
+    # today + a 120-day window -> only the recent announcement lands; the 2020 one is skipped_old.
+    log = IngestionLog(tmp_path / "events.jsonl", clock=_clock)
+    results = run_ingest(
+        log, ["RELIANCE"],
+        news_source=_StubNews([]),
+        announce_source=AnnouncementSource(fetcher=lambda s: OLD_ANN_FIXTURE),
+        ar_resolver=NseAnnualReportResolver(fetcher=lambda s: None),
+        window_days=120, today=date(2026, 7, 9),
+    )
+    ann = results[0].announcements
+    assert ann.new == 1
+    assert ann.skipped_old == 1
+    text = format_summary(results)
+    assert "skipped_old=1" in text
 
 
 def test_format_summary_contains_per_symbol_counts(tmp_path):

@@ -3,9 +3,11 @@ from datetime import date
 import pytest
 
 from src.freshness.staleness import (
+    DEFAULT_RECENCY_WINDOW_DAYS,
     Freshness,
     describe_freshness,
     freshness,
+    is_recent,
     parse_iso_date,
 )
 
@@ -65,6 +67,47 @@ def test_threshold_must_be_positive():
         freshness("2026-06-30", _TODAY, threshold_days=0)
     with pytest.raises(ValueError):
         freshness("2026-06-30", _TODAY, threshold_days=-5)
+
+
+# --- recency window (H1: bound the ingestion log to recent filings) ---------------------------
+
+def test_is_recent_boundary_exactly_window_days_is_included():
+    # WHY: a filing exactly `window_days` old is still RECENT (included at ingest); only strictly
+    # older is excluded. Mirrors the freshness threshold's inclusive boundary.
+    assert is_recent("2026-05-10", _TODAY, window_days=60) is True   # exactly 60 days old
+    assert is_recent("2026-05-09", _TODAY, window_days=60) is False  # 61 days old -> excluded
+
+
+def test_is_recent_recent_item_is_true_old_item_is_false():
+    assert is_recent("2026-07-01", _TODAY, window_days=120) is True   # 8 days old
+    assert is_recent("2024-07-19", _TODAY, window_days=120) is False  # ~2 years old
+
+
+def test_is_recent_undated_returns_none_never_dropped():
+    # WHY (real money, honesty): an undated filing must not vanish through the window. None signals
+    # the caller to KEEP-and-count it separately, never a silent drop.
+    assert is_recent("", _TODAY, window_days=120) is None
+    assert is_recent(None, _TODAY, window_days=120) is None
+    assert is_recent("not a date", _TODAY, window_days=120) is None
+
+
+def test_is_recent_future_dated_is_recent():
+    assert is_recent("2026-08-01", _TODAY, window_days=120) is True   # future-dated -> recent
+
+
+def test_is_recent_window_days_must_be_positive_int():
+    for bad in (0, -5, True):
+        with pytest.raises(ValueError):
+            is_recent("2026-07-01", _TODAY, window_days=bad)
+
+
+def test_is_recent_rejects_unparseable_today():
+    with pytest.raises(ValueError):
+        is_recent("2026-07-01", "not a date", window_days=120)
+
+
+def test_default_recency_window_is_120_days():
+    assert DEFAULT_RECENCY_WINDOW_DAYS == 120
 
 
 def test_describe_freshness_reads_for_a_human():

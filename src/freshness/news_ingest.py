@@ -13,10 +13,12 @@ headline cannot take down the batch (LESSONS 2026-06-18, per-item ingestion must
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 
 from ..data.news_source import NewsItem, NewsSource
 from .clustering import cluster_items, normalize_title
 from .event_log import IngestionLog
+from .staleness import DEFAULT_RECENCY_WINDOW_DAYS, is_recent
 
 
 @dataclass
@@ -27,6 +29,8 @@ class IngestSummary:
     superseded: int = 0     # items whose content changed (prior version superseded)
     skipped: int = 0        # dedup no-ops (identical content already recorded)
     errors: int = 0         # items that could not be recorded (skipped, batch survived)
+    skipped_old: int = 0    # clusters older than the recency window -> not ingested (H1)
+    undated: int = 0        # clusters with no parseable date -> KEPT and counted (never dropped)
 
 
 def _representative(cluster: list[NewsItem]) -> NewsItem:
@@ -43,8 +47,17 @@ def _item_key(item: NewsItem) -> str:
 
 
 def ingest_news(log: IngestionLog, source: NewsSource, symbol: str, company_name: str = "",
-                cluster_threshold: float = 0.5) -> IngestSummary:
-    """Fetch, cluster, and record recent news for a symbol into the log. Returns a run summary."""
+                cluster_threshold: float = 0.5, *,
+                window_days: int = DEFAULT_RECENCY_WINDOW_DAYS,
+                today: date | None = None) -> IngestSummary:
+    """Fetch, cluster, and record recent news for a symbol into the log. Returns a run summary.
+
+    Recency window (H1): same bound as filings ingestion. When `today` is supplied, a cluster
+    whose representative's published date is strictly older than `window_days` before it is
+    SKIPPED (`skipped_old`); an undated cluster is KEPT and counted `undated`, never dropped by
+    the window. When `today` is None nothing is filtered here (NewsSource already applies its own
+    source-level max_age_days; this ingest window is the tighter, authoritative bound a routine
+    run supplies). Applied to the cluster representative, the item actually recorded."""
     summary = IngestSummary()
     try:
         items = source.fetch(symbol, company_name)
@@ -62,6 +75,13 @@ def ingest_news(log: IngestionLog, source: NewsSource, symbol: str, company_name
         if not key:
             summary.errors += 1     # no usable identity (blank title AND url) -> skip, survive
             continue
+        if today is not None:
+            recent = is_recent(rep.published, today, window_days)
+            if recent is None:
+                summary.undated += 1        # undated -> keep + count, never a silent drop
+            elif not recent:
+                summary.skipped_old += 1    # older than the window -> not ingested
+                continue
         try:
             result = log.ingest(item_key=key, source_id=rep.source_id, content=rep.as_text,
                                 as_of=rep.published, kind="news", ref=rep.url, title=rep.title,

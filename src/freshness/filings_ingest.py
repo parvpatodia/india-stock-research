@@ -14,10 +14,12 @@ degrade-per-item at the batch -- LESSONS 2026-06-18).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 
 from ..data.announcements_source import AnnouncementSource
 from ..data.nse_annual_reports import NseAnnualReportResolver
 from .event_log import IngestionLog
+from .staleness import DEFAULT_RECENCY_WINDOW_DAYS, is_recent
 
 # The AR log record's provenance id matches AnnualReportFigureSource.source_id, so the freshness
 # entry and the figure-extraction source name the same underlying primary document.
@@ -31,11 +33,22 @@ class FilingsIngestSummary:
     superseded: int = 0     # filings whose content changed (prior version superseded)
     skipped: int = 0        # dedup no-ops (identical content already recorded)
     errors: int = 0         # filings that could not be recorded (skipped, batch survived)
+    skipped_old: int = 0    # filings older than the recency window -> not ingested (H1)
+    undated: int = 0        # filings with no parseable date -> KEPT and counted (never dropped)
 
 
 def ingest_announcements(log: IngestionLog, source: AnnouncementSource,
-                         symbol: str) -> FilingsIngestSummary:
-    """Fetch and record a symbol's corporate announcements into the log. Returns a run summary."""
+                         symbol: str, *,
+                         window_days: int = DEFAULT_RECENCY_WINDOW_DAYS,
+                         today: date | None = None) -> FilingsIngestSummary:
+    """Fetch and record a symbol's corporate announcements into the log. Returns a run summary.
+
+    Recency window (H1): a routine run should record only RECENT filings, not the whole exchange
+    history (one live RELIANCE pull returned ~2,871 announcements). When `today` is supplied, an
+    announcement whose as-of date is strictly older than `window_days` before it is SKIPPED
+    (counted `skipped_old`); an undated announcement is KEPT and counted `undated`, never dropped
+    by the window. When `today` is None the window cannot be computed, so nothing is filtered --
+    existing callers keep their behavior and the routine entrypoint supplies the run's today."""
     summary = FilingsIngestSummary()
     try:
         items = source.fetch(symbol)
@@ -49,6 +62,13 @@ def ingest_announcements(log: IngestionLog, source: AnnouncementSource,
         if not key:
             summary.errors += 1     # no usable identity (blank ref AND title) -> skip, survive
             continue
+        if today is not None:
+            recent = is_recent(ann.as_of, today, window_days)
+            if recent is None:
+                summary.undated += 1        # undated -> keep + count, never a silent drop
+            elif not recent:
+                summary.skipped_old += 1    # older than the window -> not ingested
+                continue
         try:
             result = log.ingest(item_key=key, source_id=ann.source_id, content=ann.as_text,
                                 as_of=ann.as_of, kind="announcement", ref=ann.ref, title=ann.title)

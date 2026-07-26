@@ -1,6 +1,6 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-from src.data.news_source import NewsSource
+from src.data.news_source import NewsItem, NewsSource
 from src.freshness.event_log import IngestionLog
 from src.freshness.news_ingest import ingest_news
 
@@ -103,6 +103,76 @@ def test_ingest_news_survives_a_single_bad_item(tmp_path):
     # the good item still lands; the batch did not crash on the empty-title one
     assert summary.new >= 1
     assert any("Reliance profit rises" in ev.title for ev in log.current())
+
+
+# --- recency window (H1: bound the ingestion log to recent news) ------------------------------
+
+class _StubNews:
+    """A NewsSource-shaped stub returning fixed items, offline (source-level recency bypassed so
+    the INGEST-level window is what's under test)."""
+
+    def __init__(self, items):
+        self._items = items
+
+    def fetch(self, symbol, company_name=""):
+        return list(self._items)
+
+
+def _n(title, published, url):
+    return NewsItem(title=title, publisher="Mint", url=url, published=published,
+                    source_id="news_google")
+
+
+def test_news_recency_window_skips_old_keeps_recent(tmp_path):
+    today = date(2026, 7, 9)                     # window 120 -> cutoff 2026-03-11
+    src = _StubNews([_n("Reliance wins a large new order today", "2026-07-01", "https://x/a"),
+                     _n("Reliance signed a deal two years ago now", "2024-07-01", "https://x/b")])
+    log = IngestionLog(tmp_path / "events.jsonl", clock=_clock)
+    summary = ingest_news(log, src, symbol="RELIANCE", cluster_threshold=0.5,
+                          window_days=120, today=today)
+    assert summary.new == 1
+    assert summary.skipped_old == 1
+    assert len(log.current()) == 1
+    assert "wins a large new order" in log.current()[0].title
+
+
+def test_news_recency_window_boundary_is_inclusive(tmp_path):
+    # window 60 -> 2026-05-10 is exactly 60 days before today (in), 2026-05-09 is 61 (out). The two
+    # headlines share no tokens so they stay separate clusters (isolating the window, not clustering).
+    today = date(2026, 7, 9)
+    src = _StubNews([_n("Reliance quarterly profit climbs on strong refining margins", "2026-05-10",
+                        "https://x/e"),
+                     _n("Global shipping freight rates tumble amid weak demand", "2026-05-09",
+                        "https://x/o")])
+    log = IngestionLog(tmp_path / "events.jsonl", clock=_clock)
+    summary = ingest_news(log, src, symbol="RELIANCE", cluster_threshold=0.5,
+                          window_days=60, today=today)
+    assert summary.clusters == 2                  # the two headlines did not collapse
+    assert summary.new == 1                       # 60-day-old item included
+    assert summary.skipped_old == 1
+    assert "quarterly profit climbs" in log.current()[0].title
+
+
+def test_news_recency_window_keeps_and_counts_undated(tmp_path):
+    today = date(2026, 7, 9)
+    src = _StubNews([_n("Reliance undated headline no date given", "", "https://x/u"),
+                     _n("Reliance old story from years ago here", "2023-01-01", "https://x/old")])
+    log = IngestionLog(tmp_path / "events.jsonl", clock=_clock)
+    summary = ingest_news(log, src, symbol="RELIANCE", cluster_threshold=0.5,
+                          window_days=120, today=today)
+    assert summary.undated == 1
+    assert summary.new == 1                       # undated item recorded, not dropped
+    assert summary.skipped_old == 1
+    assert any("undated headline" in ev.title for ev in log.current())
+
+
+def test_news_recency_window_off_by_default_backward_compatible(tmp_path):
+    src = _StubNews([_n("Reliance ancient news from long ago", "2020-01-01", "https://x/a"),
+                     _n("Reliance recent news from this week", "2026-07-01", "https://x/r")])
+    log = IngestionLog(tmp_path / "events.jsonl", clock=_clock)
+    summary = ingest_news(log, src, symbol="RELIANCE", cluster_threshold=0.5)  # no today
+    assert summary.new == 2
+    assert summary.skipped_old == 0
 
 
 def test_ingest_news_errors_counter_covers_both_bad_input_classes(tmp_path):

@@ -8,11 +8,18 @@ the event stream. Re-running is cheap: unchanged items dedup to no-ops.
 Run it:
     python scripts/ingest_freshness.py RELIANCE INFY TCS
     python scripts/ingest_freshness.py "NSE:RELIANCE=Reliance Industries" "INFY-EQ=Infosys"
+    python scripts/ingest_freshness.py --window-days 90 RELIANCE
 
 A "SYMBOL=Company Name" pair feeds the news search a verified company name (a bare ticker is an
 unsafe free-text query -- common English-word tickers like PAGE/IDEA/SAIL mismatch; see
 NewsSource). The log path is FRESHNESS_LOG_PATH or data/freshness/events.jsonl (data/ is
 gitignored at the repo root).
+
+RECENCY WINDOW (H1): a routine run records only filings/news dated within a window of "today", so
+the append-only log stays bounded and reads as recent rather than the whole exchange history (one
+live RELIANCE pull returned ~2,871 announcements). Default 120 days; tune with `--window-days N`
+or FRESHNESS_WINDOW_DAYS (the flag wins). Undated items are still recorded (flagged, not dropped);
+the annual-report record is already bounded (one latest per symbol) and is NOT windowed.
 
 Scheduling (personal use, owner's Mac -- DO NOT install from the build): the exchange endpoints
 are personal-use / against ToS from a datacenter IP (SPEC v4 §5), so this runs on the owner's
@@ -27,6 +34,7 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -43,6 +51,7 @@ from src.freshness.filings_ingest import (  # noqa: E402
     ingest_annual_report,
 )
 from src.freshness.news_ingest import IngestSummary, ingest_news  # noqa: E402
+from src.freshness.staleness import DEFAULT_RECENCY_WINDOW_DAYS  # noqa: E402
 from src.portfolio.loader import normalize_symbol  # noqa: E402
 
 _DEFAULT_LOG = _ROOT / "data" / "freshness" / "events.jsonl"
@@ -77,15 +86,22 @@ def parse_symbol_args(args: list[str]) -> tuple[list[str], dict[str, str]]:
 
 def run_ingest(log: IngestionLog, symbols: list[str], *,
                news_source, announce_source, ar_resolver,
-               company_names: dict[str, str] | None = None) -> list[SymbolFreshness]:
+               company_names: dict[str, str] | None = None,
+               window_days: int = DEFAULT_RECENCY_WINDOW_DAYS,
+               today: date | None = None) -> list[SymbolFreshness]:
     """Ingest news + announcements + the latest annual report for each symbol into the log.
     Thin orchestration: each feed already degrades on failure, so one dead feed or symbol never
-    aborts the run. Returns a per-symbol summary."""
+    aborts the run. The recency window (H1) bounds news + announcements to items dated within
+    `window_days` of `today` (annual reports are already bounded -- one latest per symbol -- and
+    are NOT windowed). With today=None nothing is windowed (existing callers unchanged). Returns a
+    per-symbol summary."""
     company_names = company_names or {}
     results: list[SymbolFreshness] = []
     for symbol in symbols:
-        news = ingest_news(log, news_source, symbol, company_names.get(symbol, ""))
-        announcements = ingest_announcements(log, announce_source, symbol)
+        news = ingest_news(log, news_source, symbol, company_names.get(symbol, ""),
+                           window_days=window_days, today=today)
+        announcements = ingest_announcements(log, announce_source, symbol,
+                                             window_days=window_days, today=today)
         annual_report = ingest_annual_report(log, ar_resolver, symbol)
         results.append(SymbolFreshness(symbol=symbol, news=news,
                                        announcements=announcements, annual_report=annual_report))
@@ -104,22 +120,64 @@ def format_summary(results: list[SymbolFreshness]) -> str:
         lines.append(
             f"{r.symbol}: "
             f"news new={r.news.new} superseded={r.news.superseded} skipped={r.news.skipped} "
-            f"errors={r.news.errors}; "
+            f"skipped_old={r.news.skipped_old} undated={r.news.undated} errors={r.news.errors}; "
             f"announcements new={r.announcements.new} superseded={r.announcements.superseded} "
-            f"skipped={r.announcements.skipped} errors={r.announcements.errors}; "
+            f"skipped={r.announcements.skipped} skipped_old={r.announcements.skipped_old} "
+            f"undated={r.announcements.undated} errors={r.announcements.errors}; "
             f"{ar_line}"
         )
     return "\n".join(lines)
 
 
+def resolve_window_days(argv: list[str], env: dict[str, str]) -> tuple[list[str], int]:
+    """Pull the recency window out of the args/env, returning the remaining (symbol) args and the
+    window. Precedence: an explicit `--window-days N` / `--window-days=N` flag beats the
+    FRESHNESS_WINDOW_DAYS env var, which beats the 120-day default. A non-positive or unparseable
+    value falls back to the default (the ingest core also rejects it hard, but the entrypoint is
+    forgiving so a typo never aborts the scheduled run)."""
+    window = DEFAULT_RECENCY_WINDOW_DAYS
+    env_val = env.get("FRESHNESS_WINDOW_DAYS", "").strip()
+    if env_val:
+        try:
+            parsed = int(env_val)
+            if parsed > 0:
+                window = parsed
+        except ValueError:
+            pass
+    remaining: list[str] = []
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        val = None
+        if arg.startswith("--window-days="):
+            val = arg.split("=", 1)[1]
+        elif arg == "--window-days" and i + 1 < len(argv):
+            val = argv[i + 1]
+            i += 1
+        else:
+            remaining.append(arg)
+            i += 1
+            continue
+        try:
+            parsed = int(val)
+            if parsed > 0:
+                window = parsed
+        except (ValueError, TypeError):
+            pass
+        i += 1
+    return remaining, window
+
+
 def main(argv: list[str] | None = None) -> int:
+    import os
     argv = list(sys.argv[1:] if argv is None else argv)
+    argv, window_days = resolve_window_days(argv, dict(os.environ))
     symbols, names = parse_symbol_args(argv)
     if not symbols:
-        print("usage: ingest_freshness.py SYMBOL[=Company Name] [SYMBOL ...]", file=sys.stderr)
+        print("usage: ingest_freshness.py [--window-days N] SYMBOL[=Company Name] [SYMBOL ...]",
+              file=sys.stderr)
         return 2
 
-    import os
     log_path = Path(os.environ.get("FRESHNESS_LOG_PATH", str(_DEFAULT_LOG)))
     log = IngestionLog(log_path)
     results = run_ingest(
@@ -128,9 +186,12 @@ def main(argv: list[str] | None = None) -> int:
         announce_source=AnnouncementSource(),
         ar_resolver=NseAnnualReportResolver(),
         company_names=names,
+        window_days=window_days,
+        today=date.today(),        # the run's "today"; the recency window is computed against it
     )
     print(format_summary(results))
-    print(f"log: {log_path} ({len(log.events())} total events)")
+    print(f"log: {log_path} ({len(log.events())} total events, "
+          f"recency window {window_days} days)")
     return 0
 
 
