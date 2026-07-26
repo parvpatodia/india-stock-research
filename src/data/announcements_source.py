@@ -262,15 +262,19 @@ class BseAnnouncementSource(AnnouncementSource):
     @staticmethod
     def _http_fetch(scrip: str) -> str | None:
         """Personal-use BSE fetch: prime session cookies from the home page, then read the
-        AnnGetData corporate-announcements JSON for a scrip code. BSE's api.bseindia.com 403s a
-        cold request and requires a bseindia.com Referer + browser-like headers (the BSE analogue
-        of the NSE cookie-priming). A licensed feed replaces this whole method via the injected
-        fetcher.
+        corporate-announcements JSON for a scrip code. BSE's api.bseindia.com 403s a cold request
+        and requires a bseindia.com Referer + browser-like headers (the BSE analogue of the NSE
+        cookie-priming). A licensed feed replaces this whole method via the injected fetcher.
 
-        NOTE (unverified offline): the exact AnnGetData query params and JSON field names below are
-        the publicly-documented BSE shape but are NOT exercised by the test suite (tests inject a
-        fixture, never the network). The parser tolerates the wrapper/bare-list, multiple date
-        fields, HTML, and missing fields, so drift in the live shape degrades to [] not a crash."""
+        ENDPOINT (live-verified 2026-07-26): the working endpoint is AnnSubCategoryGetData/w with a
+        `subcategory` param and a LOWERCASE `strscrip`. The older AnnGetData/w query returned the
+        sentinel "No Record Found!" for every scrip and window (isolated live: even an all-companies
+        query matched nothing); this shape returns real records (15 for RELIANCE/500325 over 30 days,
+        parsed cleanly). Params mirror the maintained BennyThadikaran/BseIndiaApi client. The JSON
+        field names the parser reads (NEWSSUB/HEADLINE, CATEGORYNAME, NEWS_DT, ATTACHMENTNAME,
+        SCRIP_CD) were confirmed present in the live payload. The parser still tolerates
+        wrapper/bare-list, multiple date fields, HTML, and missing fields, so future drift degrades
+        to [] not a crash (tests inject a fixture; the network shape is not exercised in CI)."""
         import http.cookiejar
         import urllib.request
         from datetime import date, timedelta
@@ -279,9 +283,9 @@ class BseAnnouncementSource(AnnouncementSource):
         today = date.today()
         frm = (today - timedelta(days=30)).strftime("%Y%m%d")
         to = today.strftime("%Y%m%d")
-        listing = ("https://api.bseindia.com/BseIndiaAPI/api/AnnGetData/w"
-                   f"?pageno=1&strCat=-1&strPrevDate={frm}&strScrip={scrip}"
-                   f"&strSearch=P&strToDate={to}&strType=C")
+        listing = ("https://api.bseindia.com/BseIndiaAPI/api/AnnSubCategoryGetData/w"
+                   f"?pageno=1&strCat=-1&subcategory=-1&strPrevDate={frm}&strToDate={to}"
+                   f"&strSearch=P&strscrip={scrip}&strType=C")
         headers = [
             ("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"),
             ("Accept", "application/json,text/html,*/*"),

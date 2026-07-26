@@ -193,6 +193,36 @@ def test_bse_parse_bad_json_returns_empty():
     assert parse_bse_announcements("") == []
 
 
+def test_bse_http_fetch_hits_the_working_annsubcategory_endpoint(monkeypatch):
+    # WHY (regression, no mistake twice): the old AnnGetData/w query returned "No Record Found!" for
+    # every scrip/window (live-verified 2026-07-26). The working shape is AnnSubCategoryGetData/w
+    # with subcategory=-1 and a LOWERCASE strscrip. This locks that URL without touching the network
+    # (the request is captured), so a future edit can't silently revert to the dead endpoint.
+    import urllib.request
+
+    opened: list[str] = []
+
+    class _Resp:
+        def read(self):
+            return b'{"Table": []}'
+
+    class _Opener:
+        addheaders: list = []
+
+        def open(self, url, timeout=None):
+            opened.append(url)
+            return _Resp()
+
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *a, **k: _Opener())
+    BseAnnouncementSource._http_fetch("500325")
+
+    listing = opened[-1]                                  # the API call (after the home cookie-prime)
+    assert "/AnnSubCategoryGetData/w" in listing
+    assert "AnnGetData/w?" not in listing                 # never the dead endpoint
+    assert "subcategory=-1" in listing
+    assert "strscrip=500325" in listing                   # lowercase, the shape that returns records
+
+
 def test_bse_parse_builds_source_id_and_carries_grounding_text():
     ann = parse_bse_announcements(BSE_FIXTURE, source_id="bse_custom")[0]
     assert ann.source_id == "bse_custom"
