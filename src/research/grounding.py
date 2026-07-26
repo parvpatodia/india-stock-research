@@ -1,8 +1,11 @@
 """Document grounding: the LLM only ever sees real text retrieved from the owner's sources.
 
-A DocumentStore holds chunks of ingested documents, each tagged with its source id. Retrieval
-uses a dependency-light TF-IDF cosine score (swappable for embeddings later). If nothing
-scores above the floor, retrieve returns nothing and the caller abstains. No chunk, no claim.
+A DocumentStore holds chunks of ingested documents, each tagged with its source id. Retrieval is
+dependency-light and stdlib-only (no dense-embedding dependency -- deploy weight is load-bearing
+on the free tier): a chunk is admitted only if its TF-IDF cosine clears the abstention floor, and
+the admitted chunks are then RE-RANKED by a hybrid score that adds an in-house Okapi BM25 term
+(_bm25_scores) so keyword/term-heavy queries surface the exact-match chunk. If nothing clears the
+cosine floor, retrieve returns nothing and the caller abstains. No chunk, no claim.
 
 Ingestion has two modes. The default (blind) mode chunks by overlapping word windows, unchanged.
 The opt-in `structured=True` mode chunks element-aware (src/research/structure.py): section
@@ -33,6 +36,13 @@ __all__ = [
 ]
 
 _TOKEN = re.compile(r"[a-z0-9]+")
+
+# Okapi BM25 hyperparameters (standard defaults) + the hybrid re-rank weight. In-house, stdlib
+# math only -- no rank_bm25/torch/faiss/embedding dependency, because the app deploys on the free
+# Streamlit Cloud tier where a heavy ML dependency would break the parents' live build.
+_BM25_K1 = 1.5      # term-frequency saturation
+_BM25_B = 0.75      # document-length normalization
+_W_BM25 = 0.5       # weight of the (per-query normalized) BM25 term added on top of cosine
 
 
 def _tokenize(text: str) -> list[str]:
@@ -183,31 +193,90 @@ class DocumentStore:
             return 0.0
         return dot / (na * nb)
 
+    def _bm25_scores(self, query: str) -> list[float]:
+        """Okapi BM25 lexical relevance of every chunk to the query, parallel to self._chunks.
+
+        In-house, stdlib math only (no rank_bm25/torch/faiss -- deploy weight is load-bearing on
+        the free tier). Corpus stats (per-doc length, average length, document frequency) come
+        from the same _tokenize output the TF-IDF path uses, so both lexical signals see identical
+        tokens. IDF is the non-negative Robertson/Sparck-Jones variant log(1 + (N - n + 0.5)/(n +
+        0.5)), so no term ever contributes a negative score. Query terms are de-duplicated (each
+        distinct query term is scored once), the standard bag-of-words BM25 formulation.
+        Recomputed per call (mirrors the existing _idf pattern); the corpus is small and this keeps
+        the stats consistent with the current chunk set with no cache to invalidate on ingestion.
+        """
+        n = len(self._tokens)
+        if n == 0:
+            return []
+        lengths = [len(t) for t in self._tokens]
+        avgdl = sum(lengths) / n if lengths else 0.0
+        df: Counter = Counter()
+        for tokens in self._tokens:
+            for term in set(tokens):
+                df[term] += 1
+        q_terms = set(_tokenize(query))
+        scores: list[float] = []
+        for tokens, dl in zip(self._tokens, lengths):
+            s = 0.0
+            if q_terms:
+                tf = Counter(tokens)
+                for term in q_terms:
+                    f = tf.get(term, 0)
+                    if not f:
+                        continue
+                    nt = df[term]
+                    idf = math.log(1.0 + (n - nt + 0.5) / (nt + 0.5))
+                    denom = f + _BM25_K1 * (1.0 - _BM25_B + _BM25_B * (dl / avgdl if avgdl else 0.0))
+                    s += idf * (f * (_BM25_K1 + 1.0)) / denom
+            scores.append(s)
+        return scores
+
     def retrieve(self, query: str, k: int = 5, min_score: float = 0.10,
                 pin_source_ids: frozenset[str] = frozenset()) -> list[RetrievedChunk]:
         # WHY: a higher cosine floor than a token-overlap minimum reduces the chance a barely
         # related chunk (one shared common word) gets retrieved and then cited as fact.
         # Over-abstaining is the safe failure here; tune up if it abstains too often.
         #
+        # Hybrid ranking (H3): the returned chunks are ordered by a combined score
+        # = cosine + _W_BM25 * bm25_norm, where bm25_norm is the chunk's in-house Okapi BM25
+        # (_bm25_scores) normalized by the max BM25 over the candidate set. This lets term/keyword-
+        # heavy financial queries rank the exact-match chunk above one that merely repeats a term.
+        #
+        # WHY the ABSTENTION GATE stays on the raw TF-IDF cosine (not the combined score): in a
+        # small corpus BM25's IDF barely penalizes common words, so a combined-score floor would
+        # admit chunks that overlap the query only on a stopword ("the"/"is") -- exactly the thin-
+        # evidence retrieval this app must abstain on. Cosine's full-length normalization is robust
+        # to that, so it remains the gate; BM25 only RE-RANKS what already cleared the floor and
+        # never lowers the evidence bar. (Measured: a combined gate surfaced two below-floor chunks
+        # on stopword-only matches.) Recall for authoritative-but-buried chunks is handled by
+        # pin_source_ids below, deliberately, rather than by weakening the floor.
+        #
         # pin_source_ids: chunks from a pinned source are ALWAYS included, bypassing min_score and
         # the k cutoff. Demonstrated bug this closes: a handful of authoritative chunks (e.g. this
         # app's own cross-verified figures for the asked stock) can be crowded out of a mixed-
         # source context by a larger volume of lower-value chunks (news items) that happen to
-        # share more surface keywords with the query on raw TF-IDF cosine, even for a question the
-        # authoritative chunk directly answers. Pinning guarantees it reaches the model; it still
-        # has to be cited to matter, and the numeric-grounding + citation-tier checks still apply.
+        # share more surface keywords with the query, even for a question the authoritative chunk
+        # directly answers. Pinning guarantees it reaches the model; it still has to be cited to
+        # matter, and the numeric-grounding + citation-tier checks still apply.
         if not self._chunks:
             return []
         idf = self._idf()
         q_vec = self._tfidf_vec(_tokenize(query), idf)
+        cos = [self._cosine(q_vec, self._tfidf_vec(tokens, idf)) for tokens in self._tokens]
+        bm = self._bm25_scores(query)
+        # Candidate = pinned (always) OR clears the cosine floor. bm25 is normalized per query over
+        # the candidate set so the re-rank term is bounded [0, _W_BM25] and never gates admission.
+        cand = [i for i, chunk in enumerate(self._chunks)
+                if chunk.source_id in pin_source_ids or cos[i] >= min_score]
+        bmax = max((bm[i] for i in cand), default=0.0)
         scored: list[RetrievedChunk] = []
         pinned: list[RetrievedChunk] = []
-        for chunk, tokens in zip(self._chunks, self._tokens):
-            score = self._cosine(q_vec, self._tfidf_vec(tokens, idf))
-            rc = RetrievedChunk(chunk=chunk, score=score)
-            if chunk.source_id in pin_source_ids:
+        for i in cand:
+            bm_norm = (bm[i] / bmax) if bmax > 0 else 0.0
+            rc = RetrievedChunk(chunk=self._chunks[i], score=cos[i] + _W_BM25 * bm_norm)
+            if self._chunks[i].source_id in pin_source_ids:
                 pinned.append(rc)
-            elif score >= min_score:
+            else:
                 scored.append(rc)
         scored.sort(key=lambda rc: rc.score, reverse=True)
         pinned.sort(key=lambda rc: rc.score, reverse=True)
