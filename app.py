@@ -9,6 +9,7 @@ Run:  streamlit run app.py
 """
 from __future__ import annotations
 
+import html
 import os
 import re
 import sys
@@ -122,6 +123,133 @@ load_dotenv(Path(__file__).resolve().parent / ".env")  # load the app's own .env
 
 st.set_page_config(page_title="India Equity Research", layout="wide", page_icon="📊",
                    initial_sidebar_state="collapsed")  # collapsed = mobile-first
+
+# --- W7 visual system (increment 2): a calm, premium fintech look for non-expert parents. ---
+# DESIGN CONTRACT (real money, live app): styling must NEVER break rendering or hide a feature.
+#   * The .streamlit/config.toml [theme] block is the STABLE backbone (colours, font). If the CSS
+#     below silently no-ops (a Streamlit DOM class changed across versions), the app still renders
+#     with the full theme -- just without the extra polish. Nothing here is load-bearing for logic.
+#   * The CSS is SCOPED and DEFENSIVE: it adds our own `.ier-*` classes and only touches a few
+#     stable Streamlit hooks with SAFE properties (spacing, radius, colour). It never sets
+#     display/visibility/height on a Streamlit container, so a bad match can't blank the page.
+#   * Dark mode is handled WITHOUT hardcoding text/background: our cards use `color: inherit` (text
+#     follows Streamlit's active light/dark text colour) over a neutral translucent `rgba()` wash
+#     that reads as a raised surface on ANY background. Streamlit 1.58 does not expose its theme as
+#     CSS variables, so we deliberately avoid `var(--...)` guesses. gain/loss accents are chosen to
+#     stay legible on both light and dark.
+_IER_CSS = """
+<style>
+/* Roomier, product-like layout; cap width on large desktops so it reads as an app, not a script.
+   Mobile (< 640px) keeps the full width -- the cap only kicks in far above 375px. */
+.block-container { padding-top: 2.2rem; padding-bottom: 3rem; max-width: 1180px; }
+h1, h2, h3 { letter-spacing: -0.01em; }
+h1 { font-weight: 700; }
+h2, h3 { font-weight: 650; }
+/* Gentle radius on the interactive chrome (safe no-ops if a class ever changes). */
+.stButton > button, .stDownloadButton > button, div[data-baseweb="input"] input,
+.stTextInput input, .stNumberInput input { border-radius: 10px; }
+.stButton > button { font-weight: 600; }
+.stTabs [data-baseweb="tab-list"] { gap: 0.25rem; }
+
+/* Hero: reads as a product header, not an st.title. */
+.ier-hero { padding: 0.2rem 0 0.6rem 0; }
+.ier-hero .ier-title { font-size: 2.0rem; font-weight: 750; letter-spacing: -0.02em;
+    line-height: 1.15; margin: 0; }
+.ier-hero .ier-sub { font-size: 1.02rem; opacity: 0.72; margin: 0.35rem 0 0 0; line-height: 1.4; }
+.ier-hero .ier-badge { display: inline-block; font-size: 0.72rem; font-weight: 700;
+    letter-spacing: 0.04em; text-transform: uppercase; padding: 0.18rem 0.55rem; border-radius: 999px;
+    background: rgba(46,90,172,0.12); color: #2E5AAC; margin-bottom: 0.55rem; }
+
+/* Premium metric tiles. Theme-agnostic: translucent surface + inherited text colour. */
+.ier-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.7rem; margin: 0.2rem 0 0.4rem 0; }
+.ier-metric { background: rgba(128,132,150,0.09); border: 1px solid rgba(128,132,150,0.20);
+    border-radius: 14px; padding: 0.85rem 0.95rem; color: inherit; min-width: 0; }
+.ier-metric .ier-lbl { font-size: 0.76rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.04em; opacity: 0.62; margin: 0 0 0.25rem 0; }
+.ier-metric .ier-val { font-size: 1.5rem; font-weight: 700; line-height: 1.15;
+    letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.ier-metric .ier-delta { font-size: 0.9rem; font-weight: 650; margin-top: 0.2rem; }
+.ier-metric .ier-delta.gain { color: #159457; }
+.ier-metric .ier-delta.loss { color: #E0483B; }
+
+/* Onboarding / empty-state callout. Same theme-agnostic surface trick. */
+.ier-note { background: rgba(46,90,172,0.07); border: 1px solid rgba(46,90,172,0.20);
+    border-left: 3px solid #2E5AAC; border-radius: 12px; padding: 0.9rem 1.05rem; color: inherit;
+    line-height: 1.5; }
+.ier-note .ier-note-title { font-weight: 700; margin-bottom: 0.3rem; }
+.ier-note ul { margin: 0.4rem 0 0 0; padding-left: 1.1rem; }
+.ier-note li { margin: 0.15rem 0; }
+.ier-chip { display: inline-block; font-weight: 700; font-size: 0.82rem; padding: 0.02rem 0.4rem;
+    border-radius: 6px; }
+.ier-chip.g { background: rgba(21,148,87,0.16); color: #159457; }
+.ier-chip.o { background: rgba(224,146,20,0.18); color: #B9770F; }
+.ier-chip.r { background: rgba(224,72,59,0.16); color: #E0483B; }
+.ier-chip.n { background: rgba(128,132,150,0.18); color: inherit; opacity: 0.85; }
+
+/* Mobile-first: iPhone (~375px). Stack the tiles 2-up and dial the hero down. */
+@media (max-width: 640px) {
+  .ier-metrics { grid-template-columns: repeat(2, 1fr); gap: 0.55rem; }
+  .ier-metric .ier-val { font-size: 1.28rem; }
+  .ier-hero .ier-title { font-size: 1.6rem; }
+  /* clear Streamlit's fixed top toolbar on mobile (the hero badge tucked under it at a tighter
+     value); the desktop rule above is fine as-is. */
+  .block-container { padding-top: 3rem; }
+}
+
+/* Dark mode: config.toml's [theme.dark] follows the device preference, so this media query tracks
+   the same signal and brightens our accent colours for legibility on a dark surface. The
+   translucent card/note surfaces and `color: inherit` already adapt on their own; only the fixed
+   accent hues need the lift. If a user forces dark against a light OS, the light accents below are
+   still chosen to read on dark -- this only makes the common (OS-dark) case pop. */
+@media (prefers-color-scheme: dark) {
+  .ier-metric .ier-delta.gain { color: #34D399; }
+  .ier-metric .ier-delta.loss { color: #F87171; }
+  .ier-hero .ier-badge { color: #9DBAF2; background: rgba(122,162,232,0.16); }
+  .ier-note { background: rgba(122,162,232,0.10); border-color: rgba(122,162,232,0.28);
+      border-left-color: #7AA2E8; }
+  .ier-chip.g { color: #34D399; background: rgba(52,211,153,0.18); }
+  .ier-chip.o { color: #FBBF77; background: rgba(251,146,60,0.20); }
+  .ier-chip.r { color: #F87171; background: rgba(248,113,113,0.18); }
+}
+</style>
+"""
+
+
+def inject_theme_css() -> None:
+    """Inject the visual-system CSS. Called once near the top of EVERY run -- Streamlit rebuilds the
+    DOM on each rerun, so a `st.markdown` <style> must be re-emitted every time or the styling would
+    vanish after the first interaction (no session_state 'once' guard, on purpose). Guarded so a
+    styling failure can never crash the page: on any error we skip the polish and fall back to the
+    config.toml [theme]."""
+    try:
+        st.markdown(_IER_CSS, unsafe_allow_html=True)
+    except Exception:  # pragma: no cover - styling must never break the app
+        pass
+
+
+def _metric_tile_html(label: str, value: str, delta: str | None = None,
+                      tone: str | None = None, title: str | None = None) -> str:
+    """One premium metric tile (label / big value / optional coloured delta). All text is escaped;
+    `tone` is 'gain' | 'loss' | None. `title` becomes a hover tooltip (preserves a metric's help
+    text when we render a custom tile instead of st.metric)."""
+    tip = f' title="{html.escape(title, quote=True)}"' if title else ""
+    delta_html = ""
+    if delta:
+        cls = f" {tone}" if tone in ("gain", "loss") else ""
+        delta_html = f'<div class="ier-delta{cls}">{html.escape(delta)}</div>'
+    return (f'<div class="ier-metric"{tip}>'
+            f'<div class="ier-lbl">{html.escape(label)}</div>'
+            f'<div class="ier-val">{html.escape(value)}</div>'
+            f'{delta_html}</div>')
+
+
+def render_metric_tiles(tiles: list[dict]) -> None:
+    """Render a responsive row of premium metric tiles from a list of dicts
+    ({label, value, delta?, tone?, title?}). Raises on any failure so the caller's try/except can
+    fall back to native st.metric -- the numbers must always show, styled or not."""
+    cells = "".join(_metric_tile_html(**t) for t in tiles)
+    st.markdown(f'<div class="ier-metrics">{cells}</div>', unsafe_allow_html=True)
+
 
 _ROOT = Path(__file__).resolve().parent
 SAMPLE_CSV = _ROOT / "sample_data" / "sample_portfolio.csv"
@@ -786,14 +914,54 @@ def build_pdf_report(title: str, report, stance: Stance, guidance=None,
 
 # --- auth + hosted-model secrets (both no-ops locally with no secrets file) ---
 
+inject_theme_css()   # style every path, including the login screen and the empty states below
 _bridge_secrets_to_env()
 if not _check_password():
     st.stop()
 
-# --- header ---
+# --- header (product hero) ---
+# WHY: reads as a real product, not a script. The one-liner states the load-bearing promise up
+# front -- research, not advice -- so a non-expert parent sees it before any number. Rendered as a
+# custom block for the typographic hierarchy; wrapped so a markup failure falls back to the plain
+# title/caption and never leaves the page headerless.
+try:
+    st.markdown(
+        '<div class="ier-hero">'
+        '<span class="ier-badge">India · NSE / BSE</span>'
+        '<div class="ier-title">📊 India Equity Research</div>'
+        '<p class="ier-sub">Cross-verified research on your Indian stocks, in plain language. '
+        'Every figure is traced to a dated source. Research only — never buy/sell advice.</p>'
+        '</div>',
+        unsafe_allow_html=True)
+except Exception:  # pragma: no cover - header must never blank the page
+    st.title("📊 India Equity Research")
+    st.caption("Understand your investments.")
 
-st.title("📊 India Equity Research")
-st.caption("Understand your investments.")
+# How-to-read guide: contextual, collapsed by default (discoverable, never nags). Teaches a parent
+# what the trust badges mean -- the one thing they must understand to read this app safely.
+with st.expander("New here? How to read this (30-second guide)"):
+    st.markdown(
+        "**What this is.** A research tool for your own Indian stocks. It gathers and "
+        "cross-checks figures for you. It does **not** tell you what to buy or sell, and it "
+        "does not place trades.\n\n"
+        "**How to read the trust badges** on an answer:")
+    try:
+        st.markdown(
+            '<div class="ier-note">'
+            '<span class="ier-chip g">Verified fact</span> — the figure was confirmed in a '
+            'primary source (an official filing).<br>'
+            '<span class="ier-chip o">Reported, not verified</span> — it comes from news or an '
+            'analyst; treat as context, not proof.<br>'
+            '<span class="ier-chip r">Unverified</span> — a figure we could not confirm in its '
+            'source; do not act on it.<br>'
+            '<span class="ier-chip n">Estimate / Opinion</span> — derived or a viewpoint, not a '
+            'primary figure.'
+            '</div>', unsafe_allow_html=True)
+    except Exception:  # pragma: no cover
+        st.caption("Green = verified fact; orange = reported not verified; red = unverified; "
+                   "grey = estimate or opinion.")
+    st.caption("Prices can be delayed. Verify every figure before acting — you alone are "
+               "responsible for your decisions.")
 
 # --- sidebar: input + settings + status ---
 
@@ -856,7 +1024,23 @@ if holdings is None:
     elif use_sample:
         source = SAMPLE_CSV
     if source is None:
-        st.info("Upload a portfolio CSV, or tick a portfolio option in the sidebar, to begin.")
+        # Friendly first-run state: a parent opening this for the first time sees what it is and
+        # exactly how to start, not a bare one-line prompt. Wrapped so a markup failure degrades to
+        # the original st.info (the instruction must always show).
+        try:
+            st.markdown(
+                '<div class="ier-note">'
+                '<div class="ier-note-title">👋 Welcome — let\'s load your stocks</div>'
+                'This tool researches the Indian stocks <b>you already own</b> and explains them '
+                'in plain language. It is research only: it never tells you what to buy or sell.'
+                '<ul>'
+                '<li><b>Open the sidebar</b> (the <b>›</b> arrow, top-left) and tick a portfolio '
+                'option, or upload your holdings CSV.</li>'
+                '<li>Just exploring? Tick <b>“Use sample portfolio”</b> to see how it works.</li>'
+                '<li>Zerodha / Groww / Google Sheet exports work too.</li>'
+                '</ul></div>', unsafe_allow_html=True)
+        except Exception:  # pragma: no cover
+            st.info("Upload a portfolio CSV, or tick a portfolio option in the sidebar, to begin.")
         st.stop()
     try:
         holdings = load_holdings(source)
@@ -899,16 +1083,32 @@ with tab_portfolio:
     st.subheader("Your portfolio")
     st.caption(f"Prices as of {prices_as_of}. Source: yfinance / Yahoo Finance.")
 
-    m = st.columns(2)
-    m[0].metric("Invested", money(analysis.total_invested))
-    m[1].metric("Market value", money(analysis.total_value))
-    m2 = st.columns(2)
     # No percentage delta (not "+0.00%") when total cost is 0 -- an all-zero-cost book is all gain,
     # so its percent return is undefined; the rupee P&L above still carries it (mirrors pnl_pct None).
     _tpct = analysis.total_pnl_pct
-    m2[0].metric("Profit / loss", money(analysis.total_pnl_abs),
-                 f"{_tpct:+.2f}%" if _tpct is not None else None, help=explain("P&L"))
-    m2[1].metric("Holdings priced", f"{len(analysis.positions)} / {distinct_holding_symbols}")
+    _pnl_delta = f"{_tpct:+.2f}%" if _tpct is not None else None
+    _pnl_tone = "gain" if analysis.total_pnl_abs >= 0 else "loss"
+    # Premium metric tiles for the portfolio summary. WHY behavioural-neutral: same four numbers,
+    # same labels; only the presentation changes. Wrapped so any markup failure falls back to the
+    # exact original st.metric cards -- the numbers must always show. (The custom tile carries the
+    # P&L help text as a hover tooltip; the glossary keeps the full definition either way.)
+    try:
+        render_metric_tiles([
+            {"label": "Invested", "value": money(analysis.total_invested)},
+            {"label": "Market value", "value": money(analysis.total_value)},
+            {"label": "Profit / loss", "value": money(analysis.total_pnl_abs),
+             "delta": _pnl_delta, "tone": _pnl_tone, "title": explain("P&L")},
+            {"label": "Holdings priced",
+             "value": f"{len(analysis.positions)} / {distinct_holding_symbols}"},
+        ])
+    except Exception:  # pragma: no cover - fall back to native metrics, never lose the numbers
+        m = st.columns(2)
+        m[0].metric("Invested", money(analysis.total_invested))
+        m[1].metric("Market value", money(analysis.total_value))
+        m2 = st.columns(2)
+        m2[0].metric("Profit / loss", money(analysis.total_pnl_abs), _pnl_delta,
+                     help=explain("P&L"))
+        m2[1].metric("Holdings priced", f"{len(analysis.positions)} / {distinct_holding_symbols}")
 
     if analysis.missing_symbols:
         st.warning("No price found for: " + ", ".join(analysis.missing_symbols)

@@ -6,5 +6,29 @@
 [browser]
 gatherUsageStats = false
 
+# Visual system (W7): a calm, trustworthy fintech identity for non-expert parents. This [theme]
+# block is the STABLE, version-safe backbone for look-and-feel; the custom CSS in app.py only
+# refines on top of it and degrades to this theme if it ever fails to apply.
+#
+# Dark mode is handled NATIVELY: Streamlit 1.58 supports separate [theme.light] and [theme.dark]
+# tables, so the app auto-switches with the device's system preference (an iPhone in dark mode
+# gets the dark palette) and the Settings > theme toggle stays available. Shared keys live in
+# [theme]; each mode overrides only its colours. The blue primary never collides with the
+# gain-green / loss-red used for P&L.
 [theme]
-base = "light"
+base = "light"            # default when the device expresses no light/dark preference
+font = "sans serif"       # native clean sans; no external font fetch (no network dependency)
+primaryColor = "#2E5AAC"  # calm professional blue: buttons, links, focus, accents
+
+[theme.light]
+backgroundColor = "#FBFCFE"           # near-white with a cool hint (softer than stark #FFFFFF)
+secondaryBackgroundColor = "#EEF2F8"  # soft cool grey: sidebar, inputs, table headers
+textColor = "#1A2233"                 # near-black with a slight blue (softer than pure black)
+borderColor = "#DEE5F0"               # quiet borders on inputs / tables
+
+[theme.dark]
+primaryColor = "#7AA2E8"              # brighter blue so the accent stays legible on a dark surface
+backgroundColor = "#0E1420"           # deep calm navy-charcoal (not pure black)
+secondaryBackgroundColor = "#19212E"  # raised dark surface for sidebar / inputs / table headers
+textColor = "#E6ECF4"                 # soft off-white (not pure white; easier on the eyes)
+borderColor = "#2A3446"               # quiet borders that read on dark
