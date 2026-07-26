@@ -167,3 +167,26 @@ Built the SPEC v3 platform for the parents' real-money use, all FREE (no paid ke
   number; unrelated question -> abstained. The free-open-model + grounding spine works e2e.
 - Ollama models available locally now: qwen2.5:7b, llama3.1. Recommended LLM_MODEL prefix is
   `ollama_chat/` (sends the system prompt). Server: `ollama serve` (or `brew services start ollama`).
+
+## 2026-07-25 — SPEC v4 platform upgrade (W1-W8) — LOCAL, awaiting push
+Alinea-inspired research-grade upgrade, built on local `main` (NOT pushed; the deployed
+parents' app is untouched). 754 tests green; 4 eval gates pass (ground-truth / red-team 4/4 /
+numeric-exact 7/7 / compliance-lint 0); live-smoked end to end (Ask-tab trust UI renders on a
+real Ollama answer; premium redesign verified desktop/dark/mobile).
+- W1 freshness engine: event log + content-hash dedup + near-dup news clustering + as-of/staleness;
+  NSE/BSE announcement + annual-report/AGM ingestion; scripts/ingest_freshness.py entrypoint.
+- W2 retrieval: element-aware chunking + typed numeric records with provenance. (Dense-embedding
+  retrieval + rerank + real PDF-table extraction DEFERRED to protect the free Cloud deploy.)
+- W3 compute-don't-generate: record-backed numeric grounding + deterministic compute seam.
+- W4 orchestrator: plain-Python plan->retrieve->compute->verify[gate]->write (no framework dep).
+- W5 eval: red-team suite + unit-normalized numeric-exact-match; found+fixed the crore/lakh unit
+  trap (numbers_unit_consistent). 4-gate run_eval.py.
+- W6 citations: span-level click-through (source . locator . exact quote).
+- W7 UI: orchestrator wiring + trust UI (claim badges, source spans, freshness banners, show-the-
+  computation) + premium visual redesign (native light/dark theme, mobile-first).
+- W8 compliance: AI-usage disclosure (footer/answer/PDF) + self-voice advice/return/win-rate lint
+  (ast-scoped literals, negation guard) as the 4th eval gate.
+- Fixed a real prod bug in passing: lxml missing from requirements (Screener silently broken on Cloud).
+NEXT / DEFERRED: dense retrieval + rerank + PDF-table extraction (W2 inc2); residential-IP live smoke
+of the NSE/BSE announcement + AR fetchers (they degrade safely but real coverage is unconfirmed);
+period-mixing claim-layer guard; more sources (BSE, Tickertape). Awaiting owner go to push.
