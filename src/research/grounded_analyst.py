@@ -25,6 +25,7 @@ from .claims import (
 )
 from .computed_figures import ComputedFigure
 from .grounding import DocumentStore, RetrievedChunk, find_record, numeric_records
+from .numeric_records import RUPEES, extract_records, number_key
 
 _ALLOWED_KINDS = {FACT, OPINION, ESTIMATE}
 
@@ -165,6 +166,33 @@ def numbers_record_backed(text: str, records) -> bool:
         return True
     # find_record re-normalizes its argument with the same key, so passing the match key is safe.
     return all(find_record(key, records) is not None for key in material)
+
+
+def numbers_unit_consistent(text: str, records) -> bool:
+    """True unless the claim states a rupee figure whose EXPLICIT Indian scale word
+    (crore/lakh/million) CONFLICTS with the typed record that carries the same digits. WHY (real
+    money, SPEC v4 §1 unit trap): numbers_grounded and numbers_record_backed both match on DIGITS
+    ONLY -- find_record / _num_key drop the scale word -- so a source '500 crore' and a claim '500
+    lakh' resolve to the SAME record and pass every prior numeric check, silently waving through a
+    100x error. That crore/lakh/million confusion is the exact trap an Indian-market tool must never
+    emit. This reuses extract_records to parse the CLAIM's own figures WITH their scale, then
+    find_record's key to resolve each to the retrieved records of the same digits, and downgrades a
+    claim whose stated scale matches NO same-digit record's scale. Conservative, no false positives:
+    it only fires on an EXPLICIT rupee scale on the claim AND at least one same-digit explicit-scale
+    record, and stays consistent whenever ANY same-digit record shares the claim's scale (so a legit
+    quote with a matching-scale record is never downgraded). A bare number, a percent/ratio/bps, and
+    an absolute-rupee 'none'-scale record are never treated as a unit trap here. Same bias as the
+    other numeric guards: a conflict only ever DOWNGRADES to UNVERIFIED, never a false green tick."""
+    for cr in extract_records(text):
+        if cr.unit != RUPEES or cr.scale == "none":
+            continue  # only an explicit rupee scale word on the claim can carry a unit trap
+        key = number_key(cr.raw_string)
+        same_digit = [r for r in records
+                      if r.unit == RUPEES and r.scale != "none"
+                      and number_key(r.raw_string) == key]
+        if same_digit and all(r.scale != cr.scale for r in same_digit):
+            return False  # same digits, but every matching record is a different scale -> trap
+    return True
 
 
 _SYSTEM = """You answer questions about Indian investments for a non-expert reader, using \
@@ -398,6 +426,13 @@ def _assemble_result(question: str, payload: dict, retrieved: list[RetrievedChun
             # the extractor recognized), or it is not a verified figure -> downgrade. Gated on the
             # corpus actually having typed records so record-less prose keeps the substring contract.
             elif available_records and not numbers_record_backed(text, available_records):
+                kind = UNVERIFIED
+            # W5 unit trap: the record-backed check above matches on DIGITS ONLY, so a claim that
+            # restates a source figure in the WRONG Indian scale (e.g. '500 lakh' for a '500 crore'
+            # source figure -- a 100x error) still resolves to the same record and passes. The
+            # unit-consistency guard downgrades a claim whose explicit rupee scale conflicts with the
+            # typed record's scale. Same corpus gate, so record-less prose is unaffected.
+            elif available_records and not numbers_unit_consistent(text, available_records):
                 kind = UNVERIFIED
         elif kind == ESTIMATE and not estimate_has_numeric_basis(text, cited_texts):
             kind = UNVERIFIED
