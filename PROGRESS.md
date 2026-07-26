@@ -1,5 +1,23 @@
 # PROGRESS
 
+## 2026-07-25 — SPEC v4 W7 UI, increment 1 (functional integration + trust UI)
+First user-visible wiring of the W3/W4/W6 spine into the deployed app (app.py). Ask tab only;
+research-only, additive, degrade-safe at every new boundary.
+- Ask tab now routes the grounded-answer path through the W4 `ResearchOrchestrator`
+  (PLAN -> RETRIEVE -> COMPUTE -> VERIFY[gate] -> WRITE), reusing the SAME analyst/retrieval/pins/
+  as-of/hint the direct path used, so a growth/CAGR figure is pre-computed in Python and the model
+  only phrases it (compute-don't-generate, end to end). DEGRADE-SAFE: on any orchestrator error it
+  falls back to the proven `grounded.answer`, so the new layer can never take the parents' page down.
+- Trust UI on each answer claim, each rendered inside its own try/except: claim-type BADGE
+  (`st.badge`, green ONLY for a verified fact); click-through SOURCE SPANS (`Claim.spans()` ->
+  source · locator + exact supporting quote); FRESHNESS banner (`describe_freshness` off the news
+  locator date -> stale/undated visibly flagged, never shown as current); SHOW-THE-COMPUTATION
+  expander for any `ComputedFigure` the orchestrator produced (label + value + inputs + formula).
+- Preserved: password gate, all four tabs, MF/SIP, disclaimer, Research/Invest/Portfolio unchanged.
+- Pure, testable helpers (`claim_badge`, `claim_freshness_lines`, `format_computed_figure`) with
+  5 new tests incl. an AppTest that renders the badge through Streamlit's own runtime.
+- VERIFIED: `./verify.sh` ALL GREEN 715 -> 720 tests, app smoke clean; `run_eval.py` EVAL GATE PASS.
+
 ## 2026-07-25 — SPEC v4 W1 freshness engine, increment 2 (filings coverage + scheduled entrypoint)
 Built on increment 1's `src/freshness/` event log. Extended freshness COVERAGE beyond news:
 - `src/data/announcements_source.py`: NSE/BSE corporate-announcement source (results, board
