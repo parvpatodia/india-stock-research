@@ -144,6 +144,60 @@ def parse_nse_announcements(raw: str | bytes,
     return out
 
 
+# BSE returns ATTACHMENTNAME as a bare filename (a GUID.pdf), not a URL; live attachments hang off
+# this public path. Building the full locator makes `ref` a usable, unique-per-filing item_key,
+# mirroring the full-URL ref the NSE parser stores.
+_BSE_ATTACH_BASE = "https://www.bseindia.com/xml-data/corpfiling/AttachLive/"
+
+
+def _bse_attachment_ref(name: str | None) -> str:
+    """Turn BSE's bare ATTACHMENTNAME into the public attachment URL. A value that is already a URL
+    is passed through; a blank stays blank (item_key then falls back to the composite)."""
+    text = str(name or "").strip()
+    if not text:
+        return ""
+    if text.lower().startswith(("http://", "https://")):
+        return text
+    return _BSE_ATTACH_BASE + text
+
+
+def parse_bse_announcements(raw: str | bytes,
+                           source_id: str = BSE_ANNOUNCE_SOURCE_ID) -> list[Announcement]:
+    """Parse the BSE corporate-announcements JSON (bseindia.com AnnGetData shape) into the SAME
+    dated, attributed Announcement dataclass, with the SAME tolerances as ``parse_nse_announcements``.
+
+    Accepts BSE's ``{"Table": [...]}`` wrapper (the live shape) or a bare JSON array (defensive).
+    Field mapping: subject = NEWSSUB or HEADLINE; category = CATEGORYNAME; disclosure date =
+    NEWS_DT or News_submission_dt (ISO-with-T, handled by the shared date parser); attachment =
+    ATTACHMENTNAME (a bare filename, built into a full URL); the record's numeric SCRIP_CD is
+    echoed back as the symbol (BSE identity is a scrip code, not an NSE ticker). A record with no
+    subject AND no category is skipped. Bad JSON (an HTML block page) parses to [] so the caller
+    abstains, never crashes."""
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8", "replace")
+    try:
+        payload = json.loads(raw)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return []
+    records = payload.get("Table") if isinstance(payload, dict) else payload
+    if not isinstance(records, list):
+        return []
+    out: list[Announcement] = []
+    for rec in records:
+        if not isinstance(rec, dict):
+            continue
+        category = _clean(rec.get("CATEGORYNAME"))
+        title = _clean(rec.get("NEWSSUB") or rec.get("HEADLINE")) or category
+        if not title:
+            continue
+        as_of = _to_iso_date(rec.get("NEWS_DT") or rec.get("News_submission_dt"))
+        ref = _bse_attachment_ref(rec.get("ATTACHMENTNAME"))
+        symbol = _clean(str(rec.get("SCRIP_CD") or ""))
+        out.append(Announcement(symbol=symbol, title=title, as_of=as_of,
+                                source_id=source_id, ref=ref, category=category))
+    return out
+
+
 class AnnouncementSource:
     """Fetch a symbol's recent corporate announcements as dated, attributed records.
 
@@ -190,3 +244,66 @@ class AnnouncementSource:
         if not raw:
             return []
         return parse_nse_announcements(raw, source_id=self.source_id)
+
+
+class BseAnnouncementSource(AnnouncementSource):
+    """BSE variant of :class:`AnnouncementSource`: same injectable-fetcher / degrade-to-[] contract,
+    but the caller supplies a numeric BSE SCRIP CODE (e.g. "500325" for Reliance), not an NSE
+    symbol, and the payload is BSE's AnnGetData JSON parsed by ``parse_bse_announcements``. No
+    symbol->scrip mapping lives here (out of scope): the fetcher takes whatever identifier the
+    caller passes through, so a licensed feed or a resolver can supply it.
+    """
+
+    def __init__(self, fetcher: Callable[[str], str | None] | None = None,
+                 source_id: str = BSE_ANNOUNCE_SOURCE_ID):
+        # self._http_fetch resolves polymorphically to the BSE fetch below when no fetcher injected.
+        super().__init__(fetcher=fetcher, source_id=source_id)
+
+    @staticmethod
+    def _http_fetch(scrip: str) -> str | None:
+        """Personal-use BSE fetch: prime session cookies from the home page, then read the
+        AnnGetData corporate-announcements JSON for a scrip code. BSE's api.bseindia.com 403s a
+        cold request and requires a bseindia.com Referer + browser-like headers (the BSE analogue
+        of the NSE cookie-priming). A licensed feed replaces this whole method via the injected
+        fetcher.
+
+        NOTE (unverified offline): the exact AnnGetData query params and JSON field names below are
+        the publicly-documented BSE shape but are NOT exercised by the test suite (tests inject a
+        fixture, never the network). The parser tolerates the wrapper/bare-list, multiple date
+        fields, HTML, and missing fields, so drift in the live shape degrades to [] not a crash."""
+        import http.cookiejar
+        import urllib.request
+        from datetime import date, timedelta
+
+        home = "https://www.bseindia.com/"
+        today = date.today()
+        frm = (today - timedelta(days=30)).strftime("%Y%m%d")
+        to = today.strftime("%Y%m%d")
+        listing = ("https://api.bseindia.com/BseIndiaAPI/api/AnnGetData/w"
+                   f"?pageno=1&strCat=-1&strPrevDate={frm}&strScrip={scrip}"
+                   f"&strSearch=P&strToDate={to}&strType=C")
+        headers = [
+            ("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"),
+            ("Accept", "application/json,text/html,*/*"),
+            ("Accept-Language", "en-US,en;q=0.9"),
+            ("Referer", "https://www.bseindia.com/"),  # api.bseindia.com blocks a missing Referer
+            ("Origin", "https://www.bseindia.com"),
+        ]
+        jar = http.cookiejar.CookieJar()
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+        opener.addheaders = list(headers)
+        try:
+            opener.open(home, timeout=20)             # prime session cookies
+            resp = opener.open(listing, timeout=25)
+            return resp.read().decode("utf-8", "replace")
+        except Exception:
+            return None
+
+    def fetch(self, scrip: str) -> list[Announcement]:
+        try:
+            raw = self._fetcher(str(scrip).strip())   # scrip codes are numeric; no upper-casing
+        except Exception:
+            return []
+        if not raw:
+            return []
+        return parse_bse_announcements(raw, source_id=self.source_id)

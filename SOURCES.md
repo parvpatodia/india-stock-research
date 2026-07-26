@@ -17,7 +17,8 @@ browser fallback for sites that block plain HTTP.
 | BSE annual reports / announcements | unofficial API (BseIndiaApi) or browser | free | to wire; may need browser fallback |
 | SEBI corporate filings (`sebi.gov.in`) | HttpDocumentAdapter / browser | free | to wire |
 | Company IR pages (AR, AGM, investor PPT, transcripts) | HttpDocumentAdapter (per-URL) | free | works for direct PDF/HTML URLs |
-| NSE/BSE announcements (results, board meetings, dividends, allotments, AGM notices) | `AnnouncementSource` (injectable fetcher; default primes NSE cookies) | free (personal-use) | **wired, offline-tested**: parser mirrors the real `/api/corporate-announcements` JSON; feeds the freshness log |
+| NSE announcements (results, board meetings, dividends, allotments, AGM notices) | `AnnouncementSource` (injectable fetcher; default primes NSE cookies) | free (personal-use) | **wired, offline-tested**: parser mirrors the real `/api/corporate-announcements` JSON; feeds the freshness log |
+| BSE announcements (same categories) | `BseAnnouncementSource` (injectable fetcher; default primes BSE cookies) | free (personal-use) | **wired, offline-tested** (H4): `parse_bse_announcements` maps the `AnnGetData` shape (NEWSSUB/HEADLINE, CATEGORYNAME, NEWS_DT, ATTACHMENTNAME) into the same `Announcement`; caller supplies a numeric SCRIP code; live JSON field names unverified offline, parser degrades to [] on drift |
 
 Note: `api.nseindia.com` JSON endpoints block datacenter IPs; the `nsearchives` PDF host does
 not. For blocked hosts (NSE api, Screener behind login) use the browser MCP.
