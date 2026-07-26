@@ -51,6 +51,13 @@ from src.freshness.filings_ingest import (  # noqa: E402
     ingest_annual_report,
 )
 from src.freshness.news_ingest import IngestSummary, ingest_news  # noqa: E402
+from src.freshness.snapshot import (  # noqa: E402
+    SymbolSnapshot,
+    snapshot_for,
+    snapshot_rows,
+    FRESHNESS_TAB,
+    SNAPSHOT_HEADER,
+)
 from src.freshness.staleness import DEFAULT_RECENCY_WINDOW_DAYS  # noqa: E402
 from src.portfolio.loader import normalize_symbol  # noqa: E402
 
@@ -129,6 +136,56 @@ def format_summary(results: list[SymbolFreshness]) -> str:
     return "\n".join(lines)
 
 
+def build_snapshot(results: list[SymbolFreshness], *, checked_at: str,
+                   window_days: int) -> list[SymbolSnapshot]:
+    """Project the per-symbol run summaries into publishable freshness snapshots (H7). Pure: the
+    symbol context is unambiguous here (we ran each symbol), so this never reverse-engineers a
+    symbol from a log key."""
+    return [
+        snapshot_for(r.symbol, r.news, r.announcements, r.annual_report,
+                     checked_at=checked_at, window_days=window_days)
+        for r in results
+    ]
+
+
+def publish_snapshot(gateway, snaps: list[SymbolSnapshot]) -> bool:
+    """Write the snapshot to the Sheets backend's Freshness tab so the DEPLOYED app can read it
+    (SPEC v4 W1 + §5: Cloud can't run this scheduler and NSE/BSE block its IP). BEST-EFFORT: the
+    ingestion itself already succeeded, so any gateway failure is swallowed and returns False rather
+    than aborting the run or raising on the scheduler."""
+    try:
+        gateway.write(FRESHNESS_TAB, SNAPSHOT_HEADER, snapshot_rows(snaps))
+        return True
+    except Exception:
+        return False
+
+
+def gateway_from_env(env: dict[str, str]):
+    """Build the Sheets gateway for the Mac-side scheduled run from env vars (the app reads the same
+    backend from st.secrets). Returns the AppsScriptGateway when APPS_SCRIPT_URL + APPS_SCRIPT_TOKEN
+    are set, else None (publishing is skipped -- the ingest still ran). Kept to the Apps Script
+    bridge, the keyless backend the app already uses."""
+    url = (env.get("APPS_SCRIPT_URL") or "").strip()
+    token = (env.get("APPS_SCRIPT_TOKEN") or "").strip()
+    if url and token:
+        from src.data.sheets_backend import AppsScriptGateway
+        return AppsScriptGateway(url, token)
+    return None
+
+
+def resolve_publish(argv: list[str]) -> tuple[list[str], bool]:
+    """Pull an optional `--publish` flag out of the args, returning the remaining (symbol) args and
+    whether to publish the snapshot to the Sheets backend after ingesting."""
+    publish = False
+    remaining: list[str] = []
+    for arg in argv:
+        if arg == "--publish":
+            publish = True
+        else:
+            remaining.append(arg)
+    return remaining, publish
+
+
 def resolve_window_days(argv: list[str], env: dict[str, str]) -> tuple[list[str], int]:
     """Pull the recency window out of the args/env, returning the remaining (symbol) args and the
     window. Precedence: an explicit `--window-days N` / `--window-days=N` flag beats the
@@ -170,16 +227,27 @@ def resolve_window_days(argv: list[str], env: dict[str, str]) -> tuple[list[str]
 
 def main(argv: list[str] | None = None) -> int:
     import os
+    # WHY (CLI only): let the scheduled Mac run pick up APPS_SCRIPT_URL/TOKEN + FRESHNESS_* from the
+    # gitignored .env, the same way daily_suggestions.py does, so --publish "just works" from launchd.
+    # Only ever runs in main() (the entrypoint), never in tests (they call the helpers directly), so
+    # it cannot pollute the test environment (LESSONS 2026-07-08).
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except Exception:
+        pass
     argv = list(sys.argv[1:] if argv is None else argv)
+    argv, publish = resolve_publish(argv)
     argv, window_days = resolve_window_days(argv, dict(os.environ))
     symbols, names = parse_symbol_args(argv)
     if not symbols:
-        print("usage: ingest_freshness.py [--window-days N] SYMBOL[=Company Name] [SYMBOL ...]",
-              file=sys.stderr)
+        print("usage: ingest_freshness.py [--publish] [--window-days N] "
+              "SYMBOL[=Company Name] [SYMBOL ...]", file=sys.stderr)
         return 2
 
     log_path = Path(os.environ.get("FRESHNESS_LOG_PATH", str(_DEFAULT_LOG)))
     log = IngestionLog(log_path)
+    today = date.today()           # the run's "today"; the recency window is computed against it
     results = run_ingest(
         log, symbols,
         news_source=NewsSource(),
@@ -187,11 +255,25 @@ def main(argv: list[str] | None = None) -> int:
         ar_resolver=NseAnnualReportResolver(),
         company_names=names,
         window_days=window_days,
-        today=date.today(),        # the run's "today"; the recency window is computed against it
+        today=today,
     )
     print(format_summary(results))
     print(f"log: {log_path} ({len(log.events())} total events, "
           f"recency window {window_days} days)")
+
+    # H7 (SPEC v4 W1 + §5): publish a per-symbol freshness snapshot to the Sheets backend so the
+    # DEPLOYED app can show real freshness -- Cloud can't run this scheduler and NSE/BSE block its
+    # IP, so the residential-IP Mac is the only place that sees live data. Best-effort: the ingest
+    # already succeeded, so a missing config or a Sheet blip only prints a note, never a failure.
+    if publish:
+        gateway = gateway_from_env(dict(os.environ))
+        if gateway is None:
+            print("publish: skipped (set APPS_SCRIPT_URL + APPS_SCRIPT_TOKEN to publish)")
+        else:
+            snaps = build_snapshot(results, checked_at=today.isoformat(), window_days=window_days)
+            ok = publish_snapshot(gateway, snaps)
+            print(f"publish: {'ok' if ok else 'failed (Sheet unreachable; ingest still recorded)'} "
+                  f"-> {FRESHNESS_TAB} tab ({len(snaps)} symbols)")
     return 0
 
 
