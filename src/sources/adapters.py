@@ -61,13 +61,28 @@ class HttpDocumentAdapter(DocumentSourceAdapter):
     def _to_text(self, raw: bytes, content_type: str, url: str) -> str:
         ct = content_type.lower()
         if "pdf" in ct or url.lower().endswith(".pdf"):
-            from pypdf import PdfReader
-            reader = PdfReader(io.BytesIO(raw))
-            return "\n".join((page.extract_text() or "") for page in reader.pages)
+            # WHY (H5): pdfplumber keeps a page's TABLES as real grids so their scaled cells stay
+            # typed numeric records; pypdf's flat extract collapses columns and loses the table.
+            # DEGRADE-SAFE (real money): the table extractor abstains (returns None) if pdfplumber
+            # is missing or the PDF won't parse, so we always have the existing pypdf path to fall
+            # back to and never crash on a Research fetch.
+            from .pdf_tables import extract_pdf_tables_text
+            tables_text = extract_pdf_tables_text(raw)
+            if tables_text and tables_text.strip():
+                return tables_text
+            return self._pypdf_text(raw)
         decoded = raw.decode("utf-8", errors="replace")
         if "html" in ct or url.lower().endswith((".html", ".htm")):
             return _WS.sub(" ", html.unescape(_TAG.sub(" ", decoded))).strip()
         return decoded
+
+    @staticmethod
+    def _pypdf_text(raw: bytes) -> str:
+        """The original flat PDF text extraction, kept as the degrade-safe fallback for the
+        pdfplumber table path (missing dependency / unparseable PDF)."""
+        from pypdf import PdfReader
+        reader = PdfReader(io.BytesIO(raw))
+        return "\n".join((page.extract_text() or "") for page in reader.pages)
 
 
 def ingest_documents(store: DocumentStore, docs: list[FetchedDocument]) -> int:
