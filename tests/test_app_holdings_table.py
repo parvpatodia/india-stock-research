@@ -37,11 +37,15 @@ def test_gain_and_loss_are_color_coded():
     assert 'class="pl loss">-41.60%' in html
 
 
-def test_zero_cost_lot_shows_em_dash_never_a_fake_zero():
+def test_zero_cost_lot_shows_a_neutral_em_dash_never_a_fake_zero_or_red_loss():
     app = _import_app_with_clean_env()
     html = app.holdings_table_html([_pos(pnl_pct=None)])
     assert "—" in html
     assert "0.00%" not in html
+    # the undefined return is neutral, not tinted like a loss (a zero-cost lot is not a loss)
+    assert 'class="pl loss">—' not in html
+    assert 'class="pl gain">—' not in html
+    assert 'class="pl">—' in html
 
 
 def test_quantity_is_integer_and_price_keeps_paise():

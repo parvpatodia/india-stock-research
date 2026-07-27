@@ -315,8 +315,12 @@ def holdings_table_html(positions) -> str:
     body = []
     for p in ordered:
         pl = p.pnl_pct
-        pl_cls = "gain" if (pl is not None and pl >= 0) else "loss"
-        pl_txt = "—" if pl is None else f'{"+" if pl >= 0 else ""}{pl:.2f}%'
+        # A zero-cost lot (bonus/IPO) has an UNDEFINED return -> a neutral em dash, never a red
+        # "loss" tint (it isn't a loss) and never a fabricated 0.00%.
+        if pl is None:
+            pl_cell = '<td class="pl">—</td>'
+        else:
+            pl_cell = f'<td class="pl {"gain" if pl >= 0 else "loss"}">{"+" if pl >= 0 else ""}{pl:.2f}%</td>'
         bar = min(100.0, (p.weight / max_w) * 100.0) if max_w else 0.0
         qty = f"{p.quantity:,.0f}" if float(p.quantity).is_integer() else f"{p.quantity:,.2f}"
         body.append(
@@ -327,7 +331,7 @@ def holdings_table_html(positions) -> str:
             f'<td class="hide-sm">{html.escape(format_rupees_precise(p.avg_cost))}</td>'
             f'<td class="hide-sm">{html.escape(format_rupees_precise(p.current_price))}</td>'
             f'<td>{html.escape(money(p.market_value))}</td>'
-            f'<td class="pl {pl_cls}">{pl_txt}</td>'
+            f'{pl_cell}'
             f'<td class="hide-sm"><div class="wt"><span class="wt-bar">'
             f'<i style="width:{bar:.0f}%"></i></span>'
             f'<span>{p.weight * 100:.1f}%</span></div></td>'
