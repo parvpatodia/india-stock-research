@@ -1,6 +1,9 @@
 # Python runtime is pinned in runtime.txt (python-3.12). The versions below are the exact set
 # verified in a clean local venv; keep them in sync when bumping so Streamlit Cloud builds match
 # what was tested locally. WHY: reproducible, deterministic Cloud builds for a real-money app.
+# Rebuild marker 2026-07-26b: a code-only push that adds a NEW src symbol imported by app.py can
+# stale-import on Cloud (the process reruns without reimporting the changed src module); bumping
+# this file forces a full env rebuild + fresh process so the new symbol resolves. See LESSONS.
 streamlit==1.58.0
 yfinance==1.4.1
 pandas==3.0.3
