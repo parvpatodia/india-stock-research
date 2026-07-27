@@ -36,7 +36,8 @@ SEED_SCRIP_CODES: dict[str, str] = {
     "VOLTAMP": "532757", "WPIL": "505872", "YESBANK": "532648",
 }
 
-_LI = re.compile(r"liclick\('(\d+)','[^']*'\).*?<span>(.*?)</span>", re.S)
+_LICLICK = re.compile(r"liclick\('(\d+)'")
+_SPAN = re.compile(r"<span>(.*?)</span>", re.S)
 _TAG = re.compile(r"<[^>]+>")
 
 
@@ -48,6 +49,12 @@ def parse_scrip_search(raw: str | bytes, symbol: str) -> str | None:
     "TICKER   ISIN   SCRIP" (the searched prefix `<strong>`-wrapped). The ticker is the span's first
     token once tags/entities are stripped. Only an exact (case-insensitive) ticker match resolves --
     so searching "BSE" (which returns "BSELALGO" first) yields None, never a wrong scrip.
+
+    SAFETY (real money): each `<li>` is parsed in ISOLATION (split on the tag), so a scrip is never
+    paired with a DIFFERENT row's span -- and as defense-in-depth the `liclick` scrip must equal the
+    span's own trailing scrip token. If a row is malformed / span-less, it is skipped, never
+    mispaired into a wrong company's code. First exact match wins; BSE lists the exact equity row
+    first (`quotemenuselect`).
     """
     if isinstance(raw, bytes):
         raw = raw.decode("utf-8", "replace")
@@ -56,11 +63,21 @@ def parse_scrip_search(raw: str | bytes, symbol: str) -> str | None:
     want = (symbol or "").strip().upper()
     if not want:
         return None
-    for scrip, span in _LI.findall(raw):
-        text = html.unescape(_TAG.sub("", span)).replace("\xa0", " ")
-        tokens = text.split()
-        if tokens and tokens[0].strip().upper() == want:
-            return scrip
+    for block in raw.split("<li")[1:]:            # each piece is one result row's markup
+        block = block.split("</li>", 1)[0]
+        m_code = _LICLICK.search(block)
+        m_span = _SPAN.search(block)
+        if not m_code or not m_span:              # a row missing either part is skipped, never guessed
+            continue
+        scrip = m_code.group(1)
+        tokens = html.unescape(_TAG.sub("", m_span.group(1))).replace("\xa0", " ").split()
+        if not tokens or tokens[0].strip().upper() != want:
+            continue
+        # defense-in-depth: the span ends with the row's own scrip; it must equal the liclick scrip,
+        # so a mispaired/garbled row can never surface another company's code as an exact-ticker hit.
+        if tokens[-1].isdigit() and tokens[-1] != scrip:
+            continue
+        return scrip
     return None
 
 

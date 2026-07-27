@@ -104,3 +104,24 @@ def test_parse_scrip_search_picks_exact_ticker():
     assert parse_scrip_search(_BSE_SEARCH, "BSE") is None                 # BSELALGO != BSE
     assert parse_scrip_search("", "RELIANCE") is None
     assert parse_scrip_search("<html>blocked</html>", "RELIANCE") is None
+
+
+def test_parse_scrip_search_never_mispairs_across_a_span_less_row():
+    # SAFETY (Finding 1): a span-less <li> must NOT let its scrip pair with the NEXT row's span.
+    # Here BAR's ticker sits in the 2nd <li>; a naive non-greedy regex would return FOO's 111 for
+    # a "BAR" search. Per-<li> isolation + the scrip cross-check must yield BAR's own 222.
+    payload = (
+        "\"<li class='quotemenu' ng-click=\\\"liclick('111','FOO LTD')\\\"><a><strong>FOO</strong>"
+        " LTD</a></li>"                                                    # <-- NO span in this row
+        "<li class='quotemenu' ng-click=\\\"liclick('222','BAR LTD')\\\"><a>BAR LTD<br />"
+        "<span>BAR&nbsp;&nbsp;&nbsp;INE9X&nbsp;&nbsp;&nbsp;222</span></a></li>\""
+    )
+    assert parse_scrip_search(payload, "BAR") == "222"                    # its own code, not 111
+    assert parse_scrip_search(payload, "FOO") is None                    # span-less row -> no guess
+
+
+def test_parse_scrip_search_rejects_a_scrip_span_mismatch():
+    # defense-in-depth: if the liclick scrip disagrees with the span's trailing scrip, skip the row.
+    payload = ("\"<li ng-click=\\\"liclick('111','FOO LTD')\\\"><a><span>FOO&nbsp;&nbsp;&nbsp;"
+               "INE9X&nbsp;&nbsp;&nbsp;999</span></a></li>\"")            # liclick 111 vs span 999
+    assert parse_scrip_search(payload, "FOO") is None
