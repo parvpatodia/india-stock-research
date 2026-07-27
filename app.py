@@ -345,6 +345,31 @@ def render_holdings_table(positions) -> None:
     st.markdown(holdings_table_html(positions), unsafe_allow_html=True)
 
 
+# A cohesive chart palette (calm blues first, then supporting hues) so plotly reads as part of the
+# app, not the default plotly look. Vivid enough to stay legible on both the light and dark theme.
+_IER_CHART_COLORS = ["#2E5AAC", "#7AA2E8", "#16A34A", "#B9770F", "#8B5CF6", "#0EA5A4",
+                     "#DC2626", "#64748B", "#D946A6", "#0891B2"]
+
+
+def style_chart(fig, *, height: int = 340):
+    """Apply the app's identity to a plotly figure: transparent backgrounds (so it sits on either
+    the light or dark theme), a clean margin, our palette, a soft grid, and a legible title. Text is
+    a theme-neutral mid-slate because plotly renders server-side and can't detect light/dark, so a
+    fixed colour must read on both. Returns the figure; pure styling."""
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="-apple-system, 'Segoe UI', Roboto, sans-serif", size=13, color="#7C879B"),
+        title=dict(font=dict(size=15, color="#8B95A7"), x=0.01, xanchor="left"),
+        margin=dict(l=10, r=10, t=46, b=10), height=height,
+        legend=dict(orientation="h", yanchor="bottom", y=-0.2, x=0),
+        colorway=_IER_CHART_COLORS,
+    )
+    fig.update_xaxes(showgrid=False, zeroline=False, tickfont=dict(size=12))
+    fig.update_yaxes(showgrid=True, gridcolor="rgba(128,132,150,0.16)", zeroline=False,
+                     tickfont=dict(size=12))
+    return fig
+
+
 _ROOT = Path(__file__).resolve().parent
 SAMPLE_CSV = _ROOT / "sample_data" / "sample_portfolio.csv"
 HOLDINGS_CSV = _ROOT / "holdings.csv"   # the owner's real portfolio (gitignored)
@@ -1339,14 +1364,19 @@ with tab_portfolio:
             "Symbol": [p.symbol for p in analysis.positions],
             "Weight": [p.weight * 100 for p in analysis.positions],
         })
-        st.plotly_chart(px.pie(alloc_df, names="Symbol", values="Weight", hole=0.4,
-                               title="By holding"), width="stretch")
+        _pie = px.pie(alloc_df, names="Symbol", values="Weight", hole=0.58, title="By holding",
+                      color_discrete_sequence=_IER_CHART_COLORS)
+        _pie.update_traces(textposition="inside", textinfo="percent",
+                           hovertemplate="%{label}: %{value:.1f}%<extra></extra>")
+        st.plotly_chart(style_chart(_pie), width="stretch")
         sector_df = pd.DataFrame({
             "Sector": list(analysis.sector_weights.keys()),
             "Weight %": [w * 100 for w in analysis.sector_weights.values()],
         }).sort_values("Weight %", ascending=False)
-        st.plotly_chart(px.bar(sector_df, x="Sector", y="Weight %", title="By sector"),
-                        width="stretch")
+        _bar = px.bar(sector_df, x="Sector", y="Weight %", title="By sector",
+                      color_discrete_sequence=["#2E5AAC"])
+        _bar.update_traces(hovertemplate="%{x}: %{y:.1f}%<extra></extra>")
+        st.plotly_chart(style_chart(_bar), width="stretch")
 
     with st.expander("Concentration"):
         # WHY (honesty): weights/HHI are normalized ONLY over the priced positions
