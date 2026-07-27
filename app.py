@@ -459,6 +459,57 @@ def claim_card_html(accent: str, label: str, text: str, source: str = "") -> str
             f'<div class="cbody">{html.escape(text)}</div>{src}</div>')
 
 
+# Cross-verification status -> (chip tone, label) for the evidence figures table.
+_FIG_STATUS = {
+    "verified": ("g", "Verified"),        # >= 2 independent sources agree
+    "single_source": ("o", "1 source"),   # usable but not cross-verified
+    "conflict": ("r", "Conflict"),        # sources disagree; withheld
+}
+
+
+def figures_table_html(fig_rows) -> str:
+    """Premium evidence table: each figure with its value, period, sources, and a colour-coded
+    cross-verification STATUS chip (verified=green, single-source=amber, conflict=red) -- the trust
+    signal, at a glance. Pure; takes the already-built rows (Figure/Value/Period/Sources/Status) so
+    figure-value/period formatting stays in one place. Every cell escaped."""
+    body = []
+    for r in fig_rows or []:
+        status = str(r.get("Status", "")).strip().lower()
+        tone, label = _FIG_STATUS.get(status, ("n", status or "—"))
+        body.append(
+            "<tr>"
+            f'<td class="l sym">{html.escape(str(r.get("Figure", "")))}</td>'
+            f'<td>{html.escape(str(r.get("Value", "")))}</td>'
+            f'<td class="hide-sm">{html.escape(str(r.get("Period", "")))}</td>'
+            f'<td class="l hide-sm">{html.escape(str(r.get("Sources", "")))}</td>'
+            f'<td><span class="ier-chip {tone}">{html.escape(label)}</span></td>'
+            "</tr>")
+    head = ('<thead><tr><th class="l">Figure</th><th>Value</th><th class="hide-sm">Period</th>'
+            '<th class="l hide-sm">Sources</th><th>Status</th></tr></thead>')
+    return (f'<div class="ier-tbl-wrap"><table class="ier-tbl">{head}'
+            f'<tbody>{"".join(body)}</tbody></table></div>')
+
+
+def allocation_table_html(allocations) -> str:
+    """Premium 'suggested spread' table (Invest): each approved name, the rupee amount to add, and a
+    bar showing its relative share. Pure; escaped. Items expose `.symbol` and `.amount`."""
+    items = list(allocations)
+    max_amt = max((a.amount for a in items), default=0) or 1.0
+    body = []
+    for a in items:
+        bar = min(100.0, (a.amount / max_amt) * 100.0) if max_amt else 0.0
+        body.append(
+            "<tr>"
+            f'<td class="l sym">{html.escape(a.symbol)}</td>'
+            f'<td>{html.escape(money(a.amount))}</td>'
+            f'<td><div class="wt"><span class="wt-bar"><i style="width:{bar:.0f}%"></i></span>'
+            "</div></td>"
+            "</tr>")
+    head = '<thead><tr><th class="l">Stock</th><th>Add</th><th>Share</th></tr></thead>'
+    return (f'<div class="ier-tbl-wrap"><table class="ier-tbl">{head}'
+            f'<tbody>{"".join(body)}</tbody></table></div>')
+
+
 _ROOT = Path(__file__).resolve().parent
 SAMPLE_CSV = _ROOT / "sample_data" / "sample_portfolio.csv"
 HOLDINGS_CSV = _ROOT / "holdings.csv"   # the owner's real portfolio (gitignored)
@@ -1765,7 +1816,11 @@ with tab_research:
                 "Period": _period(f),
                 "Sources": ", ".join(sorted({sv.source_id for sv in f.sources})),
             } for f in report.figures]
-            st.dataframe(pd.DataFrame(fig_rows), width="stretch", hide_index=True)
+            # Premium evidence table (status color-coded); falls back to the native grid on failure.
+            try:
+                st.markdown(figures_table_html(fig_rows), unsafe_allow_html=True)
+            except Exception:  # pragma: no cover - the evidence must always show, styled or not
+                st.dataframe(pd.DataFrame(fig_rows), width="stretch", hide_index=True)
             if report.conflicts:
                 st.error(f"{len(report.conflicts)} figure(s) in CONFLICT (independent sources "
                          "disagree); withheld from the verdict.")
@@ -2039,9 +2094,13 @@ with tab_invest:
             plan = suggest_allocation(float(amount), candidates, analysis.total_value, cap_pct)
             if plan.allocations:
                 st.markdown("**Suggested spread (within your caps):**")
-                st.dataframe(pd.DataFrame([{"Stock": a.symbol, "Add": money(a.amount)}
-                                           for a in plan.allocations]),
-                             width="stretch", hide_index=True)
+                # Premium allocation table (with share bars); falls back to the native grid on failure.
+                try:
+                    st.markdown(allocation_table_html(plan.allocations), unsafe_allow_html=True)
+                except Exception:  # pragma: no cover - the spread must always show, styled or not
+                    st.dataframe(pd.DataFrame([{"Stock": a.symbol, "Add": money(a.amount)}
+                                               for a in plan.allocations]),
+                                 width="stretch", hide_index=True)
                 for a in plan.allocations:
                     st.caption(f"{a.symbol}: {a.reason}")
                 st.metric("Placed", money(plan.invested))
