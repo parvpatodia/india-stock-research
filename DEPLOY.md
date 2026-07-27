@@ -91,6 +91,12 @@ live data from a residential IP — NSE/BSE block Streamlit Cloud's datacenter I
 run a scheduler. So the Mac ingests and PUBLISHES a per-symbol snapshot to the Sheet's `Freshness`
 tab; the deployed app reads it and shows a "Data last refreshed …" banner in the Research tab. No
 Apps Script change is needed — the bridge already does generic tab read/write.
+
+BSE announcements are included automatically: each NSE symbol is mapped to its BSE scrip code by
+`BseScripResolver` (a live-verified seed of the current holdings + a live BSE scrip-search fallback
+for anything new; an unresolvable symbol is simply skipped for BSE, NSE still covers it). The
+snapshot's filing count is `max(NSE, BSE)`, never the sum, since the same filing is disclosed to
+both exchanges.
 1. Reuse the same `.env` from 4c (`APPS_SCRIPT_URL`, `APPS_SCRIPT_TOKEN`). `main()` `load_dotenv`s
    it, so `--publish` picks them up. Test it:
    `./.venv/bin/python scripts/ingest_freshness.py --publish "RELIANCE=Reliance Industries" "INFY=Infosys"`

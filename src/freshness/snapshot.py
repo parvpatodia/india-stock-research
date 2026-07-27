@@ -96,9 +96,19 @@ class SymbolSnapshot:
         )
 
 
+def _recent_count(summary: FilingsIngestSummary | IngestSummary | None) -> int:
+    """Items KNOWN-DATED within the window and now tracked in the log =
+    new + superseded + skipped(dedup) - undated. skipped_old is already outside the window; undated
+    is subtracted because it has no date to vouch for freshness (see snapshot_for)."""
+    if summary is None:
+        return 0
+    return max(0, summary.new + summary.superseded + summary.skipped - summary.undated)
+
+
 def snapshot_for(symbol: str, news: IngestSummary, announcements: FilingsIngestSummary,
                  annual_report: AnnualReportIngestResult, *, checked_at: str,
-                 window_days: int) -> SymbolSnapshot:
+                 window_days: int,
+                 bse_announcements: FilingsIngestSummary | None = None) -> SymbolSnapshot:
     """Project one symbol's run summaries into a snapshot row.
 
     The "recent" counts are items KNOWN-DATED within the window and now tracked in the log =
@@ -106,17 +116,20 @@ def snapshot_for(symbol: str, news: IngestSummary, announcements: FilingsIngestS
     undated item is ingested (kept, never dropped) so it lands in new/superseded/skipped, but it has
     no date to vouch for freshness -- and the banner labels this count "from the last N days", so an
     undated item must NOT inflate it (an item we kept precisely because we don't know its date).
-    skipped_old is already outside the window. The AR fields come straight from the resolver result,
-    with -1 / "" when nothing resolved (never a fabricated fiscal year or date).
+    skipped_old is already outside the window.
+
+    announcements_recent is the MAX of the NSE and BSE counts, not their sum: the same filing is
+    disclosed to BOTH exchanges, so summing would double-count it. Max is a safe "at least this many
+    distinct recent filings" floor that also covers the case where one exchange is down that day
+    (bse_announcements defaults None -> NSE only, existing callers unchanged). The AR fields come
+    straight from the resolver result, with -1 / "" when nothing resolved (never a fabricated date).
     """
     return SymbolSnapshot(
         symbol=(symbol or "").strip().upper(),
         checked_at=checked_at,
         window_days=window_days,
-        news_recent=max(0, news.new + news.superseded + news.skipped - news.undated),
-        announcements_recent=max(
-            0, announcements.new + announcements.superseded + announcements.skipped
-            - announcements.undated),
+        news_recent=_recent_count(news),
+        announcements_recent=max(_recent_count(announcements), _recent_count(bse_announcements)),
         annual_report_fy=annual_report.fiscal_year if annual_report.found else -1,
         annual_report_as_of=annual_report.as_of if annual_report.found else "",
     )
