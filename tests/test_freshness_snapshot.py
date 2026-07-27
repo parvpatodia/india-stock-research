@@ -47,6 +47,25 @@ def test_snapshot_for_counts_tracked_items_and_carries_ar():
     assert snap.annual_report_as_of == "2026-03-31"
 
 
+def test_bse_announcements_take_the_max_not_the_sum():
+    # the same filing is disclosed to BOTH exchanges, so announcements_recent is max(NSE, BSE), never
+    # the sum (which would double-count). Covers the "one exchange quiet that day" case too.
+    news = IngestSummary()
+    nse = FilingsIngestSummary(new=10, skipped=4)          # recent = 14
+    bse = FilingsIngestSummary(new=12, skipped=3)          # recent = 15
+    snap = snapshot_for("RELIANCE", news, nse, AnnualReportIngestResult(found=False),
+                        checked_at="2026-07-26", window_days=120, bse_announcements=bse)
+    assert snap.announcements_recent == 15                 # max(14, 15), not 29
+
+
+def test_bse_announcements_default_none_is_nse_only():
+    news = IngestSummary()
+    nse = FilingsIngestSummary(new=7)
+    snap = snapshot_for("RELIANCE", news, nse, AnnualReportIngestResult(found=False),
+                        checked_at="2026-07-26", window_days=120)   # no bse arg
+    assert snap.announcements_recent == 7
+
+
 def test_undated_items_do_not_inflate_the_recent_count():
     # WHY (honesty): an undated item is KEPT (ingested -> lands in new/superseded/skipped) but has no
     # date, so it must NOT be counted in a "from the last N days" total. Here every tracked item is

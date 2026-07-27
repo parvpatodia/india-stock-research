@@ -149,6 +149,11 @@ def parse_nse_announcements(raw: str | bytes,
 # mirroring the full-URL ref the NSE parser stores.
 _BSE_ATTACH_BASE = "https://www.bseindia.com/xml-data/corpfiling/AttachLive/"
 
+# BSE's AnnSubCategoryGetData is date-bounded server-side (unlike NSE, which returns recent and is
+# filtered client-side). Keep this in step with freshness.staleness.DEFAULT_RECENCY_WINDOW_DAYS so
+# BSE covers the same range as NSE; a local constant avoids a cross-package import here.
+_BSE_FETCH_WINDOW_DAYS = 120
+
 
 def _bse_attachment_ref(name: str | None) -> str:
     """Turn BSE's bare ATTACHMENTNAME into the public attachment URL. A value that is already a URL
@@ -281,7 +286,10 @@ class BseAnnouncementSource(AnnouncementSource):
 
         home = "https://www.bseindia.com/"
         today = date.today()
-        frm = (today - timedelta(days=30)).strftime("%Y%m%d")
+        # Server-side date window. Match the freshness recency window (120d) so BSE covers the SAME
+        # range as NSE, not a narrower 30 days; ingest_announcements still applies the exact
+        # per-run window client-side (is_recent), so a smaller --window-days is honored.
+        frm = (today - timedelta(days=_BSE_FETCH_WINDOW_DAYS)).strftime("%Y%m%d")
         to = today.strftime("%Y%m%d")
         listing = ("https://api.bseindia.com/BseIndiaAPI/api/AnnSubCategoryGetData/w"
                    f"?pageno=1&strCat=-1&subcategory=-1&strPrevDate={frm}&strToDate={to}"

@@ -33,14 +33,15 @@ The fetchers are injectable, so a licensed data feed swaps in without touching t
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT))
 
-from src.data.announcements_source import AnnouncementSource  # noqa: E402
+from src.data.announcements_source import AnnouncementSource, BseAnnouncementSource  # noqa: E402
+from src.data.bse_scrip_codes import BseScripResolver  # noqa: E402
 from src.data.news_source import NewsSource  # noqa: E402
 from src.data.nse_annual_reports import NseAnnualReportResolver  # noqa: E402
 from src.freshness.event_log import IngestionLog  # noqa: E402
@@ -66,11 +67,12 @@ _DEFAULT_LOG = _ROOT / "data" / "freshness" / "events.jsonl"
 
 @dataclass
 class SymbolFreshness:
-    """One symbol's run across the three feeds."""
+    """One symbol's run across the feeds (NSE news + NSE/BSE announcements + annual report)."""
     symbol: str
     news: IngestSummary
     announcements: FilingsIngestSummary
     annual_report: AnnualReportIngestResult
+    bse_announcements: FilingsIngestSummary = field(default_factory=FilingsIngestSummary)
 
 
 def parse_symbol_args(args: list[str]) -> tuple[list[str], dict[str, str]]:
@@ -93,15 +95,20 @@ def parse_symbol_args(args: list[str]) -> tuple[list[str], dict[str, str]]:
 
 def run_ingest(log: IngestionLog, symbols: list[str], *,
                news_source, announce_source, ar_resolver,
+               bse_source=None, bse_resolver=None,
                company_names: dict[str, str] | None = None,
                window_days: int = DEFAULT_RECENCY_WINDOW_DAYS,
                today: date | None = None) -> list[SymbolFreshness]:
-    """Ingest news + announcements + the latest annual report for each symbol into the log.
+    """Ingest news + NSE/BSE announcements + the latest annual report for each symbol into the log.
     Thin orchestration: each feed already degrades on failure, so one dead feed or symbol never
     aborts the run. The recency window (H1) bounds news + announcements to items dated within
     `window_days` of `today` (annual reports are already bounded -- one latest per symbol -- and
-    are NOT windowed). With today=None nothing is windowed (existing callers unchanged). Returns a
-    per-symbol summary."""
+    are NOT windowed). With today=None nothing is windowed (existing callers unchanged).
+
+    BSE (optional): when BOTH `bse_source` and `bse_resolver` are given, each symbol is resolved to
+    its BSE scrip code and its BSE announcements are ingested into the SAME log. A symbol that can't
+    be resolved safely is simply skipped for BSE (NSE announcements still cover it). Omitting either
+    argument leaves BSE off (existing callers unchanged). Returns a per-symbol summary."""
     company_names = company_names or {}
     results: list[SymbolFreshness] = []
     for symbol in symbols:
@@ -109,9 +116,19 @@ def run_ingest(log: IngestionLog, symbols: list[str], *,
                            window_days=window_days, today=today)
         announcements = ingest_announcements(log, announce_source, symbol,
                                              window_days=window_days, today=today)
+        bse_announcements = FilingsIngestSummary()
+        if bse_source is not None and bse_resolver is not None:
+            scrip = bse_resolver.resolve(symbol)
+            if scrip:
+                # ingest_announcements takes whatever identifier the source's fetch expects; the BSE
+                # source is keyed by scrip code. BSE attachment URLs differ from NSE, so the same
+                # filing on both exchanges lands as two distinct events, never a dedup collision.
+                bse_announcements = ingest_announcements(log, bse_source, scrip,
+                                                         window_days=window_days, today=today)
         annual_report = ingest_annual_report(log, ar_resolver, symbol)
-        results.append(SymbolFreshness(symbol=symbol, news=news,
-                                       announcements=announcements, annual_report=annual_report))
+        results.append(SymbolFreshness(symbol=symbol, news=news, announcements=announcements,
+                                       annual_report=annual_report,
+                                       bse_announcements=bse_announcements))
     return results
 
 
@@ -124,6 +141,10 @@ def format_summary(results: list[SymbolFreshness]) -> str:
             ar_line = f"annual report FY{ar.fiscal_year} ({ar.as_of or 'undated'}) [{ar.action or 'unchanged'}]"
         else:
             ar_line = "annual report: not available"
+        b = r.bse_announcements
+        bse_line = (f"bse new={b.new} superseded={b.superseded} skipped={b.skipped} "
+                    f"skipped_old={b.skipped_old} undated={b.undated} errors={b.errors}; "
+                    if b.fetched or b.new or b.errors else "")
         lines.append(
             f"{r.symbol}: "
             f"news new={r.news.new} superseded={r.news.superseded} skipped={r.news.skipped} "
@@ -131,7 +152,7 @@ def format_summary(results: list[SymbolFreshness]) -> str:
             f"announcements new={r.announcements.new} superseded={r.announcements.superseded} "
             f"skipped={r.announcements.skipped} skipped_old={r.announcements.skipped_old} "
             f"undated={r.announcements.undated} errors={r.announcements.errors}; "
-            f"{ar_line}"
+            f"{bse_line}{ar_line}"
         )
     return "\n".join(lines)
 
@@ -143,7 +164,8 @@ def build_snapshot(results: list[SymbolFreshness], *, checked_at: str,
     symbol from a log key."""
     return [
         snapshot_for(r.symbol, r.news, r.announcements, r.annual_report,
-                     checked_at=checked_at, window_days=window_days)
+                     checked_at=checked_at, window_days=window_days,
+                     bse_announcements=r.bse_announcements)
         for r in results
     ]
 
@@ -253,6 +275,8 @@ def main(argv: list[str] | None = None) -> int:
         news_source=NewsSource(),
         announce_source=AnnouncementSource(),
         ar_resolver=NseAnnualReportResolver(),
+        bse_source=BseAnnouncementSource(),        # BSE announcements, keyed by scrip code
+        bse_resolver=BseScripResolver(),           # NSE symbol -> BSE scrip (seed + live fallback)
         company_names=names,
         window_days=window_days,
         today=today,
