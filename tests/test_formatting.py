@@ -1,4 +1,17 @@
-from src.formatting import format_rupees, format_rupees_crore_lakh, indian_group
+from src.formatting import (
+    format_rupees,
+    format_rupees_crore_lakh,
+    format_rupees_precise,
+    indian_group,
+)
+
+
+def test_format_rupees_precise_keeps_paise_and_indian_groups():
+    assert format_rupees_precise(15.62) == "₹15.62"          # a low-priced stock keeps its paise
+    assert format_rupees_precise(7815) == "₹7,815.00"        # Indian grouping on the integer part
+    assert format_rupees_precise(101250.5) == "₹1,01,250.50"
+    assert format_rupees_precise(-15.62) == "-₹15.62"        # a clean leading sign
+    assert format_rupees_precise(None) == "n/a"              # never a fabricated ₹0.00
 
 
 def test_indian_group_places_separators_the_indian_way():

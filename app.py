@@ -50,7 +50,7 @@ from src.data.figure_sources import (  # noqa: E402
     format_figure_value,
 )
 from src.data.news_source import NewsSource, registry_with_news  # noqa: E402
-from src.formatting import format_rupees  # noqa: E402
+from src.formatting import format_rupees, format_rupees_precise  # noqa: E402
 from src.data.nse_annual_reports import (  # noqa: E402
     NseAnnualReportResolver,
     fetch_annual_report_text,
@@ -142,77 +142,126 @@ st.set_page_config(page_title="India Equity Research", layout="wide", page_icon=
 #     stay legible on both light and dark.
 _IER_CSS = """
 <style>
-/* Roomier, product-like layout; cap width on large desktops so it reads as an app, not a script.
-   Mobile (< 640px) keeps the full width -- the cap only kicks in far above 375px. */
-.block-container { padding-top: 2.2rem; padding-bottom: 3rem; max-width: 1180px; }
-h1, h2, h3 { letter-spacing: -0.01em; }
-h1 { font-weight: 700; }
-h2, h3 { font-weight: 650; }
-/* Gentle radius on the interactive chrome (safe no-ops if a class ever changes). */
-.stButton > button, .stDownloadButton > button, div[data-baseweb="input"] input,
-.stTextInput input, .stNumberInput input { border-radius: 10px; }
-.stButton > button { font-weight: 600; }
-.stTabs [data-baseweb="tab-list"] { gap: 0.25rem; }
+/* ===== India Equity Research — visual system (pro). Our own --ier-* tokens only (Streamlit does
+   not expose its theme as CSS vars); cards stay theme-agnostic via translucent wash + color:inherit. */
+:root{
+  --ier-r: 14px; --ier-r-sm: 10px;
+  --ier-blue: #2E5AAC; --ier-gain: #16A34A; --ier-loss: #DC2626;
+  --ier-line: rgba(128,132,150,0.18); --ier-wash: rgba(128,132,150,0.06);
+  --ier-shadow: 0 1px 2px rgba(16,24,40,.05), 0 1px 3px rgba(16,24,40,.09);
+  --ier-shadow-lg: 0 6px 16px rgba(16,24,40,.09), 0 2px 5px rgba(16,24,40,.06);
+}
+/* Roomier, product-like layout; cap width on large desktops so it reads as an app, not a script. */
+.block-container { padding-top: 2.2rem; padding-bottom: 3.5rem; max-width: 1140px; }
+h1, h2, h3 { letter-spacing: -0.02em; }
+h1 { font-weight: 780; } h2, h3 { font-weight: 680; }
+
+/* Buttons — refined with a subtle lift on hover. */
+.stButton > button, .stDownloadButton > button { border-radius: var(--ier-r-sm); font-weight: 600;
+    padding: 0.5rem 1.1rem; box-shadow: var(--ier-shadow);
+    transition: transform .06s ease, box-shadow .12s ease, filter .12s ease; }
+.stButton > button:hover, .stDownloadButton > button:hover { transform: translateY(-1px);
+    box-shadow: var(--ier-shadow-lg); filter: brightness(1.03); }
+.stButton > button:active { transform: translateY(0); }
+div[data-baseweb="input"] input, .stTextInput input, .stNumberInput input,
+div[data-baseweb="select"] > div { border-radius: var(--ier-r-sm) !important; }
+
+/* Tabs — a clean, professional underline bar (labels are plain text, no emoji). */
+.stTabs [data-baseweb="tab-list"] { gap: 0.4rem; border-bottom: 1px solid var(--ier-line); }
+.stTabs [data-baseweb="tab"] { font-size: 1.0rem; font-weight: 600; letter-spacing: -0.01em;
+    padding: 0.55rem 0.9rem; opacity: 0.6; }
+.stTabs [data-baseweb="tab"][aria-selected="true"] { opacity: 1; }
+.stTabs [data-baseweb="tab-highlight"] { height: 2.5px; border-radius: 3px; }
+
+/* Expanders read as tidy cards. */
+[data-testid="stExpander"] { border: 1px solid var(--ier-line); border-radius: var(--ier-r);
+    box-shadow: var(--ier-shadow); overflow: hidden; }
+[data-testid="stExpander"] summary { font-weight: 600; }
 
 /* Hero: reads as a product header, not an st.title. */
-.ier-hero { padding: 0.2rem 0 0.6rem 0; }
-.ier-hero .ier-title { font-size: 2.0rem; font-weight: 750; letter-spacing: -0.02em;
-    line-height: 1.15; margin: 0; }
-.ier-hero .ier-sub { font-size: 1.02rem; opacity: 0.72; margin: 0.35rem 0 0 0; line-height: 1.4; }
-.ier-hero .ier-badge { display: inline-block; font-size: 0.72rem; font-weight: 700;
-    letter-spacing: 0.04em; text-transform: uppercase; padding: 0.18rem 0.55rem; border-radius: 999px;
-    background: rgba(46,90,172,0.12); color: #2E5AAC; margin-bottom: 0.55rem; }
+.ier-hero { padding: 0.1rem 0 0.5rem 0; }
+.ier-hero .ier-title { font-size: 2.15rem; font-weight: 800; letter-spacing: -0.03em;
+    line-height: 1.1; margin: 0; }
+.ier-hero .ier-sub { font-size: 1.03rem; opacity: 0.68; margin: 0.4rem 0 0 0; line-height: 1.45;
+    max-width: 66ch; }
+.ier-hero .ier-badge { display: inline-block; font-size: 0.7rem; font-weight: 750;
+    letter-spacing: 0.08em; text-transform: uppercase; padding: 0.22rem 0.6rem; border-radius: 999px;
+    background: rgba(46,90,172,0.12); color: var(--ier-blue); margin-bottom: 0.6rem; }
 
-/* Premium metric tiles. Theme-agnostic: translucent surface + inherited text colour. */
-.ier-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.7rem; margin: 0.2rem 0 0.4rem 0; }
-.ier-metric { background: rgba(128,132,150,0.09); border: 1px solid rgba(128,132,150,0.20);
-    border-radius: 14px; padding: 0.85rem 0.95rem; color: inherit; min-width: 0; }
-.ier-metric .ier-lbl { font-size: 0.76rem; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.04em; opacity: 0.62; margin: 0 0 0.25rem 0; }
-.ier-metric .ier-val { font-size: 1.5rem; font-weight: 700; line-height: 1.15;
-    letter-spacing: -0.01em; overflow-wrap: anywhere; }
-.ier-metric .ier-delta { font-size: 0.9rem; font-weight: 650; margin-top: 0.2rem; }
-.ier-metric .ier-delta.gain { color: #159457; }
-.ier-metric .ier-delta.loss { color: #E0483B; }
+/* Premium metric tiles — elevated cards. Theme-agnostic: translucent surface + inherited text. */
+.ier-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.8rem; margin: 0.4rem 0 0.5rem 0; }
+.ier-metric { background: var(--ier-wash); border: 1px solid var(--ier-line);
+    border-radius: var(--ier-r); padding: 1rem 1.05rem; color: inherit; min-width: 0;
+    box-shadow: var(--ier-shadow); }
+.ier-metric .ier-lbl { font-size: 0.72rem; font-weight: 650; text-transform: uppercase;
+    letter-spacing: 0.06em; opacity: 0.55; margin: 0 0 0.4rem 0; }
+.ier-metric .ier-val { font-size: 1.6rem; font-weight: 750; line-height: 1.1;
+    letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.ier-metric .ier-delta { font-size: 0.88rem; font-weight: 680; margin-top: 0.3rem; }
+.ier-metric .ier-delta.gain { color: var(--ier-gain); }
+.ier-metric .ier-delta.loss { color: var(--ier-loss); }
 
 /* Onboarding / empty-state callout. Same theme-agnostic surface trick. */
-.ier-note { background: rgba(46,90,172,0.07); border: 1px solid rgba(46,90,172,0.20);
-    border-left: 3px solid #2E5AAC; border-radius: 12px; padding: 0.9rem 1.05rem; color: inherit;
-    line-height: 1.5; }
+.ier-note { background: rgba(46,90,172,0.06); border: 1px solid rgba(46,90,172,0.18);
+    border-left: 3px solid var(--ier-blue); border-radius: var(--ier-r); padding: 1rem 1.15rem;
+    color: inherit; line-height: 1.5; box-shadow: var(--ier-shadow); }
 .ier-note .ier-note-title { font-weight: 700; margin-bottom: 0.3rem; }
 .ier-note ul { margin: 0.4rem 0 0 0; padding-left: 1.1rem; }
 .ier-note li { margin: 0.15rem 0; }
-.ier-chip { display: inline-block; font-weight: 700; font-size: 0.82rem; padding: 0.02rem 0.4rem;
+.ier-chip { display: inline-block; font-weight: 700; font-size: 0.82rem; padding: 0.03rem 0.45rem;
     border-radius: 6px; }
-.ier-chip.g { background: rgba(21,148,87,0.16); color: #159457; }
+.ier-chip.g { background: rgba(22,163,74,0.15); color: var(--ier-gain); }
 .ier-chip.o { background: rgba(224,146,20,0.18); color: #B9770F; }
-.ier-chip.r { background: rgba(224,72,59,0.16); color: #E0483B; }
+.ier-chip.r { background: rgba(220,38,38,0.14); color: var(--ier-loss); }
 .ier-chip.n { background: rgba(128,132,150,0.18); color: inherit; opacity: 0.85; }
 
-/* Mobile-first: iPhone (~375px). Stack the tiles 2-up and dial the hero down. */
+/* Holdings table — a premium, color-coded book (right-aligned tabular numbers, P&L green/red,
+   a weight micro-bar). Custom HTML so it reads like a real investing app, not a raw grid. */
+.ier-tbl-wrap { border: 1px solid var(--ier-line); border-radius: var(--ier-r); overflow: hidden;
+    box-shadow: var(--ier-shadow); }
+.ier-tbl { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.ier-tbl thead th { font-size: 0.7rem; font-weight: 650; text-transform: uppercase;
+    letter-spacing: 0.05em; opacity: 0.55; text-align: right; padding: 0.7rem 0.85rem;
+    background: var(--ier-wash); white-space: nowrap; }
+.ier-tbl thead th.l { text-align: left; }
+.ier-tbl tbody td { padding: 0.65rem 0.85rem; text-align: right; border-top: 1px solid rgba(128,132,150,0.13);
+    font-variant-numeric: tabular-nums; white-space: nowrap; color: inherit; }
+.ier-tbl tbody td.l { text-align: left; }
+.ier-tbl tbody tr:hover { background: rgba(46,90,172,0.05); }
+.ier-tbl .sym { font-weight: 700; letter-spacing: -0.01em; }
+.ier-tbl .sec { font-size: 0.74rem; opacity: 0.55; margin-top: 0.05rem; }
+.ier-tbl .pl { font-weight: 700; }
+.ier-tbl .pl.gain { color: var(--ier-gain); }
+.ier-tbl .pl.loss { color: var(--ier-loss); }
+.ier-tbl .wt { display: flex; align-items: center; gap: 0.5rem; justify-content: flex-end; }
+.ier-tbl .wt-bar { width: 46px; height: 6px; border-radius: 4px; background: rgba(128,132,150,0.2);
+    overflow: hidden; flex: none; }
+.ier-tbl .wt-bar > i { display: block; height: 100%; background: var(--ier-blue); border-radius: 4px; }
+
+/* Mobile-first: iPhone (~375px). Stack the tiles 2-up, dial the hero down, hide the least-vital cols. */
 @media (max-width: 640px) {
-  .ier-metrics { grid-template-columns: repeat(2, 1fr); gap: 0.55rem; }
-  .ier-metric .ier-val { font-size: 1.28rem; }
-  .ier-hero .ier-title { font-size: 1.6rem; }
-  /* clear Streamlit's fixed top toolbar on mobile (the hero badge tucked under it at a tighter
-     value); the desktop rule above is fine as-is. */
+  .ier-metrics { grid-template-columns: repeat(2, 1fr); gap: 0.6rem; }
+  .ier-metric .ier-val { font-size: 1.32rem; }
+  .ier-hero .ier-title { font-size: 1.7rem; }
   .block-container { padding-top: 3rem; }
+  .ier-tbl .hide-sm { display: none; }
+  .ier-tbl { font-size: 0.86rem; }
 }
 
-/* Dark mode: config.toml's [theme.dark] follows the device preference, so this media query tracks
-   the same signal and brightens our accent colours for legibility on a dark surface. The
-   translucent card/note surfaces and `color: inherit` already adapt on their own; only the fixed
-   accent hues need the lift. If a user forces dark against a light OS, the light accents below are
-   still chosen to read on dark -- this only makes the common (OS-dark) case pop. */
+/* Dark mode: config.toml's [theme.dark] follows the device preference; this tracks the same signal
+   and brightens fixed accent hues for legibility. Translucent surfaces + color:inherit adapt on
+   their own; only the accents need the lift. */
 @media (prefers-color-scheme: dark) {
-  .ier-metric .ier-delta.gain { color: #34D399; }
-  .ier-metric .ier-delta.loss { color: #F87171; }
+  .ier-metric .ier-delta.gain, .ier-tbl .pl.gain { color: #34D399; }
+  .ier-metric .ier-delta.loss, .ier-tbl .pl.loss { color: #F87171; }
   .ier-hero .ier-badge { color: #9DBAF2; background: rgba(122,162,232,0.16); }
   .ier-note { background: rgba(122,162,232,0.10); border-color: rgba(122,162,232,0.28);
       border-left-color: #7AA2E8; }
   .ier-chip.g { color: #34D399; background: rgba(52,211,153,0.18); }
   .ier-chip.o { color: #FBBF77; background: rgba(251,146,60,0.20); }
   .ier-chip.r { color: #F87171; background: rgba(248,113,113,0.18); }
+  .ier-tbl .wt-bar > i { background: #7AA2E8; }
+  .ier-tbl tbody tr:hover { background: rgba(122,162,232,0.08); }
 }
 </style>
 """
@@ -252,6 +301,77 @@ def render_metric_tiles(tiles: list[dict]) -> None:
     fall back to native st.metric -- the numbers must always show, styled or not."""
     cells = "".join(_metric_tile_html(**t) for t in tiles)
     st.markdown(f'<div class="ier-metrics">{cells}</div>', unsafe_allow_html=True)
+
+
+def holdings_table_html(positions) -> str:
+    """Build the premium color-coded holdings table markup (symbol + sector, qty, avg cost, price,
+    value, P&L% in green/red, and a weight micro-bar), sorted by market value.
+
+    Pure (no Streamlit) so it is unit-testable; render_holdings_table just emits it. Every cell is
+    escaped. P&L% None (a zero-cost lot's undefined return) renders as an em dash, never a misleading
+    0.00. On phones (hide-sm) only Holding / Value / P&L% show, so 5 columns never overflow 375px."""
+    ordered = sorted(positions, key=lambda x: -x.market_value)
+    max_w = max((p.weight for p in ordered), default=0) or 1.0
+    body = []
+    for p in ordered:
+        pl = p.pnl_pct
+        # A zero-cost lot (bonus/IPO) has an UNDEFINED return -> a neutral em dash, never a red
+        # "loss" tint (it isn't a loss) and never a fabricated 0.00%.
+        if pl is None:
+            pl_cell = '<td class="pl">—</td>'
+        else:
+            pl_cell = f'<td class="pl {"gain" if pl >= 0 else "loss"}">{"+" if pl >= 0 else ""}{pl:.2f}%</td>'
+        bar = min(100.0, (p.weight / max_w) * 100.0) if max_w else 0.0
+        qty = f"{p.quantity:,.0f}" if float(p.quantity).is_integer() else f"{p.quantity:,.2f}"
+        body.append(
+            "<tr>"
+            f'<td class="l"><div class="sym">{html.escape(p.symbol)}</div>'
+            f'<div class="sec">{html.escape(p.sector or "—")}</div></td>'
+            f'<td class="hide-sm">{qty}</td>'
+            f'<td class="hide-sm">{html.escape(format_rupees_precise(p.avg_cost))}</td>'
+            f'<td class="hide-sm">{html.escape(format_rupees_precise(p.current_price))}</td>'
+            f'<td>{html.escape(money(p.market_value))}</td>'
+            f'{pl_cell}'
+            f'<td class="hide-sm"><div class="wt"><span class="wt-bar">'
+            f'<i style="width:{bar:.0f}%"></i></span>'
+            f'<span>{p.weight * 100:.1f}%</span></div></td>'
+            "</tr>")
+    head = ('<thead><tr><th class="l">Holding</th><th class="hide-sm">Qty</th>'
+            '<th class="hide-sm">Avg cost</th><th class="hide-sm">Price</th><th>Value</th>'
+            '<th>P&amp;L %</th><th class="hide-sm">Weight</th></tr></thead>')
+    return (f'<div class="ier-tbl-wrap"><table class="ier-tbl">{head}'
+            f'<tbody>{"".join(body)}</tbody></table></div>')
+
+
+def render_holdings_table(positions) -> None:
+    """Emit the premium holdings table. Raises on any failure so the caller's try/except falls back
+    to the native st.dataframe -- the holdings must always show, styled or not."""
+    st.markdown(holdings_table_html(positions), unsafe_allow_html=True)
+
+
+# A cohesive chart palette (calm blues first, then supporting hues) so plotly reads as part of the
+# app, not the default plotly look. Vivid enough to stay legible on both the light and dark theme.
+_IER_CHART_COLORS = ["#2E5AAC", "#7AA2E8", "#16A34A", "#B9770F", "#8B5CF6", "#0EA5A4",
+                     "#DC2626", "#64748B", "#D946A6", "#0891B2"]
+
+
+def style_chart(fig, *, height: int = 340):
+    """Apply the app's identity to a plotly figure: transparent backgrounds (so it sits on either
+    the light or dark theme), a clean margin, our palette, a soft grid, and a legible title. Text is
+    a theme-neutral mid-slate because plotly renders server-side and can't detect light/dark, so a
+    fixed colour must read on both. Returns the figure; pure styling."""
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="-apple-system, 'Segoe UI', Roboto, sans-serif", size=13, color="#7C879B"),
+        title=dict(font=dict(size=15, color="#8B95A7"), x=0.01, xanchor="left"),
+        margin=dict(l=10, r=10, t=46, b=10), height=height,
+        legend=dict(orientation="h", yanchor="bottom", y=-0.2, x=0),
+        colorway=_IER_CHART_COLORS,
+    )
+    fig.update_xaxes(showgrid=False, zeroline=False, tickfont=dict(size=12))
+    fig.update_yaxes(showgrid=True, gridcolor="rgba(128,132,150,0.16)", zeroline=False,
+                     tickfont=dict(size=12))
+    return fig
 
 
 _ROOT = Path(__file__).resolve().parent
@@ -1189,7 +1309,7 @@ if "reports" not in st.session_state:
 # WHY: short labels so all four tabs fit on an iPhone (375px) without horizontal scroll —
 # a parent must see Invest/Ask exist, not have them clipped off-screen.
 tab_portfolio, tab_research, tab_invest, tab_ask = st.tabs(
-    ["📁 Portfolio", "🔎 Research", "💰 Invest", "💬 Ask"])
+    ["Portfolio", "Research", "Invest", "Ask"])
 
 
 # ==================== TAB 1: MY PORTFOLIO ====================
@@ -1237,21 +1357,30 @@ with tab_portfolio:
         "P&L %": round(p.pnl_pct, 2) if p.pnl_pct is not None else None,
         "Weight %": round(p.weight * 100, 2),
     } for p in sorted(analysis.positions, key=lambda x: -x.market_value)]
-    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+    # Premium color-coded holdings table; falls back to the native grid if the markup ever fails.
+    try:
+        render_holdings_table(analysis.positions)
+    except Exception:  # pragma: no cover - the holdings must always show, styled or not
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
     with st.expander("Allocation charts"):
         alloc_df = pd.DataFrame({
             "Symbol": [p.symbol for p in analysis.positions],
             "Weight": [p.weight * 100 for p in analysis.positions],
         })
-        st.plotly_chart(px.pie(alloc_df, names="Symbol", values="Weight", hole=0.4,
-                               title="By holding"), width="stretch")
+        _pie = px.pie(alloc_df, names="Symbol", values="Weight", hole=0.58, title="By holding",
+                      color_discrete_sequence=_IER_CHART_COLORS)
+        _pie.update_traces(textposition="inside", textinfo="percent",
+                           hovertemplate="%{label}: %{value:.1f}%<extra></extra>")
+        st.plotly_chart(style_chart(_pie), width="stretch")
         sector_df = pd.DataFrame({
             "Sector": list(analysis.sector_weights.keys()),
             "Weight %": [w * 100 for w in analysis.sector_weights.values()],
         }).sort_values("Weight %", ascending=False)
-        st.plotly_chart(px.bar(sector_df, x="Sector", y="Weight %", title="By sector"),
-                        width="stretch")
+        _bar = px.bar(sector_df, x="Sector", y="Weight %", title="By sector",
+                      color_discrete_sequence=["#2E5AAC"])
+        _bar.update_traces(hovertemplate="%{x}: %{y:.1f}%<extra></extra>")
+        st.plotly_chart(style_chart(_bar), width="stretch")
 
     with st.expander("Concentration"):
         # WHY (honesty): weights/HHI are normalized ONLY over the priced positions
