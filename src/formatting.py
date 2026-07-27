@@ -42,6 +42,21 @@ def format_rupees(value: float | None) -> str:
     return f"{'-' if neg else ''}{CURRENCY_SYMBOL}{grouped}"
 
 
+def format_rupees_precise(value: float | None, decimals: int = 2) -> str:
+    """Rupee amount with `decimals` decimal places, Indian-grouped on the integer part
+    (e.g. ₹15.62, ₹7,815.00). WHY: a PER-SHARE price or avg cost rounded to whole rupees hides
+    meaningful paise on a low-priced stock (a ₹15.62 cost showing as ₹16 reads as a fabricated,
+    slightly-wrong figure). Values/P&L totals still use whole-rupee format_rupees. None -> 'n/a'."""
+    if value is None:
+        return "n/a"
+    neg = value < 0
+    s = f"{abs(value):.{decimals}f}"
+    int_part, _, frac = s.partition(".")
+    grouped = indian_group(int_part)
+    body = f"{grouped}.{frac}" if frac else grouped
+    return f"{'-' if neg else ''}{CURRENCY_SYMBOL}{body}"
+
+
 def format_rupees_crore_lakh(value: float) -> str:
     """Rupees in the Indian crore (1e7) / lakh (1e5) convention. WHY: company financials are held
     in ABSOLUTE rupees, so a real net profit rendered raw is a 12-digit string a parent has to
