@@ -238,8 +238,39 @@ div[data-baseweb="select"] > div { border-radius: var(--ier-r-sm) !important; }
     overflow: hidden; flex: none; }
 .ier-tbl .wt-bar > i { display: block; height: 100%; background: var(--ier-blue); border-radius: 4px; }
 
+/* Verdict rating strip (Research) — the 4 verdict dimensions at a glance, color-toned by
+   favourability. Confidence stays neutral: it measures how much cross-verified, not good/bad news. */
+.ier-rating { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.6rem; margin: 0.7rem 0 0.3rem 0; }
+.ier-rating .cell { background: var(--ier-wash); border: 1px solid var(--ier-line);
+    border-radius: var(--ier-r-sm); padding: 0.6rem 0.75rem; }
+.ier-rating .rl { font-size: 0.64rem; font-weight: 650; text-transform: uppercase;
+    letter-spacing: 0.06em; opacity: 0.5; }
+.ier-rating .rv { font-weight: 750; font-size: 1.02rem; margin-top: 0.15rem; text-transform: capitalize;
+    letter-spacing: -0.01em; }
+.ier-rating .rv.g { color: var(--ier-gain); }
+.ier-rating .rv.r { color: var(--ier-loss); }
+.ier-rating .rv.o { color: #B9770F; }
+.ier-rating .rv.n { color: inherit; }
+
+/* Answer claim cards (Ask) — a unified card per claim with a left accent by trust level, instead
+   of stacked default callouts. Theme-agnostic wash + color:inherit; accents read on light + dark. */
+.ier-claim { border: 1px solid var(--ier-line); border-left: 3px solid rgba(128,132,150,0.5);
+    border-radius: var(--ier-r-sm); background: var(--ier-wash); padding: 0.8rem 1rem;
+    margin: 0.55rem 0; color: inherit; box-shadow: var(--ier-shadow); }
+.ier-claim.fact { border-left-color: var(--ier-gain); }
+.ier-claim.warn { border-left-color: var(--ier-loss); }
+.ier-claim.info { border-left-color: var(--ier-blue); }
+.ier-claim .ct { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+    margin-bottom: 0.3rem; opacity: 0.85; }
+.ier-claim.fact .ct { color: var(--ier-gain); }
+.ier-claim.warn .ct { color: var(--ier-loss); }
+.ier-claim.info .ct { color: var(--ier-blue); }
+.ier-claim .cbody { line-height: 1.5; }
+.ier-claim .csrc { font-size: 0.8rem; opacity: 0.6; margin-top: 0.35rem; }
+
 /* Mobile-first: iPhone (~375px). Stack the tiles 2-up, dial the hero down, hide the least-vital cols. */
 @media (max-width: 640px) {
+  .ier-rating { grid-template-columns: repeat(2, 1fr); gap: 0.5rem; }
   .ier-metrics { grid-template-columns: repeat(2, 1fr); gap: 0.6rem; }
   .ier-metric .ier-val { font-size: 1.32rem; }
   .ier-hero .ier-title { font-size: 1.7rem; }
@@ -262,6 +293,15 @@ div[data-baseweb="select"] > div { border-radius: var(--ier-r-sm) !important; }
   .ier-chip.r { color: #F87171; background: rgba(248,113,113,0.18); }
   .ier-tbl .wt-bar > i { background: #7AA2E8; }
   .ier-tbl tbody tr:hover { background: rgba(122,162,232,0.08); }
+  .ier-rating .rv.g { color: #34D399; }
+  .ier-rating .rv.r { color: #F87171; }
+  .ier-rating .rv.o { color: #FBBF77; }
+  .ier-claim.fact { border-left-color: #34D399; }
+  .ier-claim.fact .ct { color: #34D399; }
+  .ier-claim.warn { border-left-color: #F87171; }
+  .ier-claim.warn .ct { color: #F87171; }
+  .ier-claim.info { border-left-color: #7AA2E8; }
+  .ier-claim.info .ct { color: #7AA2E8; }
 }
 </style>
 """
@@ -372,6 +412,51 @@ def style_chart(fig, *, height: int = 340):
     fig.update_yaxes(showgrid=True, gridcolor="rgba(128,132,150,0.16)", zeroline=False,
                      tickfont=dict(size=12))
     return fig
+
+
+# Verdict-dimension favourability -> chip tone. Confidence is intentionally NOT toned: it measures
+# how much of the data cross-verified, not good/bad news, so it always renders neutral.
+_VAL_TONE = {"cheap": "g", "fair": "n", "expensive": "r", "unknown": "n"}
+_QUAL_TONE = {"strong": "g", "mixed": "o", "weak": "r", "unknown": "n"}
+_LEAN_TONE = {"constructive": "g", "neutral": "n", "cautious": "o", "unknown": "n"}
+_RATING_TIPS = {
+    "Valuation": "How the price compares with the business's fundamentals.",
+    "Quality": "How strong and consistent the business's financials are.",
+    "Leaning": "Which way the cross-verified evidence points, on balance.",
+}
+
+
+def verdict_rating_html(verdict) -> str:
+    """A compact 'rating strip' of the four verdict dimensions (Valuation / Quality / Leaning /
+    Confidence) as colour-toned cells, so the core read is visible at a glance while the detailed
+    reasons stay in the evidence expander. Confidence is always neutral (data coverage, not good/bad
+    news). Pure; returns '' when there is no verdict."""
+    if verdict is None:
+        return ""
+
+    def cell(label, value, tone, tip=""):
+        t = f' title="{html.escape(tip, quote=True)}"' if tip else ""
+        return (f'<div class="cell"{t}><div class="rl">{html.escape(label)}</div>'
+                f'<div class="rv {tone}">{html.escape(str(value))}</div></div>')
+
+    val, qual = verdict.valuation.value, verdict.quality.value
+    lean, conf = verdict.leaning.value, verdict.confidence.value
+    cells = (
+        cell("Valuation", val, _VAL_TONE.get(val, "n"), _RATING_TIPS["Valuation"])
+        + cell("Quality", qual, _QUAL_TONE.get(qual, "n"), _RATING_TIPS["Quality"])
+        + cell("Leaning", lean, _LEAN_TONE.get(lean, "n"), _RATING_TIPS["Leaning"])
+        + cell("Confidence", conf, "n", explain("Confidence")))
+    return f'<div class="ier-rating">{cells}</div>'
+
+
+def claim_card_html(accent: str, label: str, text: str, source: str = "") -> str:
+    """One Ask-answer claim as a unified trust card: a left accent + category label + the claim text
+    + its source, instead of a stacked badge/callout/caption. `accent` is 'fact' (green, a verified
+    fact) | 'warn' (red, an unverified primary-only figure) | 'info' (blue, reported/opinion/
+    estimate). Pure; every field escaped."""
+    src = f'<div class="csrc">Source: {html.escape(source)}</div>' if source else ""
+    return (f'<div class="ier-claim {accent}"><div class="ct">{html.escape(label)}</div>'
+            f'<div class="cbody">{html.escape(text)}</div>{src}</div>')
 
 
 _ROOT = Path(__file__).resolve().parent
@@ -1560,6 +1645,13 @@ with tab_research:
 
         # summary-first: one line + stance + the 5-6 plain-language reasons
         st.markdown(f"### {icon} {sym}: {headline}")
+        # A verdict rating strip (Valuation / Quality / Leaning / Confidence at a glance). Additive +
+        # degrade-safe: on any failure the detailed metrics in the evidence expander still carry them.
+        try:
+            if report.verdict is not None:
+                st.markdown(verdict_rating_html(report.verdict), unsafe_allow_html=True)
+        except Exception:  # pragma: no cover - a styling failure must never crash the report view
+            pass
         st.write(plain_summary(report.verdict, stance))
         # WHY (real money, honesty): the verdict rests on ANNUAL figures; name that vintage and point
         # at recent quarters so a non-expert doesn't act on a headline that predates months of results.
@@ -2115,35 +2207,33 @@ with tab_ask:
                 _ask_today = datetime.now().strftime("%Y-%m-%d")
                 for claim in result.claims:
                     cited = ask_source_caption(claim.citations, registry)
-                    # W7 claim-type badge (additive, degrade-safe): an explicit trust label above the
-                    # claim -- a green badge ONLY for a verified fact. A failure here must never drop
-                    # the proven message rendering below.
-                    try:
-                        _badge_label, _badge_color = claim_badge(claim, registry)
-                        st.badge(_badge_label, color=_badge_color)
-                    except Exception:
-                        pass
+                    # Resolve the claim's trust presentation (SAME semantics as before): a verified
+                    # fact -> green card; a primary-only UNVERIFIED figure (a misquote -- the exact
+                    # real-money failure this app guards against) -> red card; everything reported /
+                    # opinion / estimate -> a neutral blue card (honest context, not alarming).
                     if claim.kind == FACT and claim.is_verified_fact:
-                        st.success(f"✓ {claim.text}")
+                        _accent, _label = "fact", "✓ Verified fact"
                     elif claim.kind == OPINION:
-                        st.info(f"Reported / opinion: {claim.text}")
+                        _accent, _label = "info", "Reported / opinion"
                     elif claim.kind == ESTIMATE:
-                        st.info(f"Estimate (derived, not a primary figure): {claim.text}")
+                        _accent, _label = "info", "Estimate (derived, not a primary figure)"
                     else:
-                        # UNVERIFIED: a claim downgraded either for lacking a primary source, or
-                        # for stating a number absent from its cited source (a misquote -- applies
-                        # to both FACT and OPINION now). If it's from news/analyst, it's
-                        # reporting/context (honest, not alarming); only a claim resting solely on
-                        # primary sources (so the issue is a fabricated/misquoted figure, not the
-                        # tier) gets the hard warning.
-                        from_primary_only_source = all(
+                        _from_primary_only = all(
                             registry.get(c.source_id) and registry.get(c.source_id).citable_as_fact
                             for c in claim.citations)
-                        if from_primary_only_source:
-                            st.error(f"⚠ Unverified: {claim.text}")
-                        else:
-                            st.info(f"Reported, not independently verified: {claim.text}")
-                    st.caption(f"Source: {cited}")
+                        _accent = "warn" if _from_primary_only else "info"
+                        _label = ("⚠ Unverified (figure not confirmed in its source)"
+                                  if _from_primary_only else "Reported, not independently verified")
+                    # Unified claim card; degrade-safe -> the proven callout + caption if markup fails,
+                    # so a styling error can never drop a claim on the parents' page.
+                    try:
+                        st.markdown(claim_card_html(_accent, _label, claim.text, cited),
+                                    unsafe_allow_html=True)
+                    except Exception:
+                        _box = (st.success if _accent == "fact"
+                                else st.error if _accent == "warn" else st.info)
+                        _box(f"{_label}: {claim.text}")
+                        st.caption(f"Source: {cited}")
                     # W7 freshness banner (additive, degrade-safe): flag a stale or undated
                     # news-backed claim so a parent never reads old news as current.
                     try:
