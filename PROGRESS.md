@@ -1,5 +1,55 @@
 # PROGRESS
 
+## 2026-07-27 — Professional UI overhaul (top-tier investing-app look, all tabs)
+Raised the whole deployed app to a cohesive, premium design language in light + dark + mobile,
+without changing any behaviour (research-only, every feature intact; every custom render
+try/except-guarded with a fallback to the native widget). Shipped as gated increments, each
+adversarially reviewed, all verified LIVE in the local preview (identical code to Cloud):
+- Design system (`_IER_CSS`): `--ier-*` tokens, elevated cards with real shadows, hover-lift
+  buttons, a clean underline tab bar (emoji labels removed), card-style expanders, tighter type.
+- Portfolio: replaced the raw `st.dataframe` with a premium color-coded holdings table
+  (`holdings_table_html`) — symbol+sector stacked, right-aligned tabular numbers, P&L% green/red,
+  weight micro-bars, sorted by value; phones show the essential trio (Holding/Value/P&L%) so
+  nothing overflows 375px. `format_rupees_precise` keeps paise on per-share prices (₹15.62, not a
+  rounded ₹16); integer quantities. Allocation charts themed (`style_chart`, transparent bg for
+  light/dark, app palette).
+- Research: `verdict_rating_html` rating strip (Valuation/Quality/Leaning/Confidence at a glance,
+  colour-toned by favourability; Confidence stays neutral — it's data coverage, not good/bad news)
+  + `figures_table_html` evidence table with a verification-status chip (Verified green / 1-source
+  amber / Conflict red).
+- Invest: `allocation_table_html` — the suggested spread as Stock / Add (₹) / a share bar.
+- Ask: `claim_card_html` — each answer claim as one unified trust card with a left accent
+  (green verified fact / red unverified primary-only / blue reported/opinion/estimate).
+- All builders are PURE + unit-tested (holdings, formatter, rating strip, claim card, figures,
+  allocation). One self-caught bug: a `price()` helper collided with a `price` script var (a float
+  shadowed the function) — the builder unit test surfaced it before it shipped.
+- DEPLOY note: a code-only Cloud push that adds a NEW `src` symbol imported by app.py can
+  stale-import (Cloud reruns without reimporting the changed module). The `format_rupees_precise`
+  push hit this LIVE; forced a full rebuild via a requirements.txt touch and logged the rule
+  (pair any new top-level src import with a requirements bump). Later UI pushes added no new src
+  import, so they deployed clean.
+- VERIFIED: `./verify.sh` 818 -> 877 tests; `run_eval.py` 4-gate PASS at every merge; deploy
+  confirmed healthy after each push (gate renders, zero console errors).
+
+## 2026-07-26 — BSE announcements wired into the freshness ingest (H4 fix + wiring)
+Live verification of H4/H5 (on the residential-IP Mac) found the BSE source used a DEAD endpoint:
+`AnnGetData/w` with a capital-S `strScrip` returned "No Record Found!" for every query. Fixed to
+the working `AnnSubCategoryGetData/w` + `subcategory=-1` + lowercase `strscrip` (per the maintained
+BseIndiaApi client) — live-verified 15 real RELIANCE announcements. Then wired BSE INTO the ingest:
+- `src/data/bse_scrip_codes.py`: `BseScripResolver` maps an NSE symbol -> BSE scrip code via a
+  live-verified static seed of the 31 holdings + a live PeerSmartSearch fallback that resolves ONLY
+  on an EXACT ticker match (never guesses a scrip — a wrong code would ingest another company's
+  filings; unresolvable -> None, NSE still covers it). Adversarial review found + fixed a real
+  hazard: a span-less `<li>` could pair a scrip with a different row's span; now parsed per-`<li>`
+  with a scrip cross-check.
+- `run_ingest` gained an optional BSE pass (into the SAME log); the snapshot count is `max(NSE,BSE)`
+  not the sum (the same filing is disclosed to both exchanges). Live-verified: RELIANCE +15,
+  ICICIBANK +32 real BSE announcements alongside NSE.
+- H5 finding (recorded, not a code change): pdfplumber table extraction RUNS on a real 187-page RIL
+  AR and produces typed records, but quality is rough on borderless tables — a best-effort
+  improvement over pypdf, not a reliable precise-figure extractor; the cross-verify gate stays the
+  real guard.
+
 ## 2026-07-26 — H7: freshness snapshot reaches the DEPLOYED app (closes the biggest residual)
 The W1 freshness engine only ever saw live data on the owner's Mac (NSE/BSE block Streamlit
 Cloud's datacenter IP; Cloud can't run the scheduler), so the parents never saw freshness on the
