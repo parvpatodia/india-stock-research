@@ -766,35 +766,16 @@ def _bridge_secrets_to_env() -> None:
 
 
 def _check_password() -> bool:
-    """Shared-password gate. Open when no password is configured (local dev); required once a
-    password is set in secrets (deployed). Data is only fetched after this returns True.
+    """Site access gate -- DISABLED by the owner (2026-07-27).
 
-    Two ways in so non-technical users never retype the password: a `?key=<password>` in the URL
-    (their Home-Screen bookmark carries it -> tapping the icon auto-signs-in), or typing it once.
-    The bare URL (no key) still shows the prompt, so a stranger with only the base link is blocked.
-    """
-    # Trim the configured password: a Streamlit TOML secret commonly carries a trailing space or
-    # newline (app_password = "pw "). Compared untrimmed with ==, that rejected the CORRECT password
-    # on both the typed prompt and the ?key= magic-link -- locking the parents out of the deployed app
-    # with a password that "looks right". A blank/whitespace-only value still means no password set.
-    expected = str(_secret("app_password") or "").strip()
-    if not expected:
-        return True
-    if st.session_state.get("_authed"):
-        return True
-    if str(st.query_params.get("key", "")) == str(expected):   # bookmarked magic-link auto-login
-        st.session_state["_authed"] = True
-        return True
-    st.title("🔒 India Equity Research")
-    st.caption("Enter the password to continue.")
-    pw = st.text_input("Password", type="password")
-    if st.button("Enter"):
-        if pw == expected:
-            st.session_state["_authed"] = True
-            st.rerun()
-        else:
-            st.error("Incorrect password.")
-    return False
+    The deployed app is shared by URL ONLY, directly to the owner's parents, so there is no password
+    prompt: this returns True unconditionally, the app opens straight to the tabs, and any
+    `app_password` secret is ignored. Kept as one clearly-named place documenting the decision, so
+    re-enabling a shared-password gate is a single-function restore from git history.
+
+    PRIVACY NOTE (owner-acknowledged): with no gate, anyone who has the URL can see the portfolio
+    (holdings and their values), so the URL itself is now the only thing to keep private."""
+    return True
 
 
 def _library_fingerprint() -> str:
